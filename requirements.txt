@@ -1,0 +1,13 @@
+streamlit
+pandas
+simplekml
+streamlit-folium
+folium
+googlemaps
+xlsxwriter
+geopy
+rapidfuzz
+requests
+polyline
+numpy
+openpyxl

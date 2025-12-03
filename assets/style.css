@@ -1,0 +1,84 @@
+/* Global Styles */
+.stApp {
+    background-color: #ffffff; /* White background as requested */
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px 0;
+}
+
+/* Card Styling */
+.dashboard-card {
+    background: linear_gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+    border: 1px solid #f0c14b;
+    border-radius: 12px;
+    padding: 20px;
+    color: white;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    height: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    border-color: #ffffff;
+}
+
+.dashboard-card.inactive {
+    background: #e0e0e0;
+    border-color: #ccc;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.card-icon {
+    font-size: 3em;
+    margin-bottom: 10px;
+}
+
+.card-title {
+    font-size: 1.4em;
+    font-weight: bold;
+    color: #f0c14b;
+}
+
+.card-desc {
+    font-size: 0.9em;
+    color: #ddd;
+}
+
+.card-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: #f0c14b;
+    color: #0f2027;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7em;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+/* Button Styling Override */
+div.stButton > button {
+    background: linear_gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+    color: #f0c14b;
+    border: 1px solid #f0c14b;
+    border-radius: 8px;
+    font-weight: bold;
+}
+div.stButton > button:hover {
+    color: #ffffff;
+    border-color: #ffffff;
+}

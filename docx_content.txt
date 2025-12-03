@@ -1,0 +1,39 @@
+📋 Especificação do Projeto: Otimizador de Rotas "Low-Cost"
+1. O Objetivo Principal
+Criar um software de planeamento de rotas acessível para pequenas distribuidoras, que substitua o planeamento manual/empírico por uma solução otimizada, sem os custos elevados de licenças de software corporativo.
+2. A Estratégia de Dados (O "Coração" do Sistema)
+Base de Dados Mestre: Utilização de um ficheiro proprietário existente com 300.000 moradas georreferenciadas de Portugal.
+Validação Inicial (Sanity Check): Antes de usar o ficheiro, correr um script para:
+Validar se as coordenadas caem dentro do retângulo de Portugal.
+Verificar sistemas de coordenadas incorretos.
+Fazer uma auditoria por amostragem (comparar 20 linhas aleatórias com o OpenStreetMap).
+3. O Algoritmo de Georreferenciação em "Cascata" (Waterfall)
+Para cada nova morada inserida por um cliente, o sistema segue esta ordem estrita para garantir custo zero e máxima precisão:
+Prioridade A (Local): Procura a morada no Ficheiro Mestre (300k).
+Custo: 0€ | Velocidade: Imediata.
+Prioridade B (Open Source): Se não encontrar, consulta o Nominatim (OpenStreetMap).
+Custo: 0€ | Velocidade: Lenta (limite de pedidos).
+Prioridade C (Fallback Premium): Se o OSM falhar, consulta a Google Maps API.
+Custo: Usa o crédito gratuito.
+Ação: O resultado é gravado imediatamente no Ficheiro Mestre para não voltar a gastar crédito no futuro.
+4. Níveis de Precisão e Confiança (Quality Score)
+As moradas não são binárias (Encontrou/Não Encontrou). São classificadas por qualidade para ajudar o motorista e o algoritmo:
+Nível 1 (Ouro): Exato (Porta/Rooftop). Confiança total.
+Nível 2 (Prata): Rua correta. Motorista procura o número.
+Nível 3 (Bronze): Código Postal 7 dígitos (Centroide). Zona correta.
+Nível 4 (Ferro): Código Postal 4 dígitos + Localidade. Motorista tem de ligar ao cliente.
+Nível 5 (Erro): Falha total. Requer intervenção humana.
+5. Manutenção Automática (O "Crawler Noturno")
+Rotina Diária: Um script corre todas as noites (ex: 03:00 AM).
+Limite: Processa até 1.300 moradas/dia (para ficar dentro do limite grátis de $200 do Google).
+Alvo: Tenta melhorar moradas de Nível 3 e 4 para Nível 1, atualizando o Ficheiro Mestre permanentemente.
+6. Motor de Otimização e Regras
+Tecnologia: Utilizar a biblioteca Google OR-Tools (Open Source).
+Matriz de Distâncias: Utilizar OSRM (Open Source Routing Machine) para calcular tempos e distâncias entre pontos sem custos.
+Lógica de Buffer: Se a morada for de Nível 3 ou 4 (pouca precisão), o algoritmo adiciona automaticamente uma margem de tempo extra (buffer) à paragem para compensar a procura.
+Restrições: Capacidade de carga (kg/vol) e Janelas Horárias.
+7. Interface e Operação
+Tratamento de Exceções: Dashboard para humanos resolverem moradas de "Nível 5".
+Output: Visualização de rotas em mapa interativo (Folium/Leaflet) e lista ordenada para o motorista.
+Escalabilidade: Arquitetura pronta para migrar para Web (Python Django/Flask).
+Podes copiar e colar este texto. Ele cobre tudo o que discutimos, desde a lógica de custos até à hierarquia técnica das moradas! Estás pronto para arrancar com o "Antigravity". 🚀

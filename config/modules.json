@@ -1,0 +1,29 @@
+[
+    {
+        "id": "geocoding",
+        "title": "Geocoding Pro",
+        "description": "Limpeza e normalização de moradas com motor em cascata.",
+        "icon": "🌍",
+        "color_theme": "blue",
+        "tier": "free",
+        "active": true
+    },
+    {
+        "id": "routing",
+        "title": "Otimizador de Rotas",
+        "description": "Planeamento inteligente de distribuição com OSRM.",
+        "icon": "🚚",
+        "color_theme": "gold",
+        "tier": "premium",
+        "active": true
+    },
+    {
+        "id": "analytics",
+        "title": "Análise de Dados",
+        "description": "Dashboard de estatísticas e mapas de calor.",
+        "icon": "📊",
+        "color_theme": "gray",
+        "tier": "premium",
+        "active": true
+    }
+]
