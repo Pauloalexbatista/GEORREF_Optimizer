@@ -44,3 +44,15 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Security - API Keys and Sensitive Data
+config/google_api_log.csv
+config/usage.json
+config/*.json
+config/*.csv
+*.key
+*.pem
+secrets.json
+credentials.json
+.env
+.env.local
