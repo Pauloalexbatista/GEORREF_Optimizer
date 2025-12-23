@@ -112,6 +112,17 @@ st.markdown("""
         color: white !important;
     }
     
+    /* Fix number input visibility in sidebar */
+    [data-testid="stSidebar"] input[type="number"] {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+    
+    [data-testid="stSidebar"] .stNumberInput input {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+    
     /* Data Editor */
     .stDataFrame {
         border: 2px solid var(--cool-steel);
@@ -927,86 +938,128 @@ def render_main_app():
                 )
 
 def main():
-    st.sidebar.title("Navegação")
-    page = st.sidebar.radio("Ir para", ["Aplicação Principal", "Debug Geocoding"])
+    # Initialize session state for phases
+    if 'current_phase' not in st.session_state:
+        st.session_state['current_phase'] = 1
     
-    if page == "Aplicação Principal":
-        render_main_app()
-    else:
-        render_debug_page()
+    # Import phase components
+    from components.phase_navigator import PhaseNavigator
+    from components.phase1_georeferencing import Phase1Georeferencing
+    from components.phase2_fleet_warehouses import Phase2FleetWarehouses
+    from components.phase3_planning import Phase3Planning
+    
+    # Render phase navigator in sidebar
+    PhaseNavigator.render_sidebar()
+    
+    # Render current phase
+    current_phase = st.session_state['current_phase']
+    
+    if current_phase == 1:
+        Phase1Georeferencing.render()
+    elif current_phase == 2:
+        Phase2FleetWarehouses.render()
+    elif current_phase == 3:
+        Phase3Planning.render()
+    
+    # --- SIDEBAR EXTRAS ---
+    render_sidebar_extras()
 
-    # --- SIDEBAR CONFIG ---
+
+def render_sidebar_extras():
+    """Render additional sidebar content (templates, Google config, etc.)"""
+    
+    # --- TEMPLATES ---
     st.sidebar.markdown("---")
     st.sidebar.header("📁 Gestão de Templates")
     
-    # Import template manager
     from utils.template_manager import (
-        create_deliveries_template, create_fleet_template,
+        create_deliveries_template, create_fleet_warehouses_template,
         generate_random_deliveries, generate_random_fleet
     )
     
-    # Export Empty Templates
-    st.sidebar.markdown("**Exportar Templates Vazios:**")
+    # ===== SECTION 1: Empty Templates =====
+    st.sidebar.markdown("### 📋 Templates Vazios")
+    st.sidebar.caption("Para começar do zero com os seus próprios dados")
+    
     col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        # Generate only when button is clicked to avoid flickering
-        if st.download_button(
+        st.download_button(
             label="📥 Entregas",
             data=create_deliveries_template(),
             file_name="Template_Entregas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key="download_deliveries_template"
-        ):
-            pass
+            key="download_deliveries_template",
+            help="Template vazio para preencher com as suas entregas"
+        )
     
     with col2:
-        if st.download_button(
+        st.download_button(
             label="📥 Frota",
-            data=create_fleet_template(),
-            file_name="Template_Frota.xlsx",
+            data=create_fleet_warehouses_template(),
+            file_name="Template_Frota_Armazens.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key="download_fleet_template"
-        ):
-            pass
+            key="download_fleet_warehouses_template",
+            help="Template vazio para configurar frota e armazéns"
+        )
     
-    # Generate Random Test Data
-    st.sidebar.markdown("**Gerar Dados de Teste:**")
+    # ===== SECTION 2: Test Data Generation =====
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🎲 Gerar Dados de Teste")
+    st.sidebar.caption("Ficheiros de exemplo para testar o sistema")
     
-    n_deliveries = st.sidebar.number_input(
-        "Nº Entregas",
-        min_value=10,
-        max_value=500,
-        value=50,
-        step=10
-    )
+    # Configuration for test data
+    with st.sidebar.expander("⚙️ Configurar Dados de Teste", expanded=False):
+        n_deliveries = st.number_input(
+            "Nº Entregas",
+            min_value=10,
+            max_value=500,
+            value=50,
+            step=10,
+            help="Quantidade de entregas a gerar"
+        )
+        
+        quality_levels = st.multiselect(
+            "Níveis de Qualidade",
+            options=[1, 2, 3, 4, 5, 6, 7],
+            default=[1, 2, 3, 4, 5],
+            help="Filtrar moradas por nível de qualidade (1=melhor, 7=pior)"
+        )
+        
+        n_vehicles = st.slider(
+            "Nº Veículos", 
+            min_value=3, 
+            max_value=10, 
+            value=5,
+            help="Quantidade de veículos na frota de teste"
+        )
     
-    quality_levels = st.sidebar.multiselect(
-        "Níveis de Qualidade",
-        options=[1, 2, 3, 4, 5, 6, 7],
-        default=[1, 2, 3, 4, 5],
-        help="Filtrar moradas por nível de qualidade"
-    )
-    
+    # Generate buttons
     col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        if st.button("🎲 Entregas", use_container_width=True):
+        if st.button("🎲 Entregas", use_container_width=True, help="Gerar ficheiro de entregas aleatórias"):
             try:
-                random_deliveries = generate_random_deliveries(n_deliveries, quality_levels)
-                st.session_state['random_deliveries'] = random_deliveries
-                st.sidebar.success(f"✅ {n_deliveries} entregas geradas!")
+                if not quality_levels:
+                    st.sidebar.warning("⚠️ Selecione pelo menos 1 nível de qualidade!")
+                else:
+                    random_deliveries = generate_random_deliveries(n_deliveries, quality_levels)
+                    st.session_state['random_deliveries'] = random_deliveries
+                    st.sidebar.success(f"✅ {n_deliveries} entregas geradas!")
             except Exception as e:
                 st.sidebar.error(f"Erro: {str(e)}")
     
     with col2:
-        if st.button("🎲 Frota", use_container_width=True):
-            n_vehicles = st.sidebar.slider("Nº Veículos", 3, 10, 5)
-            random_fleet = generate_random_fleet(n_vehicles)
-            st.session_state['random_fleet'] = random_fleet
-            st.sidebar.success(f"✅ {n_vehicles} veículos gerados!")
+        if st.button("🎲 Frota", use_container_width=True, help="Gerar ficheiro de frota e armazéns aleatórios"):
+            try:
+                from utils.template_manager import generate_random_fleet_warehouses
+                random_fleet = generate_random_fleet_warehouses(n_vehicles)
+                st.session_state['random_fleet'] = random_fleet
+                st.sidebar.success(f"✅ Frota gerada com {n_vehicles} veículos!")
+            except Exception as e:
+                st.sidebar.error(f"Erro: {str(e)}")
     
     # Download generated files
     if 'random_deliveries' in st.session_state:
@@ -1015,16 +1068,18 @@ def main():
             data=st.session_state['random_deliveries'],
             file_name=f"Entregas_Teste_{n_deliveries}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            use_container_width=True,
+            help="Descarregar ficheiro de entregas de teste gerado"
         )
     
     if 'random_fleet' in st.session_state:
         st.sidebar.download_button(
             label="📥 Download Frota Gerada",
             data=st.session_state['random_fleet'],
-            file_name="Frota_Teste.xlsx",
+            file_name=f"Frota_Armazens_Teste_{n_vehicles}v.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            use_container_width=True,
+            help="Descarregar ficheiro de frota de teste gerado"
         )
     
     # --- GOOGLE CONFIG ---
@@ -1041,7 +1096,12 @@ def main():
     except Exception:
         pass
 
-    api_key = st.sidebar.text_input("Google Maps API Key", value=default_key, type="password", help="Insira a sua chave para ativar o geocoding de alta precisão.")
+    api_key = st.sidebar.text_input(
+        "Google Maps API Key",
+        value=default_key,
+        type="password",
+        help="Insira a sua chave para ativar o geocoding de alta precisão."
+    )
     
     if api_key:
         st.session_state['google_api_key'] = api_key
@@ -1102,7 +1162,9 @@ def main():
             'route_locations', 'route_valid_df', 'random_deliveries', 'random_fleet',
             'continue_with_failures', 'manual_correction_mode', 'failed_clients',
             'original_df', 'geocoding_results', 'corrections', 'current_correction_index',
-            'corrected_results'
+            'corrected_results', 'clients_geocoded', 'clients_original_df',
+            'warehouses', 'current_phase', 'phase_1_complete', 'phase_2_complete',
+            'total_failed_count', 'temp_correction', 'route_distance_matrix', 'route_metrics'
         ]
         
         for key in keys_to_clear:
@@ -1111,6 +1173,7 @@ def main():
         
         st.sidebar.success("✅ Sistema reiniciado!")
         st.rerun()
+
 
 if __name__ == "__main__":
     main()

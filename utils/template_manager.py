@@ -29,6 +29,13 @@ FLEET_COLUMNS = [
     'Horario_Fim'
 ]
 
+WAREHOUSE_COLUMNS = [
+    'Nome_Armazem',
+    'Morada',
+    'CP',
+    'Localidade'
+]
+
 # ==================== EMPTY TEMPLATE GENERATION ====================
 
 def create_deliveries_template():
@@ -54,7 +61,7 @@ def create_deliveries_template():
     return buffer.getvalue()
 
 def create_fleet_template():
-    """Generate empty fleet template Excel file."""
+    """Generate empty fleet template Excel file (OLD - deprecated)."""
     df = pd.DataFrame(columns=FLEET_COLUMNS)
     
     # Add example rows
@@ -64,6 +71,128 @@ def create_fleet_template():
     
     buffer = BytesIO()
     df.to_excel(buffer, index=False, engine='openpyxl')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def create_fleet_warehouses_template():
+    """Generate combined Fleet+Warehouses template with 2 sheets."""
+    
+    # Sheet 1: Warehouses (3 examples)
+    df_warehouses = pd.DataFrame(columns=WAREHOUSE_COLUMNS)
+    df_warehouses.loc[0] = ['Armazém Lisboa Centro', 'Rua do Comércio, 45', '1100-150', 'Lisboa']
+    df_warehouses.loc[1] = ['Armazém Cascais', 'Avenida Marginal, 200', '2750-374', 'Cascais']
+    df_warehouses.loc[2] = ['Armazém Sintra', 'Rua das Flores, 78', '2710-405', 'Sintra']
+    
+    # Sheet 2: Fleet (at least 1 vehicle per warehouse)
+    df_fleet = pd.DataFrame(columns=['Veiculo', 'Armazem', 'Capacidade_KG', 'Custo_KM', 'Velocidade_Media', 'Horario_Inicio', 'Horario_Fim'])
+    df_fleet.loc[0] = ['Van 1', 'Armazém Lisboa Centro', 500, 0.50, 40, '08:00', '18:00']
+    df_fleet.loc[1] = ['Van 2', 'Armazém Lisboa Centro', 750, 0.60, 40, '08:00', '18:00']
+    df_fleet.loc[2] = ['Camião 1', 'Armazém Cascais', 1000, 0.70, 40, '08:00', '18:00']
+    df_fleet.loc[3] = ['Van 3', 'Armazém Sintra', 600, 0.55, 40, '08:00', '18:00']
+    
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_warehouses.to_excel(writer, sheet_name='Armazéns', index=False)
+        df_fleet.to_excel(writer, sheet_name='Frota', index=False)
+    
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def generate_random_fleet_warehouses(n_vehicles=5, db_path=DB_FILE):
+    """
+    Generate random fleet and warehouses for testing.
+    Creates 3 random warehouses in Lisboa area and distributes vehicles among them.
+    
+    Args:
+        n_vehicles: Number of vehicles to generate (3-10)
+        db_path: Path to geocoding database
+    
+    Returns:
+        Excel file bytes with 2 sheets
+    """
+    n_vehicles = max(3, min(10, n_vehicles))
+    
+    # Sample 3 random addresses from Lisboa area for warehouses
+    conn = sqlite3.connect(db_path)
+    
+    query = """
+        SELECT full_street, CP4, cc_desig, LATITUDE, LONGITUDE
+        FROM pt_addresses
+        WHERE quality_score IN (1, 2, 3)
+        AND LATITUDE IS NOT NULL
+        AND LONGITUDE IS NOT NULL
+        AND cc_desig IN ('Lisboa', 'Cascais', 'Sintra', 'Oeiras', 'Loures')
+        ORDER BY RANDOM()
+        LIMIT 3
+    """
+    
+    df_wh_addresses = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    if len(df_wh_addresses) < 3:
+        raise ValueError("Not enough addresses in database for warehouses")
+    
+    # Create warehouses
+    warehouses = []
+    warehouse_names = ['Armazém Central', 'Armazém Norte', 'Armazém Sul']
+    
+    for i, row in df_wh_addresses.iterrows():
+        cp4 = str(row['CP4']) if pd.notna(row['CP4']) else ''
+        cp7 = f"{cp4}-{random.randint(100, 999):03d}" if cp4 else ''
+        
+        warehouses.append({
+            'Nome_Armazem': warehouse_names[i],
+            'Morada': row['full_street'],
+            'CP': cp7 if cp7 else cp4,
+            'Localidade': row['cc_desig'] if pd.notna(row['cc_desig']) else 'Lisboa'
+        })
+    
+    df_warehouses = pd.DataFrame(warehouses)
+    
+    # Create fleet - ensure at least 1 vehicle per warehouse
+    fleet = []
+    vehicle_types = [
+        ('Carrinha Pequena', 300, 0.40, 45),
+        ('Carrinha Média', 500, 0.50, 40),
+        ('Carrinha Grande', 750, 0.60, 40),
+        ('Camião Pequeno', 1000, 0.70, 35),
+        ('Camião Médio', 1500, 0.80, 35),
+    ]
+    
+    # First, assign 1 vehicle to each warehouse
+    for i in range(3):
+        vtype = random.choice(vehicle_types)
+        fleet.append({
+            'Veiculo': f"{vtype[0]} {i+1}",
+            'Armazem': warehouse_names[i],
+            'Capacidade_KG': vtype[1] + random.randint(-50, 50),
+            'Custo_KM': round(vtype[2] + random.uniform(-0.05, 0.05), 2),
+            'Velocidade_Media': vtype[3] + random.randint(-5, 5),
+            'Horario_Inicio': random.choice(['07:00', '08:00', '09:00']),
+            'Horario_Fim': random.choice(['17:00', '18:00', '19:00'])
+        })
+    
+    # Add remaining vehicles randomly
+    for i in range(3, n_vehicles):
+        vtype = random.choice(vehicle_types)
+        fleet.append({
+            'Veiculo': f"{vtype[0]} {i+1}",
+            'Armazem': random.choice(warehouse_names),
+            'Capacidade_KG': vtype[1] + random.randint(-50, 50),
+            'Custo_KM': round(vtype[2] + random.uniform(-0.05, 0.05), 2),
+            'Velocidade_Media': vtype[3] + random.randint(-5, 5),
+            'Horario_Inicio': random.choice(['07:00', '08:00', '09:00']),
+            'Horario_Fim': random.choice(['17:00', '18:00', '19:00'])
+        })
+    
+    df_fleet = pd.DataFrame(fleet)
+    
+    # Create Excel with 2 sheets
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_warehouses.to_excel(writer, sheet_name='Armazéns', index=False)
+        df_fleet.to_excel(writer, sheet_name='Frota', index=False)
+    
     buffer.seek(0)
     return buffer.getvalue()
 

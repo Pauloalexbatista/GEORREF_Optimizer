@@ -269,3 +269,258 @@ Timestamp,Address,Status,Cost
 2025-11-30 23:56:40,Carriche,ZERO_RESULTS,1
 2025-11-30 23:56:56,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
 2025-11-30 23:58:57,Carriche,ZERO_RESULTS,1
+2025-12-21 12:52:01,Casal Vistoso,ZERO_RESULTS,1
+2025-12-21 12:52:19,Escola de Medicina Veterinária,ZERO_RESULTS,1
+2025-12-21 12:52:22,Mar,ZERO_RESULTS,1
+2025-12-21 12:52:33,Buraca,SUCCESS,1
+2025-12-21 12:52:40,Uruguai,ZERO_RESULTS,1
+2025-12-21 12:52:50,Galvão,ZERO_RESULTS,1
+2025-12-21 12:52:55,Galinheiras,ZERO_RESULTS,1
+2025-12-21 12:52:58,Alcântara,ZERO_RESULTS,1
+2025-12-21 12:53:08,Tomás Del Negro Alta de Lisboa,ZERO_RESULTS,1
+2025-12-21 12:53:11,Atafonas,ZERO_RESULTS,1
+2025-12-21 12:53:41,Quintinha,ZERO_RESULTS,1
+2025-12-21 12:54:02,Junqueira,ZERO_RESULTS,1
+2025-12-21 12:54:19,Santo António dos Capuchos,ZERO_RESULTS,1
+2025-12-21 12:54:37,República,ZERO_RESULTS,1
+2025-12-21 13:02:10,Cidade de Manchester,ERROR: HTTPSConnectionPool(host='maps.googleapis.com', port=443): Max retries exceeded with url: /maps/api/geocode/json?address=Cidade+de+Manchester&components=administrative_area%3ALisboa+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++%7Ccountry%3APT%7Cpostal_code%3A1170-721&key=AIzaSyAFV7m8Qv3rqlUA90rnYGMqVB25wrwQUOU (Caused by NameResolutionError("HTTPSConnection(host='maps.googleapis.com', port=443): Failed to resolve 'maps.googleapis.com' ([Errno 11001] getaddrinfo failed)")),0
+2025-12-21 13:02:34,Casal Vistoso,ZERO_RESULTS,1
+2025-12-21 13:03:10,Fernando Palha,ZERO_RESULTS,1
+2025-12-21 13:03:18,Escola de Medicina Veterinária,ZERO_RESULTS,1
+2025-12-21 13:03:23,Mar,ZERO_RESULTS,1
+2025-12-21 13:03:33,Buraca,SUCCESS,1
+2025-12-21 13:03:38,Uruguai,ZERO_RESULTS,1
+2025-12-21 13:03:49,Galvão,ZERO_RESULTS,1
+2025-12-21 13:03:53,Galinheiras,ZERO_RESULTS,1
+2025-12-21 13:03:57,Alcântara,ZERO_RESULTS,1
+2025-12-21 13:04:04,Tomás Del Negro Alta de Lisboa,ZERO_RESULTS,1
+2025-12-21 13:04:08,Atafonas,ZERO_RESULTS,1
+2025-12-21 13:04:38,Quintinha,ZERO_RESULTS,1
+2025-12-21 13:05:04,Junqueira,ZERO_RESULTS,1
+2025-12-21 13:05:19,Santo António dos Capuchos,ZERO_RESULTS,1
+2025-12-21 13:05:36,República,ZERO_RESULTS,1
+2025-12-21 13:05:42,Cidade de Manchester,ZERO_RESULTS,1
+2025-12-21 13:05:50,Particular Rua Manuel Soares Guedes,ZERO_RESULTS,1
+2025-12-21 13:07:51,Casal Vistoso,ZERO_RESULTS,1
+2025-12-21 13:08:06,Escola de Medicina Veterinária,ZERO_RESULTS,1
+2025-12-21 13:08:09,Mar,ZERO_RESULTS,1
+2025-12-21 13:08:20,Buraca,SUCCESS,1
+2025-12-21 13:08:26,Uruguai,ZERO_RESULTS,1
+2025-12-21 13:08:35,Galvão,ZERO_RESULTS,1
+2025-12-21 13:08:39,Galinheiras,ZERO_RESULTS,1
+2025-12-21 13:08:44,Alcântara,ZERO_RESULTS,1
+2025-12-21 13:08:52,Tomás Del Negro Alta de Lisboa,ZERO_RESULTS,1
+2025-12-21 13:08:56,Atafonas,ZERO_RESULTS,1
+2025-12-21 13:09:26,Quintinha,ZERO_RESULTS,1
+2025-12-21 13:09:51,Junqueira,ZERO_RESULTS,1
+2025-12-21 13:10:07,Santo António dos Capuchos,ZERO_RESULTS,1
+2025-12-21 13:10:23,República,ZERO_RESULTS,1
+2025-12-21 13:10:30,Cidade de Manchester,ZERO_RESULTS,1
+2025-12-21 13:10:36,Particular Rua Manuel Soares Guedes,ZERO_RESULTS,1
+2025-12-21 13:15:20,Casal Vistoso,ZERO_RESULTS,1
+2025-12-21 13:15:33,Escola de Medicina Veterinária,ZERO_RESULTS,1
+2025-12-21 13:15:37,Mar,ZERO_RESULTS,1
+2025-12-21 13:15:48,Buraca,SUCCESS,1
+2025-12-21 13:15:55,Uruguai,ZERO_RESULTS,1
+2025-12-21 13:16:04,Galvão,ZERO_RESULTS,1
+2025-12-21 13:16:08,Galinheiras,ZERO_RESULTS,1
+2025-12-21 13:16:12,Alcântara,ZERO_RESULTS,1
+2025-12-21 13:16:20,Tomás Del Negro Alta de Lisboa,ZERO_RESULTS,1
+2025-12-21 13:16:23,Atafonas,ZERO_RESULTS,1
+2025-12-21 13:16:55,Quintinha,ZERO_RESULTS,1
+2025-12-21 13:17:18,Junqueira,ZERO_RESULTS,1
+2025-12-21 13:17:37,Santo António dos Capuchos,ZERO_RESULTS,1
+2025-12-21 13:17:54,República,ZERO_RESULTS,1
+2025-12-21 13:18:00,Cidade de Manchester,ZERO_RESULTS,1
+2025-12-21 13:18:07,Particular Rua Manuel Soares Guedes,ZERO_RESULTS,1
+2025-12-21 13:19:39,Casal Vistoso,ZERO_RESULTS,1
+2025-12-21 13:19:53,Escola de Medicina Veterinária,ZERO_RESULTS,1
+2025-12-21 13:19:57,Mar,ZERO_RESULTS,1
+2025-12-21 13:20:07,Buraca,SUCCESS,1
+2025-12-21 13:20:13,Uruguai,ZERO_RESULTS,1
+2025-12-21 13:20:22,Galvão,ZERO_RESULTS,1
+2025-12-21 13:20:26,Galinheiras,ZERO_RESULTS,1
+2025-12-21 13:20:30,Alcântara,ZERO_RESULTS,1
+2025-12-21 13:20:38,Tomás Del Negro Alta de Lisboa,ZERO_RESULTS,1
+2025-12-21 13:20:41,Atafonas,ZERO_RESULTS,1
+2025-12-21 13:21:09,Quintinha,ZERO_RESULTS,1
+2025-12-21 13:21:34,Junqueira,ZERO_RESULTS,1
+2025-12-21 13:21:51,Santo António dos Capuchos,ZERO_RESULTS,1
+2025-12-21 13:22:10,República,ZERO_RESULTS,1
+2025-12-21 13:22:15,Cidade de Manchester,ZERO_RESULTS,1
+2025-12-21 13:22:22,Particular Rua Manuel Soares Guedes,ZERO_RESULTS,1
+2025-12-21 13:27:26,Alfinetes,ZERO_RESULTS,1
+2025-12-21 13:27:38,Tapada,ZERO_RESULTS,1
+2025-12-21 14:58:00,Alfinetes,ZERO_RESULTS,1
+2025-12-21 14:58:10,Tapada,ZERO_RESULTS,1
+2025-12-21 15:09:49,Lisboa,SUCCESS,1
+2025-12-21 16:48:34,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 16:48:51,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 16:49:04,Benfica,SUCCESS,1
+2025-12-21 16:49:08,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 16:49:23,Campolide,ZERO_RESULTS,1
+2025-12-21 16:49:36,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 16:50:04,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 16:50:13,Soeiros,ZERO_RESULTS,1
+2025-12-21 16:50:39,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 16:51:18,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 17:16:12,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 17:16:27,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 17:16:38,Benfica,SUCCESS,1
+2025-12-21 17:16:41,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 17:16:56,Campolide,ZERO_RESULTS,1
+2025-12-21 17:17:09,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 17:17:37,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 17:17:46,Soeiros,ZERO_RESULTS,1
+2025-12-21 17:18:11,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 17:23:20,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 17:23:36,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 17:23:51,Benfica,SUCCESS,1
+2025-12-21 17:23:53,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 17:24:06,Campolide,ZERO_RESULTS,1
+2025-12-21 17:24:20,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 17:24:49,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 17:24:57,Soeiros,ZERO_RESULTS,1
+2025-12-21 17:25:23,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 17:53:14,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 17:53:32,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 17:53:45,Benfica,SUCCESS,1
+2025-12-21 17:53:48,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 17:54:01,Campolide,ZERO_RESULTS,1
+2025-12-21 17:54:16,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 17:54:47,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 17:54:56,Soeiros,ZERO_RESULTS,1
+2025-12-21 17:55:23,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 18:23:08,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 18:23:23,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 18:23:34,Benfica,SUCCESS,1
+2025-12-21 18:23:38,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 18:23:51,Campolide,ZERO_RESULTS,1
+2025-12-21 18:24:05,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 18:24:33,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 18:24:42,Soeiros,ZERO_RESULTS,1
+2025-12-21 18:25:08,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 19:08:55,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 19:09:09,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 19:09:22,Benfica,SUCCESS,1
+2025-12-21 19:09:26,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 19:09:40,Campolide,ZERO_RESULTS,1
+2025-12-21 19:09:55,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 19:10:21,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 19:10:30,Soeiros,ZERO_RESULTS,1
+2025-12-21 19:10:56,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 19:16:23,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 19:16:41,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 19:16:52,Benfica,SUCCESS,1
+2025-12-21 19:16:55,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 19:17:11,Campolide,ZERO_RESULTS,1
+2025-12-21 19:17:24,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 19:17:51,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 19:17:59,Soeiros,ZERO_RESULTS,1
+2025-12-21 19:18:25,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 19:29:47,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 19:30:05,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 19:30:19,Benfica,SUCCESS,1
+2025-12-21 19:30:22,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 19:30:37,Campolide,ZERO_RESULTS,1
+2025-12-21 19:30:51,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 19:31:49,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 19:32:07,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 19:32:21,Benfica,SUCCESS,1
+2025-12-21 19:32:25,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 19:32:37,Campolide,ZERO_RESULTS,1
+2025-12-21 19:32:50,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 19:33:20,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 19:33:28,Soeiros,ZERO_RESULTS,1
+2025-12-21 19:33:56,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 19:51:42,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 19:51:58,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 19:52:11,Benfica,SUCCESS,1
+2025-12-21 19:52:13,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 19:52:26,Campolide,ZERO_RESULTS,1
+2025-12-21 19:52:41,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 19:53:09,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 19:53:20,Soeiros,ZERO_RESULTS,1
+2025-12-21 19:53:47,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 21:04:34,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 21:04:51,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 21:05:03,Benfica,SUCCESS,1
+2025-12-21 21:05:07,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 21:05:22,Campolide,ZERO_RESULTS,1
+2025-12-21 21:05:37,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 21:06:03,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 21:06:12,Soeiros,ZERO_RESULTS,1
+2025-12-21 21:06:39,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-21 21:21:38,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 21:21:50,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 21:22:42,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 21:28:48,Paulo Dias de Novais Bairro das Amendoeiras,ZERO_RESULTS,1
+2025-12-21 21:29:06,Manuel Caetano de Sousa,ZERO_RESULTS,1
+2025-12-21 21:29:21,Benfica,SUCCESS,1
+2025-12-21 21:29:24,Fonte do Louro,ZERO_RESULTS,1
+2025-12-21 21:29:39,Campolide,ZERO_RESULTS,1
+2025-12-21 21:29:55,Travessa Fábrica dos Pentes,ZERO_RESULTS,1
+2025-12-21 21:30:23,Artur Bual Bairro Marquês de Abrantes,ZERO_RESULTS,1
+2025-12-21 21:30:31,Soeiros,ZERO_RESULTS,1
+2025-12-21 21:30:59,Avelino Teixeira da Mota Bairro da Flamenga,ZERO_RESULTS,1
+2025-12-22 23:03:14,Bom Sucesso,ZERO_RESULTS,1
+2025-12-22 23:03:26,São Nicolau,ZERO_RESULTS,1
+2025-12-22 23:03:51,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-22 23:04:02,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-22 23:04:09,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-22 23:05:17,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-22 23:23:10,Bom Sucesso,ZERO_RESULTS,1
+2025-12-22 23:23:22,São Nicolau,ZERO_RESULTS,1
+2025-12-22 23:23:48,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-22 23:23:58,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-22 23:24:05,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-22 23:29:51,Bom Sucesso,ZERO_RESULTS,1
+2025-12-22 23:30:02,São Nicolau,ZERO_RESULTS,1
+2025-12-22 23:30:28,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-22 23:30:37,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-22 23:30:44,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-22 23:43:57,Bom Sucesso,ZERO_RESULTS,1
+2025-12-22 23:44:08,São Nicolau,ZERO_RESULTS,1
+2025-12-22 23:44:34,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-22 23:44:43,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-22 23:44:50,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-22 23:51:36,Bom Sucesso,ZERO_RESULTS,1
+2025-12-22 23:51:48,São Nicolau,ZERO_RESULTS,1
+2025-12-22 23:52:11,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-22 23:52:22,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-22 23:52:29,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 00:00:43,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 00:00:59,São Nicolau,ZERO_RESULTS,1
+2025-12-23 00:01:28,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 00:01:41,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 00:01:48,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 00:19:55,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 00:20:06,São Nicolau,ZERO_RESULTS,1
+2025-12-23 00:20:33,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 00:20:43,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 00:20:51,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 00:32:05,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 00:32:18,São Nicolau,ZERO_RESULTS,1
+2025-12-23 00:32:43,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 00:32:54,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 00:33:00,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 00:59:56,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 01:00:08,São Nicolau,ZERO_RESULTS,1
+2025-12-23 01:00:32,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 01:00:44,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 01:00:52,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 01:20:13,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 01:20:25,São Nicolau,ZERO_RESULTS,1
+2025-12-23 01:20:50,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 01:21:01,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 01:21:08,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 01:44:41,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 01:44:54,São Nicolau,ZERO_RESULTS,1
+2025-12-23 01:45:20,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 01:45:31,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 01:45:38,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
+2025-12-23 01:45:46,Bom Sucesso,ZERO_RESULTS,1
+2025-12-23 01:45:59,São Nicolau,ZERO_RESULTS,1
+2025-12-23 01:46:23,"Rua Morais Soares, Arroios, Lisboa, 1000-098, Portugal",ZERO_RESULTS,1
+2025-12-23 01:46:33,"Conde, Guimarães, Braga, Portugal",ZERO_RESULTS,1
+2025-12-23 01:46:40,Gregório Lopes Torres do Restelo,ZERO_RESULTS,1
