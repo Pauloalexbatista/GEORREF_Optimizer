@@ -49,6 +49,7 @@ Thumbs.db
 config/google_api_log.csv
 config/usage.json
 config/*.json
+!config/*.example.json
 config/*.csv
 *.key
 *.pem

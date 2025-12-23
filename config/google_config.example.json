@@ -1,0 +1,6 @@
+{
+    "google_maps_api_key": "",
+    "geocoding_enabled": true,
+    "max_requests_per_day": 1000,
+    "cache_results": true
+}
