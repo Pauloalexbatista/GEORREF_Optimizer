@@ -1,9 +1,9 @@
 # 🧪 Relatório de Testes - GEO Route Optimizer
 
-**Data:** 2025-12-22  
-**Testador:** Paulo  
-**Versão:** 1.0  
-**Objetivo:** Validar fluxo completo end-to-end (Fase 1 → Fase 2 → Fase 3)
+**Data:** 2026-03-17  
+**Testador:** Paulo (via opencode)  
+**Versão:** 2.0  
+**Objetivo:** Suite de testes automatizados
 
 ---
 
@@ -11,11 +11,12 @@
 
 | Métrica | Resultado |
 |---------|-----------|
-| **Status Geral** | ⬜ Passou / ⬜ Passou com Issues / ⬜ Falhou |
-| **Fases Testadas** | ⬜ Fase 1 / ⬜ Fase 2 / ⬜ Fase 3 |
-| **Bugs Críticos** | 0 |
-| **Bugs Menores** | 0 |
-| **Melhorias Sugeridas** | 0 |
+| **Status Geral** | ✅ PASSOU |
+| **Total Testes** | 17 |
+| **Testes Passed** | 17 |
+| **Testes Failed** | 0 |
+| **Duração** | 64 segundos |
+| **Warnings** | 5 (deprecation) |
 
 ---
 

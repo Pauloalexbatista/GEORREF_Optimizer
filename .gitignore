@@ -57,3 +57,11 @@ secrets.json
 credentials.json
 .env
 .env.local
+
+# Additional Project Ignored files
+scratch/
+.pytest_cache/
+georoute.pid
+georoute.log
+mining_bot.log
+harvested_data.db

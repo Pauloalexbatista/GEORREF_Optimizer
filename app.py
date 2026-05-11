@@ -19,12 +19,44 @@ from utils.failure_handler import GeocodingFailureHandler
 from components.manual_correction_ui import ManualCorrectionUI
 from datetime import datetime
 
+# Importar autenticação
+import auth
+from database import (
+    init_database, save_metricas_projeto, get_plano_info, check_plano_limites,
+    get_google_api_key
+)
+
+
+def get_effective_api_key():
+    """Obter API key efetiva - primeiro global, depois do utilizador"""
+    # Tentar primeiro a API key global (do admin)
+    global_key = get_google_api_key()
+    if global_key:
+        return global_key
+    
+    # Depois a API key do utilizador (se tiver)
+    user_key = st.session_state.get('google_api_key')
+    if user_key:
+        return user_key
+    
+    # Se nenhuma, retornar None
+    return None
+
+# Inicializar base de dados e sessão
+init_database()
+auth.init_session_state()
+
 # Page Config
 st.set_page_config(
-    page_title="Geocoding App Pro",
-    page_icon="🌍",
+    page_title="GeoRoute Pro",
+    page_icon="🚚",
     layout="wide"
 )
+
+# Verificar autenticação - se não estiver logado, mostrar página de login
+if not auth.is_logged_in():
+    auth.render_login_page()
+    st.stop()
 
 # Constants
 DB_FILE = 'geocoding.db'
@@ -242,7 +274,7 @@ def render_debug_page():
     d_concelho = c3.text_input("Concelho")
     
     if st.button("🔍 Testar Motor"):
-        api_key = st.session_state.get('google_api_key')
+        api_key = get_effective_api_key()
         geocoder = WaterfallGeocoder(DB_FILE, google_api_key=api_key)
         
         st.markdown("### 1. Smart Cleaning")
@@ -287,7 +319,34 @@ def render_debug_page():
             st.warning("Não encontrado no OSM.")
 
 def render_main_app():
-    st.title("Geocoding App Pro 🚀")
+    # Renderizar sidebar com info do utilizador
+    auth.render_sidebar()
+    
+    st.title(f"GeoRoute Pro")
+    
+    # Verificar se há projeto selecionado
+    projeto_id = st.session_state.get('projeto_atual')
+    if not projeto_id:
+        st.markdown("""
+        ## Bem-vindo ao GeoRoute Pro! 👋
+        
+        Para começar, crie um novo projeto na sidebar.
+        
+        ### Como usar:
+        1. Clique em **"+ Novo Projeto"** na sidebar
+        2. Dê um nome ao seu projeto
+        3. Carregue o seu ficheiro Excel com moradas
+        4. O sistema will geocodificar e otimizar as rotas
+        
+        ### Precisa de ajuda?
+        - Veja o **USER_GUIDE.md** para instruções detalhadas
+        - Use os **templates** na sidebar para criar ficheiros Excel
+        """)
+        st.info("📋 **Dica:** Use os templates na sidebar para preparar os seus dados!")
+        return
+    
+    # Mostrar info do projeto atual
+    st.success(f"Projeto ativo: {projeto_id}")
     
     uploaded_file = st.file_uploader("Carregar Excel com Moradas", type=['xlsx'])
     
@@ -308,8 +367,16 @@ def render_main_app():
         # Create button and stats side by side
         btn_col, stats_col = st.columns([1, 2])
         
+        # Verificar limites do plano antes de mostrar botão
+        pode_processar, msg_limite = check_plano_limites(st.session_state.get('empresa_id'), 'entregas')
+        
         with btn_col:
-            start_geocoding = st.button("🚀 Iniciar Geocoding")
+            if not pode_processar:
+                st.error(f"❌ {msg_limite}")
+                st.info("💡 Faça upgrade do seu plano para continuar.")
+                start_geocoding = False
+            else:
+                start_geocoding = st.button("🚀 Iniciar Geocoding")
         
         with stats_col:
             if geo_stats['total_sessoes'] > 0:
@@ -324,7 +391,7 @@ def render_main_app():
                 st.info("ℹ️ Primeira sessão - sem estatísticas ainda")
         
         if start_geocoding:
-            api_key = st.session_state.get('google_api_key')
+            api_key = get_effective_api_key()
             geocoder = WaterfallGeocoder(DB_FILE, google_api_key=api_key)
             
             progress_bar = st.progress(0)
@@ -513,7 +580,7 @@ def render_main_app():
             # Import here to avoid caching issues
             from components.manual_correction_ui import ManualCorrectionUI
             
-            api_key = st.session_state.get('google_api_key')
+            api_key = get_effective_api_key()
             geocoder = WaterfallGeocoder(DB_FILE, google_api_key=api_key)
             correction_ui = ManualCorrectionUI(geocoder)
             
@@ -754,7 +821,7 @@ def render_main_app():
         if depot_method == "Pesquisa de Morada":
             depot_search = st.text_input("Pesquisar Morada do Armazém")
             if st.button("📍 Encontrar Armazém"):
-                api_key = st.session_state.get('google_api_key')
+                api_key = get_effective_api_key()
                 geocoder = WaterfallGeocoder(DB_FILE, google_api_key=api_key)
                 d_res, _ = geocoder.resolve_address(depot_search)
                 if d_res and d_res['lat']:
@@ -845,6 +912,25 @@ def render_main_app():
                 col2.metric("Tempo Estimado", f"{total_time_hours:.1f}h")
                 col3.metric("Custo Total", f"{total_cost:.2f}€")
                 col4.metric("Veículos", num_vehicles)
+                
+                # Guardar métricas
+                projeto_id = st.session_state.get('projeto_atual')
+                if projeto_id:
+                    # Contar sucessos e falhas
+                    sucesso = len(optimizable_df) if 'optimizable_df' in locals() else 0
+                    falha = len(failed_df) if 'failed_df' in locals() else 0
+                    total = sucesso + falha
+                    
+                    save_metricas_projeto(
+                        projeto_id=projeto_id,
+                        total_entregas=total,
+                        sucesso=sucesso,
+                        falha=falha,
+                        distancia_km=total_distance_km,
+                        custo=total_cost,
+                        tempo_min=total_time_hours * 60
+                    )
+                    st.caption("📊 Métricas guardadas!")
                 
                 # Per-vehicle metrics
                 st.markdown("#### Detalhes por Veículo")
@@ -967,6 +1053,19 @@ def main():
 
 def render_sidebar_extras():
     """Render additional sidebar content (templates, Google config, etc.)"""
+    
+    # --- DASHBOARD ---
+    from components.dashboard import render_dashboard
+    
+    # Só mostrar se tiver projeto selecionado
+    if st.session_state.get('projeto_atual'):
+        st.sidebar.markdown("---")
+        if st.sidebar.button("📊 Dashboard", use_container_width=True):
+            st.session_state['show_dashboard'] = True
+        
+        if st.session_state.get('show_dashboard'):
+            with st.sidebar.expander("📊 Dashboard", expanded=True):
+                render_dashboard()
     
     # --- TEMPLATES ---
     st.sidebar.markdown("---")

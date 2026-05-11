@@ -1,19 +1,63 @@
-# 🗺️ ROADMAP - GEO Route Optimizer
+# 🗺️ ROADMAP - GeoRoute Pro
 
-**Projeto:** Sistema de Otimização de Rotas com Georreferenciação  
-**Última Atualização:** 2025-12-21  
-**Status Geral:** 🟢 Em Desenvolvimento Ativo
+**Projeto:** Sistema de Otimização de Rotas com Georreferenciação (Versão Comercial)  
+**Última Atualização:** 2026-03-17  
+**Status Geral:** 🟢 Versão Comercial Funcional
 
 ---
 
 ## 📊 Progresso Geral
 
 ```
+Fase 1: Autenticação Multi-Tenant       ████████████████████ 100% ✅
+Fase 2: Sistema de Planos/Limites      ████████████████████ 100% ✅
+Fase 3: Dashboard de Métricas          ████████████████████ 100% ✅
+Fase 4: Google API Centralizada        ████████████████████ 100% ✅
+Testes Unitários                        ████████████████████ 100% ✅
+Documentação                            ████████████████████ 100% ✅
+Próximas Funcionalidades                ████████░░░░░░░░░░░░  30% 🔄
+```
+
+---
+
+## 2026-03-17 - Comercialização v2.0
+
+### O que foi implementado:
+
+1. **Sistema de Autenticação**
+   - Login/Registo de empresas
+   - Hash de passwords
+   - Sessão persistente
+   - Gestão de projetos
+
+2. **Sistema de Planos**
+   - Starter (29€/mês): 100 entregas
+   - Pro (79€/mês): 1000 entregas
+   - Enterprise (199€/mês): 10000 entregas
+   - Verificação automática de limites
+
+3. **Dashboard**
+   - Métricas por projeto
+   - Métricas por empresa
+   - Uso vs limite do plano
+
+4. **Google API Centralizada**
+   - Uma API key para todos os clientes
+   - Configurável no painel admin
+
+5. **Ficheiros de Gestão**
+   - INICIAR.bat - Inicia o servidor
+   - PARAR.bat - Para o servidor
+   - Porta: 8503
+
+---
+
+## 📊 Progresso Anterior (2025-12-21)
+
+```
 Fase 1: Georreferenciação de Clientes    ████████████████████ 100% ✅
 Fase 2: Frota e Armazéns                  ████████████████████ 100% ✅
 Fase 3: Planeamento de Rotas              ████████████████░░░░  85% 🔄
-Testes e Validação                        ████████░░░░░░░░░░░░  40% 🔄
-Documentação                              ████████████░░░░░░░░  60% 🔄
 ```
 
 ---

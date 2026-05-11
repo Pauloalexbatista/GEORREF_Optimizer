@@ -11,3 +11,5 @@ requests
 polyline
 numpy
 openpyxl
+werkzeug
+bcrypt
