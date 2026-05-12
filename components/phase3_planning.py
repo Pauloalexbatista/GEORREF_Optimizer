@@ -891,21 +891,47 @@ class Phase3Planning:
             <h1>📋 Quadro de Horários - Rotas Otimizadas</h1>
         """
         
+        # Fetch configuration metadata for payload limit displays!
+        import streamlit as st
+        fleet_config = st.session_state.get('fleet_config_used', {})
+        
+        active_route_num = 1
+        
         # Group by route
         for route_name in sorted(routes_df['Rota'].unique()):
             route_data = routes_df[routes_df['Rota'] == route_name].sort_values('Ordem')
             
             # Calculate metrics
-            total_dist = route_data['Dist_Acum'].max()
-            total_load = route_data['Carga_Acum'].max()
-            total_vol = route_data['Carga_Vol_Acum'].max() if 'Carga_Vol_Acum' in route_data.columns else 0
+            total_dist = float(route_data['Dist_Acum'].max())
+            total_load = float(route_data['Carga_Acum'].max())
+            total_vol = float(route_data['Carga_Vol_Acum'].max()) if 'Carga_Vol_Acum' in route_data.columns else 0.0
             num_stops = len(route_data)
+            
+            # Construct enriched header string
+            if "PENDENTE" in route_name:
+                display_title = "⚠️ Clientes Pendentes (Não Atribuídos)"
+            else:
+                # Extract safe operational parameters from runtime configuration
+                v_cfg = fleet_config.get(route_name, {})
+                max_kg = v_cfg.get('capacity', 0.0)
+                max_m3 = v_cfg.get('capacity_volume', 0.0)
+                
+                limits = ""
+                if max_kg > 0:
+                    limits += f" — Peso Máx: {max_kg:.0f} kg"
+                if max_m3 > 0:
+                    limits += f" — Vol. Máx: {max_m3:.1f} m³"
+                    
+                display_title = f"Rota {active_route_num} — {route_name}{limits}"
+                active_route_num += 1
             
             html += f"""
             <div class="route-section">
                 <div class="route-header">
-                    <h2 style="margin: 0;">{route_name}</h2>
-                </div>
+                    <h2 style="margin: 0; font-size: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>{display_title}</span>
+                    </h2>
+                </div>"""
                 
                 <div class="metrics">
                     <div class="metric">
