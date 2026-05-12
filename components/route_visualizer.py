@@ -105,7 +105,8 @@ class RouteVisualizer:
         ).add_to(m)
         
         # Display map and capture marker click interactions!
-        return st_folium(m, width=900, height=600, returned_objects=["last_object_clicked"])
+        # Uses container width scaling so it auto-shrinks/grows when placed in a multi-column layout!
+        return st_folium(m, use_container_width=True, height=600, returned_objects=["last_object_clicked"])
     
     @staticmethod
     def _fetch_real_roads(coords):

@@ -665,12 +665,23 @@ class Phase3Planning:
         
         st.markdown("---")
         
-        # Map - Advanced bidirectional telemetry binding
-        map_output = RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
+        # --- PERSISTENT HIGH-FIDELITY MAP STATION ---
+        # Splits the layout into side-by-side columns: The Responsive Map (Left) and the 
+        # Space Commander Controller (Right). Integrates Session State persistence to 
+        # ensure controls never disappear after executing actions!
+        col_map_deck, col_commander_deck = st.columns([3.2, 1.5])
         
-        # --- LIGAR O CÉREBRO AO CLIQUE (SPACE COMMAND PANEL) ---
-        # Captures marker interaction coordinates and renders real-time manual re-assignment controller
-        Phase3Planning._handle_map_clicks(map_output, routes_df)
+        # First, render map container on the left
+        with col_map_deck:
+            st.markdown("#### 🗺️ Visualização e Interação Geográfica")
+            map_output = RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
+            
+        # Proactively process and commit click events into persistent session memory
+        Phase3Planning._process_telemetry_to_state(map_output, routes_df)
+        
+        # Render the fixed, persistent Commander Console on the right!
+        with col_commander_deck:
+            Phase3Planning._render_commander_deck(routes_df)
         
         # External window buttons
         st.markdown("---")
@@ -1037,10 +1048,10 @@ class Phase3Planning:
         return m._repr_html_()
 
     @staticmethod
-    def _handle_map_clicks(map_output, routes_df):
+    def _process_telemetry_to_state(map_output, routes_df):
         """
-        Listens to live Folium javascript click events. Maps the geographic coordinate telemetry
-        to the nearest spreadsheet entity and renders the industrial Commander Panel in the sidebar.
+        Extracts coordinate clicks from st_folium output and locks the closest Client entity
+        into safe persistent streamlit state, preventing UX resets when the application reruns.
         """
         if not map_output:
             return
@@ -1049,87 +1060,108 @@ class Phase3Planning:
         if not last_clicked:
             return
             
-        click_lat = float(last_clicked.get("lat", 0))
-        click_lon = float(last_clicked.get("lng", 0))
+        c_lat = float(last_clicked.get("lat", 0))
+        c_lon = float(last_clicked.get("lng", 0))
         
-        if click_lat == 0 and click_lon == 0:
+        if c_lat == 0 and c_lon == 0:
             return
             
-        # 1. Identify Closest Element via absolute distance vector
-        # We use temporary vectorized arrays to guarantee read-only safety on global dataframe!
-        lat_vector = routes_df['Latitude'].astype(float)
-        lon_vector = routes_df['Longitude'].astype(float)
+        # 1. Fast Manhattan distance vector lookup
+        lats = routes_df['Latitude'].astype(float)
+        lons = routes_df['Longitude'].astype(float)
+        dist = (lats - c_lat).abs() + (lons - c_lon).abs()
         
-        manhattan_diff = (lat_vector - click_lat).abs() + (lon_vector - click_lon).abs()
+        idx = dist.idxmin()
+        if dist.loc[idx] > 0.0001:
+            return # Click was outside client pins (e.g. generic terrain)
+            
+        # 2. LOCK INTO STATE!
+        row = routes_df.loc[idx]
+        st.session_state['active_commander_client_id'] = str(row['Cliente'])
+
+    @staticmethod
+    def _render_commander_deck(routes_df):
+        """
+        Renders the futuristic Persistent Command Panel right next to the live map.
+        Retrieves locked selections from memory state, staying permanently visible until dismissed!
+        """
+        st.markdown("#### 🛰️ Comando da Estação")
         
-        closest_idx = manhattan_diff.idxmin()
-        min_diff = manhattan_diff.loc[closest_idx]
+        c_id = st.session_state.get('active_commander_client_id')
         
-        # Threshold check: 0.0001 degrees is ~10 meters. Prevents depot or road clicks from triggering.
-        if min_diff > 0.0001:
+        if not c_id:
+            # Display an incredibly cool placeholder helping users understand what to do!
+            with st.container(border=True):
+                st.info("💡 **Selecione um Cliente no Mapa** para abrir a consola de controlo rápido.")
+                st.caption("Esta consola permite-lhe gerir transferências individuais em tempo real diretamente ao lado do mapa.")
             return
             
-        target_row = routes_df.loc[closest_idx]
-        client_id = str(target_row['Cliente'])
-        client_addr = str(target_row['Morada'])
-        current_route = str(target_row['Rota'])
-        
-        # --- RENDER HIGH-PREMIUM SPACE COMMAND PANEL IN SIDEBAR ---
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🛰️ Comando de Frota (Clique no Mapa)")
-        
-        st.sidebar.info(f"""
-        🎯 **Cliente Selecionado:**
-        **{client_id}**
-        *{client_addr[:60]}...*
-        
-        🔹 **Rota Atual:** `{current_route}`
-        """)
-        
-        # Fetch all active vehicles to populate target destinations
-        fleet_config = st.session_state.get('fleet_config_used', {})
-        all_vehicles = list(fleet_config.keys())
-        
-        # Ensure PENDENTE exists in choices
-        if "⚠️ PENDENTE" not in all_vehicles:
-            all_vehicles.append("⚠️ PENDENTE")
-            
-        # Safely set starting dropdown index
-        try:
-            start_idx = all_vehicles.index(current_route)
-        except ValueError:
-            start_idx = len(all_vehicles) - 1 if "PENDENTE" in current_route else 0
-            
-        target_dest = st.sidebar.selectbox(
-            "📦 Mover este cliente para:",
-            options=all_vehicles,
-            index=start_idx,
-            key="map_command_vehicle_select"
-        )
-        
-        if target_dest == current_route:
-            st.sidebar.caption("ℹ️ Selecione um veículo diferente para ativar a transferência.")
+        # Search for the client to get live updated route details!
+        match = routes_df[routes_df['Cliente'] == c_id]
+        if len(match) == 0:
+            # Client no longer exists (maybe deleted or config changed), clear state
+            del st.session_state['active_commander_client_id']
+            st.rerun()
             return
             
-        if st.sidebar.button(f"⚡ Transferir para {target_dest}", type="primary", use_container_width=True):
-            with st.spinner("A recalcular horários e métricas operacionais..."):
-                # Extract current solution
-                raw_df = st.session_state['routes_solution']
+        target_row = match.iloc[0]
+        addr = str(target_row.get('Morada', 'N/A'))
+        curr_route = str(target_row.get('Rota', 'N/A'))
+        
+        with st.container(border=True):
+            # Floating Top Dismiss Button
+            top_col1, top_col2 = st.columns([5, 1])
+            with top_col1:
+                st.markdown(f"🎯 **Cliente Ativo:** **{c_id}**")
+            with top_col2:
+                if st.button("❌", help="Limpar Seleção", key="clear_cmd_deck"):
+                    del st.session_state['active_commander_client_id']
+                    st.rerun()
+                    
+            st.caption(f"🏠 *{addr[:70]}...*")
+            st.markdown(f"🔹 **Rota Atual:** `{curr_route}`")
+            st.markdown("---")
+            
+            # Populate vehicle choices (consolidated configured + active)
+            fleet_config = st.session_state.get('fleet_config_used', {})
+            opts = list(dict.fromkeys(list(fleet_config.keys()) + routes_df['Rota'].unique().tolist()))
+            if "⚠️ PENDENTE" not in opts:
+                opts.append("⚠️ PENDENTE")
+            opts.sort(key=lambda x: "ZZZ" if "PENDENTE" in x else x)
+            
+            try:
+                start_idx = opts.index(curr_route)
+            except ValueError:
+                start_idx = len(opts) - 1 if "PENDENTE" in curr_route else 0
                 
-                # 2. Mutate the assignment
-                raw_df.loc[raw_df['Cliente'] == client_id, 'Rota'] = target_dest
+            target_dest = st.selectbox(
+                "📦 Enviar para Carro:",
+                options=opts,
+                index=start_idx,
+                key="persistent_cmd_deck_dest"
+            )
+            
+            if target_dest == curr_route:
+                st.caption("ℹ️ Escolha outro veículo acima.")
+                return
                 
-                # 3. Apply Automatic Logical Sequence Alignment
-                # Sort to ensure consistency (puts newly added at the end of target route)
-                reordered_df = Phase3Planning._simple_reorder_routes(raw_df)
-                
-                # 4. RUN THE MASTER RECALCULATOR (Syncs Dist_Acum, Hours, and Carga_Acum instantly!)
-                synced_df = Phase3Planning._recalculate_all_metrics(reordered_df)
-                
-                # 5. Commit state and refresh UI
-                st.session_state['routes_solution'] = synced_df
-                st.sidebar.success(f"✅ Transferido com sucesso!")
-                st.rerun()
+            if st.button("⚡ Confirmar Rota", type="primary", use_container_width=True, key="btn_persistent_cmd_transfer"):
+                with st.spinner("A transferir..."):
+                    raw_df = st.session_state['routes_solution'].copy()
+                    
+                    # Perform Mutate
+                    raw_df.loc[raw_df['Cliente'] == c_id, 'Rota'] = target_dest
+                    
+                    # Recalculate logic
+                    reordered = Phase3Planning._simple_reorder_routes(raw_df)
+                    synced = Phase3Planning._recalculate_all_metrics(reordered)
+                    
+                    # Save State
+                    st.session_state['routes_solution'] = synced
+                    
+                    # DO NOT CLEAR active_commander_client_id so they can see the update and continue!
+                    st.toast(f"✅ {c_id} transferido para {target_dest}!", icon="🛰️")
+                    st.rerun()
 
     @staticmethod
     def _recalculate_all_metrics(df):
