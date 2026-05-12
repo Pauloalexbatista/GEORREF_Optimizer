@@ -21,13 +21,10 @@ class Phase1Georeferencing:
     
     @staticmethod
     def render():
-        st.title("📍 Fase 1: Georreferenciação de Clientes")
-        st.markdown("**Todos os clientes devem estar georreferenciados antes de avançar.**")
+        # Eliminated Large redundant Title and Subtitle to maximize vertical space.
         
         # Clear any problematic file uploader state
         if 'clients_upload' in st.session_state and st.session_state.get('clients_geocoded') is None:
-            # If there's an upload key but no geocoded data, it might be from a failed upload
-            # Let Streamlit handle it naturally
             pass
         
         # Check if already geocoded
@@ -126,7 +123,35 @@ class Phase1Georeferencing:
             percent = int((i + 1) / len(df) * 100)
             status_text.text(f"Processando {i+1}/{len(df)} ({percent}%): {addr}")
             
-            res, learned = geocoder.resolve_address(addr, cp, city)
+            # --- CHECK IF COORDINATES ALREADY EXIST IN EXCEL (SKIP ENGINE) ---
+            existing_lat = row.get('Latitude') if 'Latitude' in row else None
+            existing_lon = row.get('Longitude') if 'Longitude' in row else None
+            
+            # Check if both are present, numerical and not zero
+            has_coords = False
+            try:
+                if pd.notna(existing_lat) and pd.notna(existing_lon):
+                    lat_val = float(existing_lat)
+                    lon_val = float(existing_lon)
+                    if lat_val != 0 and -90 <= lat_val <= 90:
+                        has_coords = True
+            except (ValueError, TypeError):
+                has_coords = False
+
+            if has_coords:
+                # Immediate short-circuit bypass
+                res = {
+                    'lat': float(existing_lat),
+                    'lon': float(existing_lon),
+                    'quality_level': 0, # Maximum trust rating
+                    'source': 'FICHEIRO',
+                    'address': addr,
+                    'score': 100
+                }
+                learned = None
+            else:
+                # Proceed to standard waterfall
+                res, learned = geocoder.resolve_address(addr, cp, city)
             
             if learned:
                 learned_batch.append(learned)
@@ -187,55 +212,123 @@ class Phase1Georeferencing:
     
     @staticmethod
     def show_results_and_corrections():
-        """Show results with integrated correction interface"""
+        """Show results with super-compact visual layout: Side-by-side Map/Controls + Data Table."""
         
         df_res = st.session_state['clients_geocoded']
         failed_clients = df_res[df_res['Nivel_Qualidade'] == 8]
         
-        # Summary
         total = len(df_res)
         sucesso = len(df_res[df_res['Nivel_Qualidade'] < 8])
         falhas = len(failed_clients)
+        success_rate = (sucesso / total * 100) if total > 0 else 0
         
-        st.header("Resultados do Geocoding")
+        # PAINEL PRINCIPAL EM COLUNAS: Esquerdas (Controlos) | Direita (Mapa)
+        col_ctrl, col_map = st.columns([1, 3])
         
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total", total)
-        col2.metric("Georreferenciados", sucesso, delta=f"{sucesso/total*100:.1f}%")
-        col3.metric("Falhas", falhas, delta=f"{falhas/total*100:.1f}%", delta_color="inverse")
-        col4.metric("Taxa Sucesso", f"{sucesso/total*100:.1f}%")
-        
-        st.markdown("---")
-        
-        # If there are failures, show correction interface
-        if len(failed_clients) > 0:
-            st.warning(f"⚠️ **{len(failed_clients)} clientes** precisam de correção manual.")
-            st.info("👉 Corrija todos os clientes abaixo para avançar para a Fase 2.")
+        with col_ctrl:
+            st.markdown("#### 📊 Resumo")
+            st.metric("Geocoded", f"{sucesso} / {total}", f"{success_rate:.1f}% Sucesso")
             
-            Phase1Georeferencing.render_correction_interface(failed_clients)
-        else:
-            st.success("🎉 **Todos os clientes georreferenciados!**")
-            st.session_state['phase_1_complete'] = True
+            if falhas > 0:
+                st.error(f"❌ {falhas} Falhas")
+                st.caption("Utilize a ferramenta de correção abaixo.")
+            else:
+                st.success("✅ 0 Falhas")
             
-            # Show map
-            Phase1Georeferencing.show_map(df_res)
+            st.markdown("---")
             
-            # Advance button
-            if st.button("➡️ Avançar para Fase 2: Frota e Armazéns", type="primary", use_container_width=True):
-                st.session_state['current_phase'] = 2
+            # Botões de Ação
+            if falhas == 0:
+                st.session_state['phase_1_complete'] = True
+                if st.button("➡️ Avançar para Etapa 3: Frota & Armazéns", type="primary", use_container_width=True):
+                    # AUTOMATIC SAVE: Ensure hard work is committed before leaping phases
+                    import utils.persistence_manager as pm
+                    active_proj = st.session_state.get('projeto_atual')
+                    current_user = st.session_state.get('utilizador_id', 1) # Default to system if missing
+                    
+                    if active_proj:
+                        try:
+                            with st.spinner("A gravar progresso automaticamente..."):
+                                pm.create_snapshot(
+                                    projeto_id=active_proj,
+                                    utilizador_id=current_user,
+                                    fase_atual=2,
+                                    snapshot_name=f"Auto-Save ao concluir Fase 1"
+                                )
+                        except Exception as e:
+                            print(f"Silent auto-save failure: {e}")
+                            
+                    # Point explicit index to 3 (the Fleet & Warehouses Tab)
+                    st.session_state['next_phase_queued'] = 3 
+                    st.rerun()
+            
+            if st.button("🔄 Recomeçar", use_container_width=True, type="secondary", help="Limpar dados e recarregar Excel"):
+                for key in ['clients_geocoded', 'failed_clients', 'clients_original_df', 'total_failed_count', 'corrected_clients', 'current_correction_idx']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.rerun()
         
-        # Option to reload with clearer label
+        with col_map:
+            # Render Map DIRECTLY inside column
+            Phase1Georeferencing.show_map(df_res, compact=True)
+            
         st.markdown("---")
-        if st.button(
-            "🔄 Recomeçar com Novos Clientes",
-            help="Limpar dados atuais e carregar um novo ficheiro Excel",
-            type="secondary"
-        ):
-            for key in ['clients_geocoded', 'failed_clients', 'clients_original_df', 'total_failed_count', 'corrected_clients', 'current_correction_idx']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
+
+        # If there are failures, push correction interface BELOW the high-level visual
+        if len(failed_clients) > 0:
+            st.warning(f"⚠️ **{len(failed_clients)} clientes** precisam de correção manual para avançar.")
+            Phase1Georeferencing.render_correction_interface(failed_clients)
+        else:
+            # AUDIT TABLE - Requested by the User
+            import io
+            output_buffer = io.BytesIO()
+            with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
+                df_res.to_excel(writer, index=False, sheet_name='Georreferenciados')
+            excel_bin = output_buffer.getvalue()
+            
+            # Create side-by-side title and Export button row
+            col_tit, col_dld = st.columns([3, 1])
+            with col_tit:
+                st.markdown("### 🔍 Lista de Auditoria de Georreferenciação")
+                st.caption("Confirme a morada encontrada e os níveis de confiança aqui.")
+            with col_dld:
+                st.download_button(
+                    label="📥 Descarregar Excel",
+                    data=excel_bin,
+                    file_name="Clientes_Georreferenciados.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    help="Grave os resultados finais no Excel para não perder dados."
+                )
+            
+            # Prepare clean display dataset
+            df_display = df_res.copy()
+            
+            # Filter columns down to relevant ones for rapid reading
+            important_cols = ['Codigo_Cliente', 'Morada', 'Codigo_Postal', 'Concelho', 
+                             'Latitude', 'Longitude', 'Nivel_Qualidade', 'Fonte_Match', 'Score_Match', 'Morada_Encontrada']
+            
+            # Safely select subset that exists
+            existing_cols = [c for c in important_cols if c in df_display.columns]
+            df_subset = df_display[existing_cols]
+            
+            # Add visual styled color scheme for Quality
+            def highlight_quality(val):
+                if val <= 2: return 'background-color: #c8e6c9' # Green
+                if val >= 8: return 'background-color: #ffcdd2' # Red
+                return 'background-color: #fff9c4' # Yellow
+            
+            st.dataframe(
+                df_subset,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Nivel_Qualidade": st.column_config.NumberColumn("Confiança (1=Alta)", format="%d ⭐"),
+                    "Score_Match": st.column_config.ProgressColumn("Precisão", min_value=0, max_value=100),
+                    "Latitude": st.column_config.NumberColumn(format="%.5f"),
+                    "Longitude": st.column_config.NumberColumn(format="%.5f")
+                }
+            )
     
     @staticmethod
     def render_correction_interface(failed_clients):
@@ -483,10 +576,12 @@ class Phase1Georeferencing:
     
     @staticmethod
     def _save_all_corrections():
-        """Save all corrections at once"""
+        """Save all corrections to Session State AND Persistently Learn them in Local DB."""
         
         clients_geocoded = st.session_state['clients_geocoded'].copy()
         corrected_clients = st.session_state.get('corrected_clients', {})
+        
+        learned_batch = []
         
         # Apply all corrections
         for codigo, correction in corrected_clients.items():
@@ -501,6 +596,29 @@ class Phase1Georeferencing:
                 clients_geocoded.loc[mask, 'Morada'] = correction['address']
                 clients_geocoded.loc[mask, 'Codigo_Postal'] = correction['cp']
                 clients_geocoded.loc[mask, 'Concelho'] = correction['concelho']
+            
+            # PERMANENT STORAGE: Queue for Database learning so the user never has to fix this again!
+            learned_batch.append({
+                'cp4': correction.get('cp'),
+                'concelho': correction.get('concelho'),
+                'result': {
+                    'address': correction.get('address'),
+                    'lat': correction['lat'],
+                    'lon': correction['lon'],
+                    'quality_level': correction.get('quality_level', 0),
+                    'match_type': 'MANUAL_CORRECTION',
+                    'source': correction.get('source', 'MANUAL')
+                }
+            })
+            
+        # Write to database cache!
+        if learned_batch:
+            try:
+                api_key = st.session_state.get('google_api_key')
+                geocoder = WaterfallGeocoder(Phase1Georeferencing.DB_FILE, google_api_key=api_key)
+                geocoder.save_learned_batch(learned_batch)
+            except Exception as e:
+                st.error(f"⚠️ Aplicado na sessão, mas falhou ao salvar permanente: {e}")
         
         st.session_state['clients_geocoded'] = clients_geocoded
         
@@ -511,7 +629,7 @@ class Phase1Georeferencing:
         if 'total_failed_count' in st.session_state:
             del st.session_state['total_failed_count']
         
-        st.success("✅ Todas as correções aplicadas com sucesso!")
+        st.success("✅ Todas as correções aplicadas e GRAVADAS permanentemente na memória!")
         st.rerun()
     
     @staticmethod
@@ -603,24 +721,47 @@ class Phase1Georeferencing:
                 st.rerun()
     
     @staticmethod
-    def show_map(df_res):
-        """Show map with all clients"""
-        st.markdown("### Mapa de Clientes")
+    def show_map(df_res, compact=False):
+        """Show map with all clients, optimized for compactness."""
+        if not compact:
+            st.markdown("### 🗺️ Mapa de Clientes")
         
-        m = folium.Map(location=[39.5, -8.0], zoom_start=7)
+        # Auto-center based on average coordinates if clients exist
+        valid_geo = df_res[df_res['Latitude'].notna() & (df_res['Nivel_Qualidade'] < 8)]
+        
+        if not valid_geo.empty:
+            c_lat = valid_geo['Latitude'].mean()
+            c_lon = valid_geo['Longitude'].mean()
+            z_start = 7
+        else:
+            c_lat, c_lon, z_start = 39.5, -8.0, 6
+            
+        m = folium.Map(location=[c_lat, c_lon], zoom_start=z_start, control_scale=True)
         
         for _, row in df_res.iterrows():
             if pd.notna(row['Latitude']) and row['Nivel_Qualidade'] < 8:
-                color = ['green','blue','cyan','orange','gray','purple','black'][min(row['Nivel_Qualidade'], 6)]
+                # Map quality level to color
+                quality = min(int(row['Nivel_Qualidade']), 6)
+                colors = ['green', 'blue', 'cyan', 'orange', 'darkred', 'gray', 'black']
+                
+                # Add a helpful descriptive popup
+                popup_html = f"""
+                <b>Morada:</b> {row.get('Morada', 'N/A')}<br/>
+                <b>Código:</b> {row.get('Codigo_Cliente', 'N/A')}<br/>
+                <b>Nível Confiança:</b> {quality}
+                """
+                
                 folium.CircleMarker(
                     location=(row['Latitude'], row['Longitude']),
-                    radius=4,
-                    color=color,
+                    radius=5,
+                    color=colors[quality],
                     fill=True,
-                    popup=f"{row.get('Morada', 'N/A')} (Nível {row['Nivel_Qualidade']})"
+                    fill_opacity=0.7,
+                    popup=folium.Popup(popup_html, max_width=250)
                 ).add_to(m)
         
-        st_folium(m, width=None, height=400, key="clients_final_map")
+        # Height 350 is slightly more compact than 400
+        st_folium(m, use_container_width=True, height=350, key="clients_final_map")
     
     @staticmethod
     def _find_column_index(columns, keywords):

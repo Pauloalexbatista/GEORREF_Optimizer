@@ -341,7 +341,7 @@ class Phase2Validation:
             st.session_state['phase_2_complete'] = True
             
             if st.button("➡️ Avançar para Fase 3: Planeamento", type="primary", use_container_width=True):
-                st.session_state['current_phase'] = 3
+                st.session_state['next_phase_queued'] = 3
                 st.rerun()
         else:
             st.warning("⚠️ Complete todas as zonas para avançar.")

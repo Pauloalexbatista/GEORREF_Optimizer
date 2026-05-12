@@ -86,6 +86,7 @@ def init_database():
                 codigo_postal TEXT,
                _concelho TEXT,
                 peso_kg REAL,
+                volume_m3 REAL,
                 prioridade INTEGER DEFAULT 2,
                 janela_inicio TEXT,
                 janela_fim TEXT,
@@ -107,6 +108,7 @@ def init_database():
                 projeto_id INTEGER NOT NULL,
                 veiculo TEXT NOT NULL,
                 capacidade_kg REAL,
+                capacidade_volume REAL,
                 custo_km REAL,
                 velocidade_media REAL,
                 horario_inicio TEXT,
@@ -169,6 +171,21 @@ def init_database():
                 custo_total REAL DEFAULT 0,
                 tempo_total_minutos REAL DEFAULT 0,
                 FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+        
+        # Tabela de Snapshots de Sessão para Resumo de Planeamento
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto_id INTEGER NOT NULL,
+                utilizador_id INTEGER NOT NULL,
+                fase_atual INTEGER DEFAULT 1,
+                nome_snapshot TEXT,
+                payload_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (projeto_id) REFERENCES projetos (id),
+                FOREIGN KEY (utilizador_id) REFERENCES utilizadores (id)
             )
         """)
         
@@ -304,16 +321,17 @@ def save_entregas_projeto(projeto_id, entregas_data):
             cursor.execute("""
                 INSERT INTO entregas (
                     projeto_id, codigo_cliente, morada, codigo_postal, 
-                    _concelho, peso_kg, prioridade, janela_inicio, 
+                    _concelho, peso_kg, volume_m3, prioridade, janela_inicio, 
                     janela_fim, observacoes, latitude, longitude,
                     nivel_qualidade, fonte_match, morada_encontrada
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, e.get('codigo_cliente'), e.get('morada'),
                 e.get('codigo_postal'), e.get('concelho'), e.get('peso_kg'),
-                e.get('prioridade'), e.get('janela_inicio'), e.get('janela_fim'),
-                e.get('observacoes'), e.get('latitude'), e.get('longitude'),
-                e.get('nivel_qualidade'), e.get('fonte_match'), e.get('morada_encontrada')
+                e.get('volume_m3', 0.0), e.get('prioridade'), e.get('janela_inicio'),
+                e.get('janela_fim'), e.get('observacoes'), e.get('latitude'),
+                e.get('longitude'), e.get('nivel_qualidade'), e.get('fonte_match'),
+                e.get('morada_encontrada')
             ))
         
         # Atualizar timestamp do projeto
@@ -345,13 +363,13 @@ def save_frota_projeto(projeto_id, frota_data):
         for f in frota_data:
             cursor.execute("""
                 INSERT INTO frota (
-                    projeto_id, veiculo, capacidade_kg, custo_km,
+                    projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
                     velocidade_media, horario_inicio, horario_fim
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, f.get('veiculo'), f.get('capacidade_kg'),
-                f.get('custo_km'), f.get('velocidade_media'),
-                f.get('horario_inicio'), f.get('horario_fim')
+                f.get('capacidade_volume', 0.0), f.get('custo_km'),
+                f.get('velocidade_media'), f.get('horario_inicio'), f.get('horario_fim')
             ))
         
         conn.commit()

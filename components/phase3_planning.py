@@ -20,7 +20,7 @@ class Phase3Planning:
     
     @staticmethod
     def render():
-        st.title("🚚 Fase 3: Planeamento de Rotas")
+        st.title("🧠 Etapa 4: Planeamento de Rotas")
         
         # Check prerequisites
         if not Phase3Planning.check_prerequisites():
@@ -62,11 +62,11 @@ class Phase3Planning:
         
         if not has_clients:
             if st.button("⬅️ Voltar para Fase 1", use_container_width=True):
-                st.session_state['current_phase'] = 1
+                st.session_state['next_phase_queued'] = 1
                 st.rerun()
         elif not (has_fleet and has_warehouses):
             if st.button("⬅️ Voltar para Fase 2", use_container_width=True):
-                st.session_state['current_phase'] = 2
+                st.session_state['next_phase_queued'] = 2
                 st.rerun()
     
     @staticmethod
@@ -99,10 +99,33 @@ class Phase3Planning:
             
             Phase3Planning.render_route_visualization()
             
-            st.markdown("---")
-            st.markdown("## 4️⃣ Exportar Resultado Final")
+            # --- PRO-ACTIVE FINAL AUTO-SAVE & ADVANCE ---
+            # Delivers the final promise: Complete step 3 and safeguard data before export.
+            st.markdown('<div style="margin-top: 40px;"></div>', unsafe_allow_html=True)
+            col_sp1, col_final, col_sp2 = st.columns([1, 2, 1])
             
-            Phase3Planning.render_export_section()
+            with col_final:
+                st.info("💡 Satisfeito com os resultados? Clique abaixo para concluir.")
+                if st.button("🏁 Guardar e Concluir Planeamento", type="primary", use_container_width=True, help="Garante que os resultados calculados são salvos e avança para Exportação."):
+                    import utils.persistence_manager as pm
+                    active_proj = st.session_state.get('projeto_atual')
+                    curr_user = st.session_state.get('utilizador_id', 1)
+                    
+                    if active_proj:
+                        try:
+                            with st.spinner("A fazer o último Auto-Save do seu planeamento..."):
+                                pm.create_snapshot(
+                                    projeto_id=active_proj,
+                                    utilizador_id=curr_user,
+                                    fase_atual=4, # Logical state checkpoint
+                                    snapshot_name=f"Auto-Save: Resultados Calculados"
+                                )
+                        except Exception:
+                            pass # Fault-tolerant backup
+
+                    # Jump forward to the final Tab 5 (Export)
+                    st.session_state['next_phase_queued'] = 5
+                    st.rerun()
     
     @staticmethod
     def render_optimization_config():
@@ -154,6 +177,7 @@ class Phase3Planning:
             locations = []
             location_names = []
             demands = []
+            volume_demands = []
             
             # Add warehouses first
             warehouse_indices = {}
@@ -161,6 +185,7 @@ class Phase3Planning:
                 locations.append((row['Latitude'], row['Longitude']))
                 location_names.append(row['Nome_Armazem'])
                 demands.append(0)  # Warehouses have no demand
+                volume_demands.append(0)
                 warehouse_indices[row['Nome_Armazem']] = len(locations) - 1
             
             # Add clients
@@ -168,18 +193,39 @@ class Phase3Planning:
             for idx, row in clients_df.iterrows():
                 locations.append((row['Latitude'], row['Longitude']))
                 location_names.append(row.get('Codigo_Cliente', f'Cliente_{idx}'))
-                demands.append(row.get('Demanda_KG', 50))  # Default 50kg
+                demands.append(row.get('Peso_KG', 50))  # Use correct column name from template
+                volume_demands.append(row.get('Volume_m3', 0.1))
             
             # Calculate distance matrix
             distance_matrix = calculate_haversine_matrix(locations)
             
+            # --- DEFENSIVE DATA CASTING: Ensure fleet_config is a working dict ---
+            # In case of legacy dataframes leaking from Phase 2 manual configuration!
+            import pandas as pd
+            if isinstance(fleet_config, pd.DataFrame):
+                temp_dict = {}
+                for _, row in fleet_config.iterrows():
+                    temp_dict[row['Veiculo']] = {
+                        'capacity': row['Capacidade_KG'],
+                        'capacity_volume': row.get('Cap_Volume_m3', 0),
+                        'cost_per_km': row['Custo_KM'],
+                        'speed': row['Velocidade_Media'],
+                        'start_time': str(row['Horario_Inicio']),
+                        'end_time': str(row['Horario_Fim']),
+                        'warehouse': row['Armazem']
+                    }
+                fleet_config = temp_dict
+
             # Prepare fleet
             vehicle_capacities = []
+            vehicle_volume_capacities = []
             depot_indices = []
             vehicle_names = []
             
             for vehicle_name, vehicle_data in fleet_config.items():
-                vehicle_capacities.append(vehicle_data['capacity'])
+                # Safe extraction with fallbacks in case key capitalization varies
+                vehicle_capacities.append(vehicle_data.get('capacity', 1000))
+                vehicle_volume_capacities.append(vehicle_data.get('capacity_volume', 5.0))
                 warehouse_name = vehicle_data.get('warehouse', warehouses_df.iloc[0]['Nome_Armazem'])
                 depot_indices.append(warehouse_indices.get(warehouse_name, 0))
                 vehicle_names.append(vehicle_name)
@@ -193,7 +239,9 @@ class Phase3Planning:
                     demands,
                     vehicle_capacities,
                     depot_indices,
-                    optimization_params=params
+                    optimization_params=params,
+                    volume_demands=volume_demands,
+                    vehicle_volume_capacities=vehicle_volume_capacities
                 )
                 
                 if result['status'] != 'SUCCESS':
@@ -205,21 +253,36 @@ class Phase3Planning:
                     total_demand = sum(demands)
                     total_capacity = sum(vehicle_capacities)
                     
+                    total_vol_demand = sum(volume_demands)
+                    total_vol_capacity = sum(vehicle_volume_capacities)
+                    
                     col1, col2, col3 = st.columns(3)
-                    col1.metric("Total a Entregar", f"{total_demand:.0f} kg")
-                    col2.metric("Capacidade Total", f"{total_capacity:.0f} kg")
-                    col3.metric("Diferença", f"{total_capacity - total_demand:.0f} kg", 
+                    col1.metric("Total Peso", f"{total_demand:.0f} kg")
+                    col2.metric("Capac. Peso Total", f"{total_capacity:.0f} kg")
+                    col3.metric("Diferença Peso", f"{total_capacity - total_demand:.0f} kg", 
                                delta_color="normal" if total_capacity >= total_demand else "inverse")
+                    
+                    col4, col5, col6 = st.columns(3)
+                    col4.metric("Total Volume", f"{total_vol_demand:.1f} m3")
+                    col5.metric("Capac. Volume Total", f"{total_vol_capacity:.1f} m3")
+                    col6.metric("Diferença Volume", f"{total_vol_capacity - total_vol_demand:.1f} m3", 
+                               delta_color="normal" if total_vol_capacity >= total_vol_demand else "inverse")
                     
                     st.markdown("### 💡 Possíveis Causas")
                     
                     issues = []
                     
-                    # Check capacity
+                    # Check capacity (Weight)
                     if total_capacity < total_demand:
-                        issues.append("🔴 **Capacidade insuficiente**: A frota não tem capacidade para todas as entregas")
-                        st.error(f"A capacidade total da frota ({total_capacity:.0f} kg) é menor que o peso total das entregas ({total_demand:.0f} kg).")
+                        issues.append("🔴 **Capacidade de Peso insuficiente**: A frota não tem capacidade para todas as entregas")
+                        st.error(f"A capacidade total de peso da frota ({total_capacity:.0f} kg) é menor que o peso total das entregas ({total_demand:.0f} kg).")
                         st.info(f"💡 **Solução**: Adicione mais veículos ou aumente a capacidade dos existentes em pelo menos {total_demand - total_capacity:.0f} kg")
+                    
+                    # Check capacity (Volume)
+                    if total_vol_capacity < total_vol_demand:
+                        issues.append("🔴 **Capacidade de Volume insuficiente**: Volume total excede a frota")
+                        st.error(f"A capacidade volumétrica total ({total_vol_capacity:.1f} m3) é menor que o volume total das entregas ({total_vol_demand:.1f} m3).")
+                        st.info(f"💡 **Solução**: Adicione mais veículos ou use veículos com maior capacidade volumétrica.")
                     
                     # Check time limits
                     max_duration = params.get('max_route_duration', 480)
@@ -236,13 +299,21 @@ class Phase3Planning:
                         st.warning(f"Tem {num_vehicles} veículos para apenas {num_clients} clientes.")
                         st.info("💡 **Solução**: Reduza o número de veículos ou adicione mais clientes")
                     
-                    # Check if demands are too large
+                    # Check if demands are too large (Weight)
                     max_demand = max(demands) if demands else 0
                     max_capacity = max(vehicle_capacities) if vehicle_capacities else 0
                     if max_demand > max_capacity:
                         issues.append("🔴 **Cliente com peso excessivo**: Há clientes que não cabem em nenhum veículo")
                         st.error(f"Há pelo menos um cliente com {max_demand:.0f} kg, mas o maior veículo só tem {max_capacity:.0f} kg de capacidade.")
                         st.info("💡 **Solução**: Aumente a capacidade do maior veículo ou divida a entrega")
+                    
+                    # Check if demands are too large (Volume)
+                    max_vol_dem = max(volume_demands) if volume_demands else 0
+                    max_vol_cap = max(vehicle_volume_capacities) if vehicle_volume_capacities else 0
+                    if max_vol_dem > max_vol_cap:
+                        issues.append("🔴 **Cliente com volume excessivo**: Há clientes que não cabem em nenhum veículo")
+                        st.error(f"Há pelo menos um cliente com {max_vol_dem:.1f} m3, mas o maior veículo só tem {max_vol_cap:.1f} m3 de capacidade volumétrica.")
+                        st.info("💡 **Solução**: Divida a entrega volumosa.")
                     
                     if not issues:
                         st.warning("⚠️ Não foi possível identificar a causa específica. Tente:")
@@ -281,6 +352,11 @@ class Phase3Planning:
                 client_start_idx
             )
             
+            # Show status alerts about unassigned items
+            dropped_count = len(result.get('dropped_nodes', []))
+            if dropped_count > 0:
+                st.warning(f"⚠️ Otimização concluída, mas {dropped_count} entrega(s) ficaram de fora por falta de capacidade e foram colocadas na lista 'PENDENTES'.")
+            
             st.session_state['routes_solution'] = routes_df
             st.session_state['fleet_config_used'] = fleet_config
             st.session_state['warehouses_used'] = warehouses_df
@@ -305,12 +381,14 @@ class Phase3Planning:
         
         rows = []
         
+        # 1. Process successful routes
         for vehicle_idx, route in enumerate(result['routes']):
             vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
             
             order = 1
             cumulative_dist = 0
             cumulative_load = 0
+            cumulative_volume = 0
             
             # Start time (departure from warehouse)
             current_time = datetime.strptime("08:00", "%H:%M")
@@ -349,12 +427,28 @@ class Phase3Planning:
                     departure_time = arrival_time + timedelta(minutes=service_time)
                     
                     # Get demand
-                    demand = client_row.get('Demanda_KG', 50)
+                    demand = client_row.get('Peso_KG', 50)
+                    vol_demand = client_row.get('Volume_m3', 0.1)
                     cumulative_load += demand
+                    cumulative_volume += vol_demand
                     
                     # Get CP and Localidade
                     cp = client_row.get('Codigo_Postal', client_row.get('CP', 'N/A'))
                     localidade = client_row.get('Localidade', client_row.get('Concelho', ''))
+                    qualidade = client_row.get('Nivel_Qualidade', 0)
+
+                    # --- HELPER: Standardize user time slots into one column ---
+                    def _fmt_slot(val):
+                        import pandas as pd
+                        if pd.isna(val) or not val: return ""
+                        if hasattr(val, 'strftime'): return val.strftime('%H:%M')
+                        v_str = str(val).strip()
+                        if not v_str or v_str.lower() == 'nan': return ""
+                        return v_str[:5] if ':' in v_str else v_str
+                    
+                    win_s = _fmt_slot(client_row.get('Slot1_Inicio', ''))
+                    win_e = _fmt_slot(client_row.get('Slot1_Fim', ''))
+                    combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
                     
                     rows.append({
                         'Rota': vehicle_name,
@@ -363,19 +457,65 @@ class Phase3Planning:
                         'Morada': client_row.get('Morada', 'N/A'),
                         'CP': cp,
                         'Localidade': localidade,
+                        'Janela_Horaria': combined_window, # USER REQUEST: Concatenated Window!
                         'Latitude': client_lat,
                         'Longitude': client_lon,
                         'Chegada': arrival_time.strftime("%H:%M"),
                         'Tempo_Entrega': service_time,
                         'Saida': departure_time.strftime("%H:%M"),
+                        'Nivel_Qualidade': qualidade,
                         'KM_Anterior': round(dist_from_prev, 2),
                         'Dist_Acum': round(cumulative_dist, 2),
-                        'Carga_Acum': round(cumulative_load, 1)
+                        'Carga_Acum': round(cumulative_load, 1),
+                        'Carga_Vol_Acum': round(cumulative_volume, 2)
                     })
                     
                     # Update for next iteration
                     prev_lat, prev_lon = client_lat, client_lon
                     current_time = departure_time
+                    order += 1
+        
+        # 2. Process dropped nodes (Pendentes)
+        dropped_nodes = result.get('dropped_nodes', [])
+        if dropped_nodes:
+            order = 1
+            for loc_idx in dropped_nodes:
+                if loc_idx >= client_start_idx:
+                    client_idx = loc_idx - client_start_idx
+                    client_row = clients_df.iloc[client_idx]
+                    
+                    # Format slot for pending list
+                    def _fmt_slot(val):
+                        import pandas as pd
+                        if pd.isna(val) or not val: return ""
+                        if hasattr(val, 'strftime'): return val.strftime('%H:%M')
+                        v_str = str(val).strip()
+                        if not v_str or v_str.lower() == 'nan': return ""
+                        return v_str[:5] if ':' in v_str else v_str
+                    
+                    win_s = _fmt_slot(client_row.get('Slot1_Inicio', ''))
+                    win_e = _fmt_slot(client_row.get('Slot1_Fim', ''))
+                    combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
+
+                    rows.append({
+                        'Rota': "⚠️ PENDENTE",
+                        'Ordem': order,
+                        'Cliente': client_row.get('Codigo_Cliente', f'Cliente_{client_idx}'),
+                        'Morada': client_row.get('Morada', 'N/A'),
+                        'CP': client_row.get('Codigo_Postal', client_row.get('CP', 'N/A')),
+                        'Localidade': client_row.get('Localidade', client_row.get('Concelho', '')),
+                        'Janela_Horaria': combined_window,
+                        'Latitude': client_row['Latitude'],
+                        'Longitude': client_row['Longitude'],
+                        'Chegada': "00:00",
+                        'Tempo_Entrega': 0,
+                        'Saida': "00:00",
+                        'Nivel_Qualidade': client_row.get('Nivel_Qualidade', 0),
+                        'KM_Anterior': 0,
+                        'Dist_Acum': 0,
+                        'Carga_Acum': client_row.get('Peso_KG', 0),
+                        'Carga_Vol_Acum': client_row.get('Volume_m3', 0)
+                    })
                     order += 1
         
         return pd.DataFrame(rows)
@@ -519,8 +659,18 @@ class Phase3Planning:
         
         st.markdown("---")
         
-        # Map
-        RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
+        # --- PAINEL CENTRAL DE DESPACHO (BULK LOGISTICS OVERRIDES) ---
+        # Renders the enterprise console to transfer or swap complete vehicle payloads!
+        Phase3Planning.render_fleet_dispatch_panel()
+        
+        st.markdown("---")
+        
+        # Map - Advanced bidirectional telemetry binding
+        map_output = RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
+        
+        # --- LIGAR O CÉREBRO AO CLIQUE (SPACE COMMAND PANEL) ---
+        # Captures marker interaction coordinates and renders real-time manual re-assignment controller
+        Phase3Planning._handle_map_clicks(map_output, routes_df)
         
         # External window buttons
         st.markdown("---")
@@ -748,6 +898,7 @@ class Phase3Planning:
             # Calculate metrics
             total_dist = route_data['Dist_Acum'].max()
             total_load = route_data['Carga_Acum'].max()
+            total_vol = route_data['Carga_Vol_Acum'].max() if 'Carga_Vol_Acum' in route_data.columns else 0
             num_stops = len(route_data)
             
             html += f"""
@@ -769,6 +920,10 @@ class Phase3Planning:
                         <div class="metric-value">{total_load:.0f} kg</div>
                         <div class="metric-label">Carga</div>
                     </div>
+                    <div class="metric">
+                        <div class="metric-value">{total_vol:.2f} m3</div>
+                        <div class="metric-label">Volume</div>
+                    </div>
                 </div>
                 
                 <table>
@@ -784,6 +939,7 @@ class Phase3Planning:
                             <th>KM do Anterior</th>
                             <th>Dist. Acum</th>
                             <th>Carga Acum</th>
+                            <th>Vol. Acum</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -808,6 +964,7 @@ class Phase3Planning:
                             <td>{km_anterior:.2f} km</td>
                             <td>{row.get('Dist_Acum', 0):.2f} km</td>
                             <td>{row.get('Carga_Acum', 0):.1f} kg</td>
+                            <td>{row.get('Carga_Vol_Acum', 0):.2f} m3</td>
                         </tr>
                 """
             
@@ -852,3 +1009,321 @@ class Phase3Planning:
         RouteVisualizer._add_legend(m, route_colors)
         
         return m._repr_html_()
+
+    @staticmethod
+    def _handle_map_clicks(map_output, routes_df):
+        """
+        Listens to live Folium javascript click events. Maps the geographic coordinate telemetry
+        to the nearest spreadsheet entity and renders the industrial Commander Panel in the sidebar.
+        """
+        if not map_output:
+            return
+            
+        last_clicked = map_output.get("last_object_clicked")
+        if not last_clicked:
+            return
+            
+        click_lat = float(last_clicked.get("lat", 0))
+        click_lon = float(last_clicked.get("lng", 0))
+        
+        if click_lat == 0 and click_lon == 0:
+            return
+            
+        # 1. Identify Closest Element via absolute distance vector
+        # We use temporary vectorized arrays to guarantee read-only safety on global dataframe!
+        lat_vector = routes_df['Latitude'].astype(float)
+        lon_vector = routes_df['Longitude'].astype(float)
+        
+        manhattan_diff = (lat_vector - click_lat).abs() + (lon_vector - click_lon).abs()
+        
+        closest_idx = manhattan_diff.idxmin()
+        min_diff = manhattan_diff.loc[closest_idx]
+        
+        # Threshold check: 0.0001 degrees is ~10 meters. Prevents depot or road clicks from triggering.
+        if min_diff > 0.0001:
+            return
+            
+        target_row = routes_df.loc[closest_idx]
+        client_id = str(target_row['Cliente'])
+        client_addr = str(target_row['Morada'])
+        current_route = str(target_row['Rota'])
+        
+        # --- RENDER HIGH-PREMIUM SPACE COMMAND PANEL IN SIDEBAR ---
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🛰️ Comando de Frota (Clique no Mapa)")
+        
+        st.sidebar.info(f"""
+        🎯 **Cliente Selecionado:**
+        **{client_id}**
+        *{client_addr[:60]}...*
+        
+        🔹 **Rota Atual:** `{current_route}`
+        """)
+        
+        # Fetch all active vehicles to populate target destinations
+        fleet_config = st.session_state.get('fleet_config_used', {})
+        all_vehicles = list(fleet_config.keys())
+        
+        # Ensure PENDENTE exists in choices
+        if "⚠️ PENDENTE" not in all_vehicles:
+            all_vehicles.append("⚠️ PENDENTE")
+            
+        # Safely set starting dropdown index
+        try:
+            start_idx = all_vehicles.index(current_route)
+        except ValueError:
+            start_idx = len(all_vehicles) - 1 if "PENDENTE" in current_route else 0
+            
+        target_dest = st.sidebar.selectbox(
+            "📦 Mover este cliente para:",
+            options=all_vehicles,
+            index=start_idx,
+            key="map_command_vehicle_select"
+        )
+        
+        if target_dest == current_route:
+            st.sidebar.caption("ℹ️ Selecione um veículo diferente para ativar a transferência.")
+            return
+            
+        if st.sidebar.button(f"⚡ Transferir para {target_dest}", type="primary", use_container_width=True):
+            with st.spinner("A recalcular horários e métricas operacionais..."):
+                # Extract current solution
+                raw_df = st.session_state['routes_solution']
+                
+                # 2. Mutate the assignment
+                raw_df.loc[raw_df['Cliente'] == client_id, 'Rota'] = target_dest
+                
+                # 3. Apply Automatic Logical Sequence Alignment
+                # Sort to ensure consistency (puts newly added at the end of target route)
+                reordered_df = Phase3Planning._simple_reorder_routes(raw_df)
+                
+                # 4. RUN THE MASTER RECALCULATOR (Syncs Dist_Acum, Hours, and Carga_Acum instantly!)
+                synced_df = Phase3Planning._recalculate_all_metrics(reordered_df)
+                
+                # 5. Commit state and refresh UI
+                st.session_state['routes_solution'] = synced_df
+                st.sidebar.success(f"✅ Transferido com sucesso!")
+                st.rerun()
+
+    @staticmethod
+    def _recalculate_all_metrics(df):
+        """
+        Industrial mathematical engine that completely rebuilds distance vectors, cumulative 
+        weight and volume metrics, and arrival/departure schedules across all vehicles.
+        Runs instantaneously without demanding expensive full OR-Tools convergence cycles!
+        """
+        import math
+        from datetime import datetime, timedelta
+        import pandas as pd
+        
+        def haversine_distance(lat1, lon1, lat2, lon2):
+            R = 6371
+            lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+            c = 2 * math.asin(math.sqrt(a))
+            return R * c
+            
+        warehouses_df = st.session_state.get('warehouses_used')
+        if warehouses_df is None or len(warehouses_df) == 0:
+            ref_lat, ref_lon = 38.7223, -9.1393
+        else:
+            ref_lat = float(warehouses_df.iloc[0]['Latitude'])
+            ref_lon = float(warehouses_df.iloc[0]['Longitude'])
+            
+        clients_geocoded = st.session_state.get('clients_geocoded')
+        
+        recalc_rows = []
+        
+        for route_name in df['Rota'].unique():
+            route_data = df[df['Rota'] == route_name].copy()
+            
+            # Enforce sequential processing
+            route_data = route_data.sort_values('Ordem')
+            
+            if "PENDENTE" in route_name:
+                # Format overflow bucket metrics
+                route_data['KM_Anterior'] = 0.0
+                route_data['Dist_Acum'] = 0.0
+                route_data['Ordem'] = range(1, len(route_data) + 1)
+                route_data['Chegada'] = "00:00"
+                route_data['Saida'] = "00:00"
+                recalc_rows.append(route_data)
+                continue
+                
+            # Compute operational timeline
+            curr_lat, curr_lon = ref_lat, ref_lon
+            curr_time = datetime.strptime("08:00", "%H:%M")
+            cum_dist = 0.0
+            cum_load = 0.0
+            cum_vol = 0.0
+            
+            processed_records = []
+            order = 1
+            
+            for idx, row in route_data.iterrows():
+                lat = float(row['Latitude'])
+                lon = float(row['Longitude'])
+                
+                # Delta distance and summation
+                dist = haversine_distance(curr_lat, curr_lon, lat, lon)
+                cum_dist += dist
+                
+                # Velocity-based temporal projection
+                travel_mins = (dist / 40.0) * 60.0
+                arrival = curr_time + timedelta(minutes=travel_mins)
+                
+                service_mins = 15.0 # Standard drop cycle
+                departure = arrival + timedelta(minutes=service_mins)
+                
+                # Robust absolute demand lookups to recover clean unaccumulated scales
+                weight = 50.0
+                vol = 0.1
+                
+                if clients_geocoded is not None:
+                    cid = str(row['Cliente'])
+                    match = clients_geocoded[clients_geocoded['Codigo_Cliente'].astype(str) == cid]
+                    if len(match) > 0:
+                        weight = float(match.iloc[0].get('Peso_KG', 50.0))
+                        vol = float(match.iloc[0].get('Volume_m3', 0.1))
+                
+                cum_load += weight
+                cum_vol += vol
+                
+                row_dict = dict(row)
+                row_dict['Ordem'] = order
+                row_dict['KM_Anterior'] = round(dist, 2)
+                row_dict['Dist_Acum'] = round(cum_dist, 2)
+                row_dict['Carga_Acum'] = round(cum_load, 1)
+                row_dict['Carga_Vol_Acum'] = round(cum_vol, 2)
+                row_dict['Chegada'] = arrival.strftime("%H:%M")
+                row_dict['Saida'] = departure.strftime("%H:%M")
+                
+                processed_records.append(row_dict)
+                
+                # Cycle progression variables
+                curr_lat, curr_lon = lat, lon
+                curr_time = departure
+                order += 1
+                
+            if processed_records:
+                recalc_rows.append(pd.DataFrame(processed_records))
+            
+        return pd.concat(recalc_rows, ignore_index=True) if recalc_rows else df
+
+
+    @staticmethod
+    def render_fleet_dispatch_panel():
+        """
+        Renders the Advanced Fleet Dispatch Console. Empowers layout managers to transfer 
+        entire vehicle payloads, invert routes between drivers, and unlock 100% of empty 
+        idle fleet vehicles.
+        """
+        import pandas as pd
+        
+        routes_df = st.session_state.get('routes_solution')
+        fleet_config = st.session_state.get('fleet_config_used', {})
+        
+        if routes_df is None:
+            return
+            
+        st.markdown("### 🏢 Painel Central de Despacho (Operações em Massa)")
+        st.caption("Gere a frota inteira. Transfira cargas completas ou permute carros com um clique!")
+        
+        # 1. Build absolute master vehicle roster including UNUSED/EMPTY configured vehicles!
+        all_configured = list(fleet_config.keys())
+        all_active = routes_df['Rota'].unique().tolist()
+        
+        # Consolidate union list to ensure empty cars are accessible
+        union_vehicles = list(dict.fromkeys(all_configured + all_active))
+        
+        # Guarantee default Overflow Bucket exists
+        if "⚠️ PENDENTE" not in union_vehicles:
+            union_vehicles.append("⚠️ PENDENTE")
+            
+        # Order lists cleanly for display (Alphabetical, with Pendente at the end)
+        union_vehicles.sort(key=lambda x: "ZZZ" if "PENDENTE" in x else x)
+        
+        # Render 2 parallel command decks
+        deck1, deck2 = st.columns(2)
+        
+        with deck1:
+            with st.container(border=True):
+                st.markdown("##### 🚚 Mover Carga Completa")
+                st.caption("Passa TODOS os clientes atribuídos de um carro para outro.")
+                
+                origin_veh = st.selectbox(
+                    "Veículo de Origem (De onde sai):", 
+                    options=union_vehicles, 
+                    key="bulk_op_move_origin"
+                )
+                dest_veh = st.selectbox(
+                    "Veículo de Destino (Para onde vai):", 
+                    options=union_vehicles, 
+                    key="bulk_op_move_dest"
+                )
+                
+                # Add counts preview so user knows exactly what they are doing
+                origin_count = len(routes_df[routes_df['Rota'] == origin_veh])
+                st.caption(f"⚡ *Origem contém {origin_count} cliente(s).*")
+                
+                if st.button("⚡ Executar Transferência Total", type="primary", use_container_width=True, key="btn_bulk_transfer"):
+                    if origin_veh == dest_veh:
+                        st.error("O veículo de origem e destino devem ser diferentes!")
+                        return
+                        
+                    if origin_count == 0:
+                        st.error(f"O veículo de origem ({origin_veh}) está vazio! Não há carga para transferir.")
+                        return
+                        
+                    with st.spinner("A realizar transferência de cargas em massa..."):
+                        raw_df = st.session_state['routes_solution'].copy()
+                        
+                        # Fast bulk pandas assignment override
+                        raw_df.loc[raw_df['Rota'] == origin_veh, 'Rota'] = dest_veh
+                        
+                        # Restore temporal continuity & recalc
+                        reordered = Phase3Planning._simple_reorder_routes(raw_df)
+                        final_df = Phase3Planning._recalculate_all_metrics(reordered)
+                        
+                        st.session_state['routes_solution'] = final_df
+                        st.toast(f"✅ Transferidos {origin_count} clientes para {dest_veh}!", icon="🚛")
+                        st.rerun()
+                        
+        with deck2:
+            with st.container(border=True):
+                st.markdown("##### 🔄 Trocar Cargas (Permuta)")
+                st.caption("Inverte a totalidade das cargas atribuídas entre dois veículos.")
+                
+                veh_a = st.selectbox("Veículo A:", options=union_vehicles, index=0, key="bulk_op_swap_a")
+                
+                # Try to default vehicle B to second element to be helpful
+                b_idx = 1 if len(union_vehicles) > 1 else 0
+                veh_b = st.selectbox("Veículo B:", options=union_vehicles, index=b_idx, key="bulk_op_swap_b")
+                
+                count_a = len(routes_df[routes_df['Rota'] == veh_a])
+                count_b = len(routes_df[routes_df['Rota'] == veh_b])
+                st.caption(f"🔄 *Troca {count_a} cliente(s) por {count_b} cliente(s).*")
+                
+                if st.button("🔄 Inverter Cargas de Veículos", use_container_width=True, key="btn_bulk_swap_payloads"):
+                    if veh_a == veh_b:
+                        st.error("Selecione dois veículos diferentes para realizar a permuta!")
+                        return
+                        
+                    with st.spinner("A realizar permuta cruzada de frotas..."):
+                        raw_df = st.session_state['routes_solution'].copy()
+                        
+                        # Perform robust cross-swap using memory safe token
+                        swap_token = "__DISPATCH_SWAP_TOKEN_GUARD__"
+                        raw_df.loc[raw_df['Rota'] == veh_a, 'Rota'] = swap_token
+                        raw_df.loc[raw_df['Rota'] == veh_b, 'Rota'] = veh_a
+                        raw_df.loc[raw_df['Rota'] == swap_token, 'Rota'] = veh_b
+                        
+                        # Rebuild distances, times, and aggregations
+                        reordered = Phase3Planning._simple_reorder_routes(raw_df)
+                        final_df = Phase3Planning._recalculate_all_metrics(reordered)
+                        
+                        st.session_state['routes_solution'] = final_df
+                        st.toast(f"✅ Cargas trocadas com sucesso!", icon="🔄")
+                        st.rerun()

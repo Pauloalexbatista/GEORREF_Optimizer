@@ -246,10 +246,13 @@ class WaterfallGeocoder:
         
         # Strategy: Filter by CP4 first (very fast)
         # Strategy: Filter by CP4 first (very fast)
-        if cp4 and validate_cp4(cp4):
+        # Extract clean CP4 from potentially full CP7 for DB lookup
+        target_cp4 = str(cp4).split('-')[0].strip() if cp4 else None
+        
+        if target_cp4 and validate_cp4(target_cp4):
             # 1. Try Strict Match (CP4 + Concelho)
             query = "SELECT full_street, LATITUDE, LONGITUDE, CP4, quality_score FROM pt_addresses WHERE CP4 = ?"
-            params = [str(cp4).split('-')[0]]
+            params = [target_cp4]
             
             if concelho:
                 # Use LIKE for case-insensitivity and % for trailing spaces
@@ -318,8 +321,13 @@ class WaterfallGeocoder:
 
     def _try_nominatim(self, address, cp4, concelho):
         try:
-            query = f"{address}, Portugal"
-            if cp4: query = f"{address}, {cp4}, Portugal"
+            # Structured search is WAY more accurate in Nominatim to prevent "drifting" to other cities.
+            query = {
+                "street": address,
+                "country": "Portugal"
+            }
+            if cp4:
+                query["postalcode"] = cp4
             
             location = self.nominatim.geocode(query, timeout=5, addressdetails=True)
             if location:

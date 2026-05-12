@@ -1,84 +1,46 @@
 import pandas as pd
 import io
 
-def generate_route_excel(solution, locations, df_original):
+def generate_route_excel(routes_df):
     """
-    Generates an Excel file with optimized routes.
-    solution: Dict returned by RouteOptimizer {'routes': [[idx, ...], ...]}
-    locations: List of (lat, lon) tuples used in optimization (0 is depot)
-    df_original: Original DataFrame to retrieve address details
+    Generates an Excel file with optimized routes using the integrated dataframe.
+    Args:
+        routes_df: Full Pandas DataFrame derived from Phase3Planning.
     """
     output = io.BytesIO()
     
-    # Create a list to hold all route rows
-    route_rows = []
+    # Ensure df is working copy
+    df_export = routes_df.copy()
     
-    for v_idx, route_indices in enumerate(solution['routes']):
-        vehicle_id = v_idx + 1
+    # 1. Generate dynamic risk flags based on Nivel_Qualidade
+    def get_risk(q):
+        try:
+            q_int = int(q)
+            if q_int >= 5:
+                return "⚠️ Risco: Morada Genérica"
+            if q_int == 8:
+                return "❌ Risco: Não Encontrada"
+        except:
+            pass
+        return ""
+    
+    if 'Nivel_Qualidade' in df_export.columns:
+        df_export['Risco_Aviso'] = df_export['Nivel_Qualidade'].apply(get_risk)
+    else:
+        df_export['Risco_Aviso'] = ""
+
+    # 2. Generate Deep Links
+    def get_gmaps_link(row):
+        return f"https://www.google.com/maps/dir/?api=1&destination={row['Latitude']},{row['Longitude']}"
+    
+    def get_waze_link(row):
+        return f"https://waze.com/ul?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
         
-        for seq_id, loc_idx in enumerate(route_indices):
-            # loc_idx is index in 'locations' list
-            # locations[0] is Depot
-            
-            row_data = {
-                'Veículo': f"Veículo {vehicle_id}",
-                'Ordem': seq_id,
-                'Tipo': 'Depósito' if loc_idx == 0 else 'Cliente',
-                'Morada': 'Depósito' if loc_idx == 0 else '',
-                'Latitude': locations[loc_idx][0],
-                'Longitude': locations[loc_idx][1],
-                'Link_Google': '',
-                'Link_Waze': ''
-            }
-            
-            if loc_idx != 0:
-                # Retrieve original data
-                # df_original index is loc_idx - 1
-                original_row = df_original.iloc[loc_idx - 1]
-                row_data['Morada'] = original_row.get('Morada_Encontrada', 'N/A')
-                
-                # Quality & Risk Logic
-                q_level = original_row.get('Nivel_Qualidade', 8)
-                row_data['Qualidade'] = q_level
-                
-                # Risk Warning
-                risk_msg = ""
-                try:
-                    q_int = int(q_level)
-                    if q_int >= 5:
-                        risk_msg = "⚠️ Risco: Morada Genérica"
-                    if q_int == 8:
-                        risk_msg = "❌ Risco: Não Encontrada"
-                except:
-                    pass
-                
-                row_data['Risco_Aviso'] = risk_msg
-                row_data['Input_Original'] = original_row.get('CP_Original', '') 
-            
-            # Generate Deep Links
-            lat = row_data['Latitude']
-            lon = row_data['Longitude']
-            
-            # Google Maps: https://www.google.com/maps/dir/?api=1&destination=lat,lon
-            row_data['Link_Google'] = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-            
-            # Waze: https://waze.com/ul?ll=lat,lon&navigate=yes
-            row_data['Link_Waze'] = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
-            
-            route_rows.append(row_data)
-            
-    # Create DataFrame
-    df_export = pd.DataFrame(route_rows)
+    df_export['Link_Google'] = df_export.apply(get_gmaps_link, axis=1)
+    df_export['Link_Waze'] = df_export.apply(get_waze_link, axis=1)
     
     # Fill NaN values to prevent Excel errors
-    df_export = df_export.fillna({
-        'Morada': 'N/A',
-        'Qualidade': 0,
-        'Risco_Aviso': '',
-        'Input_Original': '',
-        'Latitude': 0.0,
-        'Longitude': 0.0
-    })
+    df_export = df_export.fillna("")
     
     # Write to Excel
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -113,14 +75,15 @@ def generate_route_excel(solution, locations, df_original):
             
             # Risk Warning Color
             if col_idx_risk != -1:
-                risk_val = df_export.iloc[row_num]['Risco_Aviso']
-                if risk_val:
-                    worksheet.write(row_num + 1, col_idx_risk, risk_val, risk_format)
+                    risk_val = df_export.iloc[row_num]['Risco_Aviso']
+                    if risk_val:
+                        worksheet.write(row_num + 1, col_idx_risk, risk_val, risk_format)
             
         # Auto-adjust columns width (approx)
-        worksheet.set_column(0, 0, 10) # Veiculo
-        worksheet.set_column(3, 3, 50) # Morada
-        worksheet.set_column(col_idx_risk, col_idx_risk, 25) # Risco
+        worksheet.set_column(0, 0, 15) # Rota
+        worksheet.set_column(1, 1, 8)  # Ordem
+        worksheet.set_column(3, 3, 40) # Morada
+        worksheet.set_column(4, 4, 10) # CP
         
         # --- SHEET 2: LEGEND & DISCLAIMER ---
         ws_legend = workbook.add_worksheet('Legenda e Avisos')
@@ -132,7 +95,7 @@ def generate_route_excel(solution, locations, df_original):
         # Legend Table
         legend_data = [
             ['Nível', 'Descrição', 'Significado'],
-            [0, 'Cliente', 'Coordenadas fornecidas pelo cliente. Não validadas.'],
+            [0, 'Cliente', 'Coordenadas fornecidas pelo cliente ou corrigidas manualmente.'],
             [1, 'Ouro', 'Rua + Número de Porta exato (Alta Confiança).'],
             [2, 'Prata', 'Rua + Código Postal 4 dígitos (Confiança Média-Alta).'],
             [3, 'Bronze', 'Centro do Código Postal 7 dígitos.'],

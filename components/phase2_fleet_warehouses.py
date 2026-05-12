@@ -18,7 +18,7 @@ class Phase2FleetWarehouses:
     
     @staticmethod
     def render():
-        st.title("🚚 Fase 2: Frota e Armazéns")
+        st.title("🚚 Etapa 3: Frota e Armazéns")
         st.markdown("Importe ou configure a sua frota e armazéns.")
         
         # Check if already configured
@@ -43,7 +43,7 @@ class Phase2FleetWarehouses:
         
         st.info("📋 **Ficheiro Excel com 2 sheets:**\n"
                 "- **Sheet 1 'Armazéns':** Nome_Armazem, Morada, CP, Localidade\n"
-                "- **Sheet 2 'Frota':** Veiculo, Armazem, Capacidade_KG, Custo_KM, Velocidade_Media, Horario_Inicio, Horario_Fim")
+                "- **Sheet 2 'Frota':** Veiculo, Armazem, Capacidade_KG, Cap_Volume_m3, Custo_KM, Velocidade_Media, Horario_Inicio, Horario_Fim")
         
         # File upload
         uploaded_file = st.file_uploader(
@@ -92,7 +92,7 @@ class Phase2FleetWarehouses:
                 return
             
             # Validate fleet
-            required_fleet_cols = ['Veiculo', 'Armazem', 'Capacidade_KG', 'Custo_KM', 'Velocidade_Media', 'Horario_Inicio', 'Horario_Fim']
+            required_fleet_cols = ['Veiculo', 'Armazem', 'Capacidade_KG', 'Cap_Volume_m3', 'Custo_KM', 'Velocidade_Media', 'Horario_Inicio', 'Horario_Fim']
             missing_fleet = set(required_fleet_cols) - set(df_fleet.columns)
             if missing_fleet:
                 st.error(f"❌ Sheet 'Frota' - Colunas em falta: {', '.join(missing_fleet)}")
@@ -160,6 +160,7 @@ class Phase2FleetWarehouses:
         for _, row in df_fleet.iterrows():
             fleet_dict[row['Veiculo']] = {
                 'capacity': row['Capacidade_KG'],
+                'capacity_volume': row.get('Cap_Volume_m3', 0),
                 'cost_per_km': row['Custo_KM'],
                 'speed': row['Velocidade_Media'],
                 'start_time': str(row['Horario_Inicio']),
@@ -244,7 +245,7 @@ class Phase2FleetWarehouses:
         
         if 'fleet_config' not in st.session_state:
             st.session_state['fleet_config'] = pd.DataFrame(columns=[
-                'Veiculo', 'Armazem', 'Capacidade_KG', 'Custo_KM', 
+                'Veiculo', 'Armazem', 'Capacidade_KG', 'Cap_Volume_m3', 'Custo_KM', 
                 'Velocidade_Media', 'Horario_Inicio', 'Horario_Fim'
             ])
         
@@ -267,6 +268,7 @@ class Phase2FleetWarehouses:
                 ),
                 "Veiculo": st.column_config.TextColumn("Veículo", required=True),
                 "Capacidade_KG": st.column_config.NumberColumn("Capacidade (kg)", min_value=0, required=True),
+                "Cap_Volume_m3": st.column_config.NumberColumn("Capacidade (m3)", min_value=0.0, required=True),
                 "Custo_KM": st.column_config.NumberColumn("Custo/km (€)", min_value=0.0, format="%.2f", required=True),
                 "Velocidade_Media": st.column_config.NumberColumn("Velocidade (km/h)", min_value=0, required=True),
                 "Horario_Inicio": st.column_config.TimeColumn("Início", format="HH:mm", required=True),
@@ -275,7 +277,22 @@ class Phase2FleetWarehouses:
             key="fleet_editor_manual"
         )
         
-        st.session_state['fleet_config'] = edited_fleet
+        # Convert back to standardized dictionary format required by the Solver engine
+        new_fleet_dict = {}
+        if isinstance(edited_fleet, pd.DataFrame) and not edited_fleet.empty:
+            for _, row in edited_fleet.iterrows():
+                if pd.isna(row['Veiculo']) or not str(row['Veiculo']).strip():
+                    continue
+                new_fleet_dict[row['Veiculo']] = {
+                    'capacity': row['Capacidade_KG'],
+                    'capacity_volume': row['Cap_Volume_m3'],
+                    'cost_per_km': row['Custo_KM'],
+                    'speed': row['Velocidade_Media'],
+                    'start_time': str(row['Horario_Inicio']),
+                    'end_time': str(row['Horario_Fim']),
+                    'warehouse': row['Armazem']
+                }
+        st.session_state['fleet_config'] = new_fleet_dict
     
     @staticmethod
     def show_summary():
@@ -315,6 +332,7 @@ class Phase2FleetWarehouses:
                 fleet_rows.append({
                     'Veiculo': vehicle_name,
                     'Capacidade_KG': vehicle_data['capacity'],
+                    'Cap_Volume_m3': vehicle_data.get('capacity_volume', 0),
                     'Custo_KM': vehicle_data['cost_per_km'],
                     'Velocidade_Media': vehicle_data['speed'],
                     'Horario_Inicio': vehicle_data['start_time'],
@@ -340,6 +358,7 @@ class Phase2FleetWarehouses:
                 ),
                 "Veiculo": st.column_config.TextColumn("Veículo", required=True),
                 "Capacidade_KG": st.column_config.NumberColumn("Capacidade (kg)", min_value=0, required=True),
+                "Cap_Volume_m3": st.column_config.NumberColumn("Capacidade (m3)", min_value=0.0, required=True),
                 "Custo_KM": st.column_config.NumberColumn("Custo/km (€)", min_value=0.0, format="%.2f", required=True),
                 "Velocidade_Media": st.column_config.NumberColumn("Velocidade (km/h)", min_value=0, required=True),
                 "Horario_Inicio": st.column_config.TextColumn("Início (HH:MM)", required=True),
@@ -355,6 +374,7 @@ class Phase2FleetWarehouses:
             for _, row in edited_fleet.iterrows():
                 new_fleet_dict[row['Veiculo']] = {
                     'capacity': row['Capacidade_KG'],
+                    'capacity_volume': row['Cap_Volume_m3'],
                     'cost_per_km': row['Custo_KM'],
                     'speed': row['Velocidade_Media'],
                     'start_time': str(row['Horario_Inicio']),
@@ -377,6 +397,24 @@ class Phase2FleetWarehouses:
                 st.rerun()
         
         with col2:
-            if st.button("➡️ Avançar para Fase 3: Planeamento", type="primary", use_container_width=True):
-                st.session_state['current_phase'] = 3
+            if st.button("➡️ Avançar para Etapa 4: Planeamento", type="primary", use_container_width=True):
+                # AUTO-SAVE: Protect Fleet configuration progress
+                import utils.persistence_manager as pm
+                active_proj = st.session_state.get('projeto_atual')
+                current_user = st.session_state.get('utilizador_id', 1)
+                
+                if active_proj:
+                    try:
+                        with st.spinner("A gravar frota automaticamente..."):
+                            pm.create_snapshot(
+                                projeto_id=active_proj,
+                                utilizador_id=current_user,
+                                fase_atual=3, # Logical phase
+                                snapshot_name="Auto-Save ao concluir Frota"
+                            )
+                    except Exception:
+                        pass # Silent fail to not block user flow
+
+                # Correct mapping: Tab 4 corresponds to Phase 3 (Planeamento)
+                st.session_state['next_phase_queued'] = 4 
                 st.rerun()

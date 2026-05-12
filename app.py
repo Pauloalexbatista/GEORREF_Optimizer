@@ -141,7 +141,7 @@ st.markdown("""
         background: linear-gradient(180deg, var(--cool-steel) 0%, var(--cool-steel-dark) 100%);
     }
     [data-testid="stSidebar"] * {
-        color: white !important;
+        color: #000000 !important;
     }
     
     /* Fix number input visibility in sidebar */
@@ -1024,6 +1024,9 @@ def render_main_app():
                 )
 
 def main():
+    # 1. Render User Context & Projects in Sidebar
+    auth.render_sidebar()
+    
     # Initialize session state for phases
     if 'current_phase' not in st.session_state:
         st.session_state['current_phase'] = 1
@@ -1034,18 +1037,74 @@ def main():
     from components.phase2_fleet_warehouses import Phase2FleetWarehouses
     from components.phase3_planning import Phase3Planning
     
-    # Render phase navigator in sidebar
-    PhaseNavigator.render_sidebar()
+    # --- 5 SEPARADORES SUPERIORES (DINÂMICOS & PROGRAMÁVEIS) ---
+    tab_options = {
+        1: "📂 1 - Gravações",
+        2: "📍 2 - Georreferenciação",
+        3: "🚛 3 - Frota e Armazéns",
+        4: "🧠 4 - Planeamento",
+        5: "📥 5 - Exportar"
+    }
     
-    # Render current phase
-    current_phase = st.session_state['current_phase']
+    # Ensure valid state
+    if 'current_phase' not in st.session_state or st.session_state['current_phase'] not in tab_options:
+        st.session_state['current_phase'] = 1
+        
+    # --- FINAL ZEN SOLUTION ---
+    # 0. INTERCEPT PROGRAMMATIC QUEUE: Safely process redirects requested by buttons!
+    if 'next_phase_queued' in st.session_state:
+        st.session_state['current_phase'] = st.session_state['next_phase_queued']
+        del st.session_state['next_phase_queued']
+
+    # 1. Defuse infinite recursion loop by binding the variable DIRECTLY to widget key.
+    if 'current_phase' not in st.session_state or st.session_state['current_phase'] is None:
+        st.session_state['current_phase'] = 1
+        
+    st.markdown('<div style="margin-bottom: -10px;"></div>', unsafe_allow_html=True)
     
-    if current_phase == 1:
+    # 2. Modern Single-Variable Binding. Streamlit manages bidirectional updates automatically!
+    st.segmented_control(
+        "Navegação",
+        options=list(tab_options.keys()),
+        format_func=lambda k: tab_options[k],
+        selection_mode="single",
+        label_visibility="collapsed",
+        key="current_phase" # Binds natively to st.session_state['current_phase']
+    )
+    
+    # 3. Explicit Guard: prevent the user from deselecting (becoming None)
+    if st.session_state['current_phase'] is None:
+        st.session_state['current_phase'] = 1 # Force instant recover to valid state
+        
+    st.markdown("---")
+    
+    # --- RENDER ACTIVE VIEW ---
+    curr = st.session_state['current_phase']
+    
+    if curr == 1:
+        PhaseNavigator.render_snapshots_tab()
+        
+    elif curr == 2:
         Phase1Georeferencing.render()
-    elif current_phase == 2:
-        Phase2FleetWarehouses.render()
-    elif current_phase == 3:
-        Phase3Planning.render()
+        
+    elif curr == 3:
+        if st.session_state.get('clients_geocoded') is None:
+            st.warning("⚠️ Por favor, carregue e georreferencie os clientes na Etapa 2 primeiro.")
+        else:
+            Phase2FleetWarehouses.render()
+            
+    elif curr == 4:
+        if not Phase3Planning.check_prerequisites():
+            Phase3Planning.render_prerequisites_checklist()
+        else:
+            Phase3Planning.render()
+            
+    elif curr == 5:
+        if st.session_state.get('routes_solution') is None:
+            st.warning("⚠️ Calcule as rotas na Etapa 4 primeiro para poder exportar a informação.")
+        else:
+            st.markdown("## 📥 Exportar Informação Final")
+            Phase3Planning.render_export_section()
     
     # --- SIDEBAR EXTRAS ---
     render_sidebar_extras()
