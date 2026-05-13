@@ -53,6 +53,58 @@ st.set_page_config(
     layout="wide"
 )
 
+# Modo Full-Screen (Quiosque) para o Monitor Secundário
+if st.session_state.get('multi_monitor_mode', False):
+    st.markdown("""
+        <style>
+            /* Esconder a barra lateral e o cabeçalho original do Streamlit */
+            [data-testid="stSidebar"] { display: none !important; }
+            [data-testid="stHeader"] { display: none !important; }
+            .stApp > header { display: none !important; }
+            /* Puxar o mapa para o topo para aproveitar todo o espaço */
+            .block-container { padding-top: 1rem !important; max-width: 98% !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+# --- SINCROMIZAÇÃO MULTI-MONITOR (URL PARAMS) E AUTO-LOGIN ---
+if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
+    snap_id = st.query_params.get('snapshot_id')
+    modo = st.query_params.get('modo')
+    
+    from utils.persistence_manager import load_snapshot_into_session
+    from database import get_db, get_utilizador_por_id
+    try:
+        if snap_id:
+            # 1. Recuperar o utilizador que criou o snapshot para fazer auto-login
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT utilizador_id FROM snapshots WHERE id = ?", (snap_id,))
+                row = cursor.fetchone()
+                if row:
+                    uid = row['utilizador_id']
+                    user = get_utilizador_por_id(uid)
+                    if user:
+                        st.session_state['logged_in'] = True
+                        st.session_state['utilizador_id'] = user['id']
+                        st.session_state['utilizador_nome'] = user['nome']
+                        st.session_state['utilizador_email'] = user['email']
+                        st.session_state['empresa_id'] = user['empresa_id']
+                        st.session_state['is_admin'] = user['is_admin']
+                        
+            # 2. Carregar o snapshot de transferência
+            load_snapshot_into_session(int(snap_id))
+            
+        # 3. Configurar Visualização Multi-Ecrã
+        if modo:
+            st.session_state['multi_monitor_mode'] = True
+            st.session_state['view_mode'] = modo
+            st.session_state['current_phase'] = 4  # O Dashboard Tático agora está no 4
+            
+        st.query_params.clear() # Limpa a URL para não entrar em loop
+        st.rerun()
+    except Exception as e:
+        st.error(f"Erro ao carregar monitor secundário: {str(e)}")
+
 # Verificar autenticação - se não estiver logado, mostrar página de login
 if not auth.is_logged_in():
     auth.render_login_page()
@@ -1042,7 +1094,7 @@ def main():
         1: "📂 1 - Gravações",
         2: "📍 2 - Georreferenciação",
         3: "🚛 3 - Frota e Armazéns",
-        4: "🧠 4 - Planeamento",
+        4: "🧠 4 - Dashboard Tático",
         5: "📥 5 - Exportar"
     }
     
@@ -1098,7 +1150,6 @@ def main():
             Phase3Planning.render_prerequisites_checklist()
         else:
             Phase3Planning.render()
-            
     elif curr == 5:
         if st.session_state.get('routes_solution') is None:
             st.warning("⚠️ Calcule as rotas na Etapa 4 primeiro para poder exportar a informação.")

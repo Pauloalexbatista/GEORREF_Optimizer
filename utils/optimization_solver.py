@@ -100,6 +100,12 @@ class AdvancedRouteOptimizer:
             'Capacity'
         )
         
+        # --- EXPLICIT HARD BOUND ENFORCEMENT ---
+        capacity_dimension = self.routing.GetDimensionOrDie('Capacity')
+        for vehicle_id in range(num_vehicles):
+            end_index = self.routing.End(vehicle_id)
+            capacity_dimension.CumulVar(end_index).SetMax(clean_capacities[vehicle_id])
+        
         # 3. Volume Capacity (Strict Hard Constraint!)
         if volume_demands is not None and vehicle_volume_capacities is not None:
             clean_v_demands = _safe_int_scale(volume_demands)
@@ -119,6 +125,12 @@ class AdvancedRouteOptimizer:
                 True,
                 'Volume'
             )
+            
+            # --- EXPLICIT HARD BOUND ENFORCEMENT ---
+            volume_dimension = self.routing.GetDimensionOrDie('Volume')
+            for vehicle_id in range(num_vehicles):
+                end_index = self.routing.End(vehicle_id)
+                volume_dimension.CumulVar(end_index).SetMax(clean_v_capacities[vehicle_id])
             
         # 4. True Duration Limitation Dimension
         # Since Transit Callback evaluates Distance (km), to simulate real Duration limit,
@@ -261,13 +273,13 @@ class AdvancedRouteOptimizer:
             if len(route) > 1:
                 route_distance += distance_matrix[route[-2]][route[-1]]
             
-            if len(route) > 2:  # Only add routes with actual deliveries
-                routes.append(route)
-                route_distances.append(route_distance)
-                route_loads.append(route_load)
-                if volume_demands is not None:
-                    route_volumes.append(route_volume)
-                total_distance += route_distance
+            # ALWAYS add routes to preserve index alignment with vehicle_names!
+            routes.append(route)
+            route_distances.append(route_distance)
+            route_loads.append(route_load)
+            if volume_demands is not None:
+                route_volumes.append(route_volume)
+            total_distance += route_distance
         
         # Identify dropped nodes
         # Any node between 0 and num_locations-1 that isn't a start/end depot index and wasn't visited

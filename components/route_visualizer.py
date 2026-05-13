@@ -24,38 +24,28 @@ class RouteVisualizer:
         if routes_df is None or len(routes_df) == 0:
             return []
         
-        st.markdown("### 🗺️ Visualizar Rotas")
+        st.markdown("### 🗺️ Selecionar e Filtrar Rotas")
+        st.caption("Poupe espaço de ecrã: clique na caixa abaixo para adicionar ou remover as rotas visíveis.")
         
         route_names = sorted(routes_df['Rota'].unique())
-        
-        st.markdown("**Selecione as rotas a visualizar:**")
-        
-        # Create columns for checkboxes
-        cols = st.columns(min(len(route_names), 4))
-        
-        selected_routes = []
-        for idx, route_name in enumerate(route_names):
-            col_idx = idx % len(cols)
-            with cols[col_idx]:
-                if st.checkbox(route_name, value=True, key=f"route_select_{route_name}"):
-                    selected_routes.append(route_name)
+        selected_routes = st.multiselect("Rotas Ativas:", route_names, default=route_names)
         
         return selected_routes
     
     @staticmethod
-    def render_interactive_map(routes_df, selected_routes, warehouses_df):
+    def render_interactive_map(routes_df, selected_routes, warehouses_df, height=600):
         """Render interactive map with selected routes"""
         
         if not selected_routes:
             st.info("👆 Selecione pelo menos uma rota para visualizar no mapa.")
-            return
+            return None
         
         # Filter routes
         filtered_df = routes_df[routes_df['Rota'].isin(selected_routes)].copy()
         
         if len(filtered_df) == 0:
             st.warning("⚠️ Nenhuma entrega nas rotas selecionadas.")
-            return
+            return None
         
         # Calculate map center
         center_lat = filtered_df['Latitude'].mean()
@@ -106,7 +96,7 @@ class RouteVisualizer:
         
         # Display map and capture marker click interactions!
         # Uses container width scaling so it auto-shrinks/grows when placed in a multi-column layout!
-        return st_folium(m, use_container_width=True, height=600, returned_objects=["last_object_clicked"])
+        return st_folium(m, use_container_width=True, height=height, returned_objects=["last_object_clicked"])
     
     @staticmethod
     def _fetch_real_roads(coords):
@@ -170,6 +160,12 @@ class RouteVisualizer:
             return
         
         # Get warehouse
+        if warehouses_df is None:
+            warehouses_df = st.session_state.get('warehouses_geocoded')
+            
+        if warehouses_df is None or len(warehouses_df) == 0:
+            return # Absolute fail-safe to protect visualization
+            
         warehouse = warehouses_df[warehouses_df['Nome_Armazem'] == route_name]
         if len(warehouse) == 0:
             # Use first warehouse as fallback
@@ -277,7 +273,7 @@ class RouteVisualizer:
                     </div>
                     """
                 ),
-                tooltip=f"Paragem #{pin_label} - {row['Cliente']}"
+                tooltip=f"{route_name} #{pin_label} Cl: {row['Cliente']}"
             ).add_to(m)
         
         # Add return to warehouse
@@ -338,14 +334,52 @@ class RouteVisualizer:
         m.get_root().html.add_child(folium.Element(legend_html))
     
     @staticmethod
-    def render_route_metrics(routes_df, selected_routes):
-        """Render metrics in a premium, unified Excel-style DataFrame grid"""
+    def render_single_line_totals(routes_df):
+        """Render total metrics in a single compact line"""
         import pandas as pd
+        import streamlit as st
         
-        if not selected_routes:
+        if routes_df is None or len(routes_df) == 0:
             return
             
-        st.markdown("### 📊 Resumo Consolidado das Rotas (Excel Grid)")
+        st.markdown("### 📝 Editar Rotas")
+        
+        # Calculate real totals (exclude PENDENTE if possible, or just calculate from the DF directly)
+        real_df = routes_df[~routes_df['Rota'].str.contains("PENDENTE", na=False)]
+        
+        total_dist = 0.0
+        total_load = 0.0
+        total_vol = 0.0
+        est_time = 0.0
+        
+        for route_name, route_data in real_df.groupby('Rota'):
+            dist = float(route_data['Dist_Acum'].max())
+            total_dist += dist
+            total_load += float(route_data['Carga_Acum'].max())
+            total_vol += float(route_data['Carga_Vol_Acum'].max()) if 'Carga_Vol_Acum' in route_data.columns else 0.0
+            est_time += (dist / 40.0) + (len(route_data) * 0.25)
+            
+        # Single line display
+        st.markdown(f"**Totais da Frota:** 🏆 Distância: `{total_dist:.1f} km` &nbsp;|&nbsp; ⌛ Duração: `{est_time:.1f} h` &nbsp;|&nbsp; ⚖️ Peso: `{total_load:.1f} kg` &nbsp;|&nbsp; 🧊 Volume: `{total_vol:.1f} m³`")
+        
+    @staticmethod
+    def render_route_metrics(routes_df, selected_routes=None):
+        """Render metrics in a premium, unified Excel-style DataFrame grid. Returns selected route names."""
+        import pandas as pd
+        import streamlit as st
+        
+        if selected_routes is None:
+            selected_routes = sorted(routes_df['Rota'].unique())
+            
+        if not selected_routes:
+            return []
+            
+        st.markdown("#### 📊 Selecione os veículos na grelha para filtrar a tabela de edição:")
+        
+        # Obter capacidades da frota para as cores
+        fleet_config = st.session_state.get('fleet_config_used', {})
+        opt_params = st.session_state.get('optimization_params', {})
+        max_duration_h = opt_params.get('max_route_duration', 480) / 60.0
         
         summary_rows = []
         
@@ -353,6 +387,11 @@ class RouteVisualizer:
             route_data = routes_df[routes_df['Rota'] == route_name]
             if len(route_data) == 0:
                 continue
+                
+            # Capacidades específicas deste veículo
+            v_config = fleet_config.get(route_name, {})
+            cap_peso = v_config.get('capacidade_peso', 99999)
+            cap_vol = v_config.get('capacidade_vol', 99999)
                 
             # Calculate aggregated metrics
             num_deliveries = len(route_data)
@@ -364,6 +403,8 @@ class RouteVisualizer:
                 # For pending list, demands do not accumulate chronologically, we sum them directly!
                 total_load = route_data['Carga_Acum'].sum() if 'Carga_Acum' in route_data.columns else 0.0
                 total_vol = route_data['Carga_Vol_Acum'].sum() if 'Carga_Vol_Acum' in route_data.columns else 0.0
+                cap_peso = 99999 # Sem limite
+                cap_vol = 99999
             else:
                 total_dist = float(route_data['Dist_Acum'].max())
                 total_load = float(route_data['Carga_Acum'].max())
@@ -377,14 +418,49 @@ class RouteVisualizer:
                 "Distância Total (km)": round(total_dist, 2),
                 "Duração Prevista (h)": round(est_time, 1),
                 "Peso Ocupado (kg)": round(total_load, 1),
-                "Volume Ocupado (m3)": round(total_vol, 2)
+                "Volume Ocupado (m3)": round(total_vol, 2),
+                "_cap_peso": cap_peso,
+                "_cap_vol": cap_vol,
+                "_cap_dur": max_duration_h
             })
             
         if not summary_rows:
             st.info("Nenhuma métrica a exibir.")
-            return
+            return []
             
         df_summary = pd.DataFrame(summary_rows)
+        
+        # --- CONDITIONAL FORMATTING (DESIGN) ---
+        def style_metrics(row):
+            styles = [''] * len(row)
+            
+            def get_color(val, cap):
+                if cap <= 0 or cap == 99999: return ''
+                pct = val / cap
+                
+                # Cores Premium Suaves
+                if pct > 1.0: 
+                    return 'background-color: #ffebee; color: #c62828; font-weight: bold;' # Vermelho (Excedido)
+                elif pct >= 0.90:
+                    return 'background-color: #fff3e0; color: #e65100; font-weight: bold;' # Laranja Forte (Quase limite)
+                elif pct >= 0.70:
+                    return 'background-color: #fff8e1; color: #f57f17;' # Amarelo (Atenção)
+                elif pct >= 0.15:
+                    return 'background-color: #e8f5e9; color: #2e7d32;' # Verde Suave (Bom Uso)
+                else:
+                    return 'color: #9e9e9e;' # Cinza (Vazio / Pouco uso)
+                    
+            dur_idx = df_summary.columns.get_loc("Duração Prevista (h)")
+            peso_idx = df_summary.columns.get_loc("Peso Ocupado (kg)")
+            vol_idx = df_summary.columns.get_loc("Volume Ocupado (m3)")
+            
+            styles[dur_idx] = get_color(row["Duração Prevista (h)"], row["_cap_dur"])
+            styles[peso_idx] = get_color(row["Peso Ocupado (kg)"], row["_cap_peso"])
+            styles[vol_idx] = get_color(row["Volume Ocupado (m3)"], row["_cap_vol"])
+            
+            return styles
+            
+        styled_df = df_summary.style.apply(style_metrics, axis=1)
         
         # Configure columns to give that ultimate premium feeling
         column_config = {
@@ -393,28 +469,27 @@ class RouteVisualizer:
             "Distância Total (km)": st.column_config.NumberColumn("🛣️ Distância", format="%.2f km"),
             "Duração Prevista (h)": st.column_config.NumberColumn("🕒 Duração", format="%.1f h"),
             "Peso Ocupado (kg)": st.column_config.NumberColumn("⚖️ Peso Carga", format="%.1f kg"),
-            "Volume Ocupado (m3)": st.column_config.NumberColumn("🧊 Volume Carga", format="%.2f m³")
+            "Volume Ocupado (m3)": st.column_config.NumberColumn("🧊 Volume Carga", format="%.2f m³"),
+            "_cap_peso": None, # Hide internal capacity columns
+            "_cap_vol": None,
+            "_cap_dur": None
         }
         
-        # Render interactive excel grid
-        st.dataframe(
-            df_summary,
+        # Render interactive excel grid with row selection enabled!
+        event = st.dataframe(
+            styled_df,
             column_config=column_config,
             hide_index=True,
             use_container_width=True,
+            on_select="rerun",
+            selection_mode="multi-row",
             key="visual_summary_metrics_grid"
         )
         
-        # Add a super fast summary footer metrics block for the WHOLE operations day!
-        real_routes_df = df_summary[~df_summary['Veículo / Rota'].str.contains("PENDENTE", na=False)]
-        
-        st.markdown("---")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("🏆 Total Distância", f"{real_routes_df['Distância Total (km)'].sum():.1f} km")
-        with col2:
-            st.metric("⌛ Horas Totais Frota", f"{real_routes_df['Duração Prevista (h)'].sum():.1f} h")
-        with col3:
-            st.metric("⚖️ Peso Total Entregue", f"{real_routes_df['Peso Ocupado (kg)'].sum():.1f} kg")
-        with col4:
-            st.metric("🧊 Volume Total Entregue", f"{real_routes_df['Volume Ocupado (m3)'].sum():.1f} m³")
+        # Return the actual route names based on the selected row indices!
+        if event and hasattr(event, 'selection') and hasattr(event.selection, 'rows'):
+            selected_indices = event.selection.rows
+            if selected_indices:
+                return df_summary.iloc[selected_indices]['Veículo / Rota'].tolist()
+                
+        return []

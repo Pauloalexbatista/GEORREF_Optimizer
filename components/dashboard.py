@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from database import (
     get_metricas_projeto, get_metricas_empresa, get_projetos,
-    get_entregas_projeto, PLANOS, get_empresa
+    get_entregas_projeto, PLANOS, get_empresa, get_plano_info
 )
 import auth
 

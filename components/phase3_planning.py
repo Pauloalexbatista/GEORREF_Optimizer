@@ -20,7 +20,9 @@ class Phase3Planning:
     
     @staticmethod
     def render():
-        st.title("🧠 Etapa 4: Planeamento de Rotas")
+        view_mode = st.session_state.get('view_mode', 'full')
+        if view_mode == 'full':
+            st.title("🧠 Etapa 4: Dashboard Tático")
         
         # Check prerequisites
         if not Phase3Planning.check_prerequisites():
@@ -72,7 +74,13 @@ class Phase3Planning:
     @staticmethod
     def render_planning_interface():
         """Main planning interface"""
+        view_mode = st.session_state.get('view_mode', 'full')
         
+        # Se for ecrã escravo (multi-monitor), ignorar menus externos e focar só no Dashboard
+        if view_mode != 'full':
+            Phase3Planning.render_tactical_dashboard()
+            return
+            
         # Step 1: Execute Optimization
         st.markdown("## 1️⃣ Calcular Rotas Otimizadas")
         
@@ -92,12 +100,38 @@ class Phase3Planning:
             st.markdown("---")
             st.markdown("## 2️⃣ Editar Rotas")
             
-            Phase3Planning.render_route_editor()
+            routes_df = st.session_state['routes_solution']
+            fleet_config = st.session_state.get('fleet_config_used', {})
             
-            st.markdown("---")
-            st.markdown("## 3️⃣ Visualizar Rotas")
+            # 1. Avisos (Warnings)
+            # RouteEditor handles real-time validation warnings natively!
+                    
+            # 2. Resumo de Frota Usada vs Livre
+            st.markdown("### 🚛 Gestão de Frota")
             
-            Phase3Planning.render_route_visualization()
+            used_vehicles = set(routes_df['Rota'].unique())
+            all_vehicles = set(fleet_config.keys())
+            free_vehicles = all_vehicles - used_vehicles
+            
+            col_used, col_free = st.columns(2)
+            
+            with col_used:
+                st.success(f"**Frota em Uso ({len(used_vehicles)}):**")
+                for v in sorted(list(used_vehicles)):
+                    wh = fleet_config.get(v, {}).get('warehouse', 'N/A')
+                    st.write(f"- 🚚 **{v}** (Base: *{wh}*)")
+                    
+            with col_free:
+                st.info(f"**Frota Livre ({len(free_vehicles)}):**")
+                if free_vehicles:
+                    for v in sorted(list(free_vehicles)):
+                        wh = fleet_config.get(v, {}).get('warehouse', 'N/A')
+                        st.write(f"- ⚪ **{v}** (Base: *{wh}*)")
+                else:
+                    st.write("*Toda a frota está em uso.*")
+
+            # Render Unfied Tactical Dashboard
+            Phase3Planning.render_tactical_dashboard()
             
             # --- PRO-ACTIVE FINAL AUTO-SAVE & ADVANCE ---
             # Delivers the final promise: Complete step 3 and safeguard data before export.
@@ -305,7 +339,7 @@ class Phase3Planning:
                     if max_demand > max_capacity:
                         issues.append("🔴 **Cliente com peso excessivo**: Há clientes que não cabem em nenhum veículo")
                         st.error(f"Há pelo menos um cliente com {max_demand:.0f} kg, mas o maior veículo só tem {max_capacity:.0f} kg de capacidade.")
-                        st.info("💡 **Solução**: Aumente a capacidade do maior veículo ou divida a entrega")
+                        st.info(f"💡 **Solução**: Aumente a capacidade do maior veículo ou divida a entrega")
                     
                     # Check if demands are too large (Volume)
                     max_vol_dem = max(volume_demands) if volume_demands else 0
@@ -313,7 +347,7 @@ class Phase3Planning:
                     if max_vol_dem > max_vol_cap:
                         issues.append("🔴 **Cliente com volume excessivo**: Há clientes que não cabem em nenhum veículo")
                         st.error(f"Há pelo menos um cliente com {max_vol_dem:.1f} m3, mas o maior veículo só tem {max_vol_cap:.1f} m3 de capacidade volumétrica.")
-                        st.info("💡 **Solução**: Divida a entrega volumosa.")
+                        st.info(f"💡 **Solução**: Divida a entrega volumosa.")
                     
                     if not issues:
                         st.warning("⚠️ Não foi possível identificar a causa específica. Tente:")
@@ -349,7 +383,8 @@ class Phase3Planning:
                 locations,
                 vehicle_names,
                 clients_df,
-                client_start_idx
+                client_start_idx,
+                fleet_config
             )
             
             # Show status alerts about unassigned items
@@ -365,7 +400,7 @@ class Phase3Planning:
             st.rerun()
     
     @staticmethod
-    def _convert_solution_to_dataframe(result, location_names, locations, vehicle_names, clients_df, client_start_idx):
+    def _convert_solution_to_dataframe(result, location_names, locations, vehicle_names, clients_df, client_start_idx, fleet_config):
         """Convert optimization result to editable DataFrame with detailed timing"""
         from datetime import datetime, timedelta
         import math
@@ -452,6 +487,7 @@ class Phase3Planning:
                     
                     rows.append({
                         'Rota': vehicle_name,
+                        'Armazém': fleet_config.get(vehicle_name, {}).get('warehouse', 'N/A'),
                         'Ordem': order,
                         'Cliente': client_row.get('Codigo_Cliente', f'Cliente_{client_idx}'),
                         'Morada': client_row.get('Morada', 'N/A'),
@@ -521,52 +557,163 @@ class Phase3Planning:
         return pd.DataFrame(rows)
     
     @staticmethod
-    def render_route_editor():
-        """Render interactive route editor"""
+    def render_tactical_dashboard():
+        """Render unified dashboard combining Excel Grid, Map and Editable Table."""
         
         routes_df = st.session_state.get('routes_solution')
         fleet_config = st.session_state.get('fleet_config_used', {})
+        warehouses_df = st.session_state.get('warehouses_used')
         
+        if warehouses_df is None:
+            warehouses_df = st.session_state.get('warehouses_geocoded')
+            
         if routes_df is None:
             return
+            
+        view_mode = st.session_state.get('view_mode', 'full')
         
-        # Toggle for auto-optimization
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            pass  # Title is in the main render
-        with col2:
-            auto_optimize = st.checkbox(
-                "🎯 Auto-otimizar",
-                value=True,
-                help="Quando moves clientes, reordena automaticamente para minimizar distância",
-                key="auto_optimize_routes"
-            )
-        
-        if auto_optimize:
-            st.caption("✅ Ao mover clientes, a ordem será otimizada automaticamente para minimizar KM")
+        # ==========================================
+        # 1. MOTOR DE SINCRONIZAÇÃO (MULTI-ECRÃ)
+        # ==========================================
+        if view_mode != 'full':
+            col_b1, col_b2, col_b3 = st.columns([1, 2, 1])
+            with col_b2:
+                st.info(f"📺 Modo Multi-Ecrã Ativo: {view_mode.upper()}")
+                if st.button("🔄 Puxar Atualizações do Ecrã Principal", type="primary", use_container_width=True):
+                    projeto_id = st.session_state.get('projeto_atual')
+                    if projeto_id:
+                        from utils.persistence_manager import get_snapshots_for_project, load_snapshot_into_session
+                        snaps = get_snapshots_for_project(projeto_id, limit=20)
+                        sync_snaps = [s for s in snaps if "Sincronização" in s['nome_snapshot']]
+                        if sync_snaps:
+                            load_snapshot_into_session(sync_snaps[0]['id'])
+                            st.success("Sincronizado com sucesso!")
+                            st.rerun()
+                        else:
+                            st.warning("Ainda não existe nenhum ponto de sincronização emitido pelo Ecrã Principal.")
         else:
-            st.caption("✋ Modo manual: a ordem que defines será mantida")
+            # Ecrã Mestre
+            col_s1, col_s2 = st.columns([3, 1])
+            with col_s1:
+                RouteVisualizer.render_single_line_totals(routes_df)
+            with col_s2:
+                if st.button("📡 Emitir Sincronização (Ecrãs Externos)", type="primary", use_container_width=True):
+                    projeto_id = st.session_state.get('projeto_atual')
+                    user_id = st.session_state.get('utilizador_id', 1)
+                    if projeto_id:
+                        from utils.persistence_manager import create_snapshot
+                        from datetime import datetime
+                        name = f"🔄 Sincronização Multi-Ecrã ({datetime.now().strftime('%H:%M:%S')})"
+                        create_snapshot(projeto_id, user_id, 4, snapshot_name=name)
+                        st.toast("✅ Sinal de Sincronização emitido! Podes atualizar os outros ecrãs.", icon="📡")
+                    else:
+                        st.error("Projeto não guardado na base de dados.")
+                        
+        st.markdown("---")
         
-        # Editable table
-        edited_df = RouteEditor.render_editable_routes_table(routes_df, fleet_config)
+        # ==========================================
+        # 2. RENDERIZAÇÃO CONDICIONAL POR MODO
+        # ==========================================
+        selected_routes = st.session_state.get('global_active_routes', sorted(routes_df['Rota'].unique()))
         
-        if edited_df is not None:
-            # Check if changed
-            if not edited_df.equals(routes_df):
+        # RENDERIZAR APENAS MAPA
+        # RENDERIZAR APENAS MAPA
+        if view_mode == 'mapa':
+            st.markdown("#### 🗺️ Ecrã Gigante Geográfico")
+            map_output = RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
+            Phase3Planning._process_telemetry_to_state(map_output, routes_df)
+            
+            st.markdown(" ")
+            Phase3Planning._render_commander_deck(routes_df)
+            
+        # RENDERIZAR TABELAS E COMANDOS
+        elif view_mode == 'tabelas' or view_mode == 'full':
+            
+            # Se for modo completo, mostramos Lado a Lado. Senão, ocupamos tudo.
+            if view_mode == 'full':
+                col_left, col_right = st.columns([1, 1.2])
+            else:
+                col_left, col_right = st.container(), st.container() # Ocupa 100% no modo 'tabelas'
+                
+            with col_left:
+                selected_grid_routes = RouteVisualizer.render_route_metrics(routes_df)
+                if not selected_grid_routes:
+                    selected_routes = sorted(routes_df['Rota'].unique())
+                else:
+                    selected_routes = selected_grid_routes
+                    
+                st.session_state['global_active_routes'] = selected_routes
+                
+                st.markdown(" ")
+                Phase3Planning._render_commander_deck(routes_df)
+                
+            # No Modo Completo, pomos o Mapa à Direita
+            if view_mode == 'full':
+                with col_right:
+                    st.markdown("#### 🗺️ Mapa Geográfico em Tempo Real")
+                    map_output = RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
+                    Phase3Planning._process_telemetry_to_state(map_output, routes_df)
+                    
+                    st.markdown(" ")
+                    st.markdown("##### 🖥️ Abrir Monitores Secundários")
+                    
+                    projeto_id = st.session_state.get('projeto_atual')
+                    if projeto_id:
+                        from utils.persistence_manager import get_snapshots_for_project
+                        snaps = get_snapshots_for_project(projeto_id, limit=1)
+                        if snaps:
+                            snap_id = snaps[0]['id']
+                            st.markdown(f"""
+                                <div style="display: flex; gap: 10px;">
+                                    <a href="/?modo=mapa&snapshot_id={snap_id}" target="_blank" style="flex: 1; text-align: center; background-color: #8DA7BE; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; border: 1px solid #707078;">🌍 Abrir 2º Ecrã (Só Mapa)</a>
+                                    <a href="/?modo=tabelas&snapshot_id={snap_id}" target="_blank" style="flex: 1; text-align: center; background-color: #8DA7BE; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; border: 1px solid #707078;">📊 Abrir 3º Ecrã (Só Tabelas)</a>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.warning("⚠️ Grava o projeto na Etapa 1 ou clica em 'Emitir Sincronização' para gerar os links dos ecrãs.")
+                    else:
+                        st.error("Projeto não identificado.")
+                        
+        # -----------------------------------------------------
+        # Ferramentas Transversais a todos os Ecrãs (Map, Table, Full)
+        # -----------------------------------------------------
+        st.markdown("---")
+        Phase3Planning.render_fleet_dispatch_panel()
+        st.markdown("---")
+        
+        # Tabela Fina de Edição - Apenas nos Ecrãs onde faz sentido (Tabelas e Full)
+        if view_mode != 'mapa':
+            col_ed1, col_ed2 = st.columns([3, 1])
+            with col_ed1:
+                st.markdown("#### ✏️ Edição Fina (Apenas Veículos Selecionados na Grelha)")
+            with col_ed2:
+                auto_optimize = st.checkbox(
+                    "🎯 Auto-otimizar",
+                    value=True,
+                    help="Quando moves clientes, reordena automaticamente",
+                    key="auto_optimize_routes"
+                )
+                
+            filtered_df = routes_df[routes_df['Rota'].isin(selected_routes)].copy()
+            edited_df = RouteEditor.render_editable_routes_table(filtered_df, fleet_config)
+            
+            if edited_df is not None and not edited_df.equals(filtered_df):
                 auto_opt = st.session_state.get('auto_optimize_routes', True)
+                new_full_df = routes_df.copy()
+                clients_in_view = filtered_df['Cliente'].tolist()
+                new_full_df = new_full_df[~new_full_df['Cliente'].isin(clients_in_view)]
+                new_full_df = pd.concat([new_full_df, edited_df], ignore_index=True)
                 
                 if auto_opt:
-                    # Smart reordering
-                    optimized_df = Phase3Planning._smart_reorder_routes(edited_df)
+                    optimized_df = Phase3Planning._smart_reorder_routes(new_full_df)
                     st.session_state['routes_solution'] = optimized_df
-                    st.success("✅ Rotas otimizadas automaticamente para minimizar distância!")
+                    st.success("✅ Rotas otimizadas automaticamente!")
                 else:
-                    # Simple reordering
-                    reordered_df = Phase3Planning._simple_reorder_routes(edited_df)
+                    reordered_df = Phase3Planning._simple_reorder_routes(new_full_df)
                     st.session_state['routes_solution'] = reordered_df
-                    st.success("✅ Alterações aplicadas (ordem manual mantida)!")
-                
-                st.info("💡 Clica em 'Recalcular Métricas' para atualizar distâncias e horários.")
+                    st.success("✅ Alterações manuais aplicadas!")
+                    
+                st.rerun()
     
     @staticmethod
     def _simple_reorder_routes(df):
@@ -643,60 +790,8 @@ class Phase3Planning:
     
     @staticmethod
     def render_route_visualization():
-        """Render interactive map visualization"""
-        
-        routes_df = st.session_state.get('routes_solution')
-        warehouses_df = st.session_state.get('warehouses_used')
-        
-        if routes_df is None:
-            return
-        
-        # Route selector
-        selected_routes = RouteVisualizer.render_route_selector(routes_df)
-        
-        # Metrics
-        RouteVisualizer.render_route_metrics(routes_df, selected_routes)
-        
-        st.markdown("---")
-        
-        # --- PAINEL CENTRAL DE DESPACHO (BULK LOGISTICS OVERRIDES) ---
-        # Renders the enterprise console to transfer or swap complete vehicle payloads!
-        Phase3Planning.render_fleet_dispatch_panel()
-        
-        st.markdown("---")
-        
-        # --- PERSISTENT HIGH-FIDELITY MAP STATION ---
-        # Splits the layout into side-by-side columns: The Responsive Map (Left) and the 
-        # Space Commander Controller (Right). Integrates Session State persistence to 
-        # ensure controls never disappear after executing actions!
-        col_map_deck, col_commander_deck = st.columns([3.2, 1.5])
-        
-        # First, render map container on the left
-        with col_map_deck:
-            st.markdown("#### 🗺️ Visualização e Interação Geográfica")
-            map_output = RouteVisualizer.render_interactive_map(routes_df, selected_routes, warehouses_df)
-            
-        # Proactively process and commit click events into persistent session memory
-        Phase3Planning._process_telemetry_to_state(map_output, routes_df)
-        
-        # Render the fixed, persistent Commander Console on the right!
-        with col_commander_deck:
-            Phase3Planning._render_commander_deck(routes_df)
-        
-        # External window buttons
-        st.markdown("---")
-        st.markdown("### 🖥️ Abrir em Janela Separada")
-        st.caption("Útil para visualizar em múltiplos monitores")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("🌍 Abrir Mapa Interativo", use_container_width=True, help="Abre o mapa numa nova janela do browser"):
-                Phase3Planning._open_map_in_browser(routes_df, warehouses_df)
-        
-        with col2:
-            if st.button("📋 Abrir Quadro de Horários", use_container_width=True, help="Abre o quadro de horários numa nova janela do browser"):
-                Phase3Planning._open_schedule_in_browser(routes_df)
+        """Render extra visual tools (Depreciated via Tactical Dashboard)"""
+        pass
     
     @staticmethod
     def render_export_section():
@@ -942,7 +1037,7 @@ class Phase3Planning:
                     <h2 style="margin: 0; font-size: 20px; display: flex; justify-content: space-between; align-items: center;">
                         <span>{display_title}</span>
                     </h2>
-                </div>"""
+                </div>
                 
                 <div class="metrics">
                     <div class="metric">
@@ -1072,12 +1167,19 @@ class Phase3Planning:
         dist = (lats - c_lat).abs() + (lons - c_lon).abs()
         
         idx = dist.idxmin()
-        if dist.loc[idx] > 0.0001:
+        if dist.loc[idx] > 0.001:
             return # Click was outside client pins (e.g. generic terrain)
             
-        # 2. LOCK INTO STATE!
+        # 2. LOCK INTO STATE REACTIVELY!
         row = routes_df.loc[idx]
-        st.session_state['active_commander_client_id'] = str(row['Cliente'])
+        new_client_id = str(row['Cliente'])
+        
+        # If the click selects a new client, force an immediate rerun to refresh the UI.
+        # Since the left column (consumer) is rendered BEFORE the right column (producer/map),
+        # a rerun is required to feed the new selection into the Commander Console instantly!
+        if st.session_state.get('active_commander_client_id') != new_client_id:
+            st.session_state['active_commander_client_id'] = new_client_id
+            st.rerun()
 
     @staticmethod
     def _render_commander_deck(routes_df):
@@ -1303,85 +1405,94 @@ class Phase3Planning:
         # Order lists cleanly for display (Alphabetical, with Pendente at the end)
         union_vehicles.sort(key=lambda x: "ZZZ" if "PENDENTE" in x else x)
         
-        # Render 2 parallel command decks
-        deck1, deck2 = st.columns(2)
+        # Render in Compact Tabs instead of Columns to save space
+        tab1, tab2, tab3 = st.tabs(["🚚 Mover Carga", "🔄 Trocar Cargas", "⚙️ Mais Ferramentas"])
         
-        with deck1:
-            with st.container(border=True):
-                st.markdown("##### 🚚 Mover Carga Completa")
-                st.caption("Passa TODOS os clientes atribuídos de um carro para outro.")
-                
+        with tab1:
+            st.markdown("##### 🚚 Mover Carga Completa")
+            st.caption("Passa TODOS os clientes atribuídos de um carro para outro.")
+            
+            # Using columns inside the tab for better layout
+            col_sel1, col_sel2 = st.columns(2)
+            with col_sel1:
                 origin_veh = st.selectbox(
-                    "Veículo de Origem (De onde sai):", 
+                    "Veículo de Origem (Sai daqui):", 
                     options=union_vehicles, 
                     key="bulk_op_move_origin"
                 )
+            with col_sel2:
                 dest_veh = st.selectbox(
-                    "Veículo de Destino (Para onde vai):", 
+                    "Veículo de Destino (Vai para):", 
                     options=union_vehicles, 
                     key="bulk_op_move_dest"
                 )
+            
+            # Add counts preview so user knows exactly what they are doing
+            origin_count = len(routes_df[routes_df['Rota'] == origin_veh])
+            st.caption(f"⚡ *Origem contém {origin_count} cliente(s).*")
+            
+            if st.button("⚡ Executar Transferência Total", type="primary", use_container_width=True, key="btn_bulk_transfer"):
+                if origin_veh == dest_veh:
+                    st.error("O veículo de origem e destino devem ser diferentes!")
+                    return
+                    
+                if origin_count == 0:
+                    st.error(f"O veículo de origem ({origin_veh}) está vazio! Não há carga para transferir.")
+                    return
+                    
+                with st.spinner("A realizar transferência de cargas em massa..."):
+                    raw_df = st.session_state['routes_solution'].copy()
+                    
+                    # Fast bulk pandas assignment override
+                    raw_df.loc[raw_df['Rota'] == origin_veh, 'Rota'] = dest_veh
+                    
+                    # Restore temporal continuity & recalc
+                    reordered = Phase3Planning._simple_reorder_routes(raw_df)
+                    final_df = Phase3Planning._recalculate_all_metrics(reordered)
+                    
+                    st.session_state['routes_solution'] = final_df
+                    st.toast(f"✅ Transferidos {origin_count} clientes para {dest_veh}!", icon="🚛")
+                    st.rerun()
+                        
+        with tab2:
+            st.markdown("##### 🔄 Trocar Cargas (Permuta)")
+            st.caption("Inverte a totalidade das cargas atribuídas entre dois veículos.")
                 
-                # Add counts preview so user knows exactly what they are doing
-                origin_count = len(routes_df[routes_df['Rota'] == origin_veh])
-                st.caption(f"⚡ *Origem contém {origin_count} cliente(s).*")
-                
-                if st.button("⚡ Executar Transferência Total", type="primary", use_container_width=True, key="btn_bulk_transfer"):
-                    if origin_veh == dest_veh:
-                        st.error("O veículo de origem e destino devem ser diferentes!")
-                        return
-                        
-                    if origin_count == 0:
-                        st.error(f"O veículo de origem ({origin_veh}) está vazio! Não há carga para transferir.")
-                        return
-                        
-                    with st.spinner("A realizar transferência de cargas em massa..."):
-                        raw_df = st.session_state['routes_solution'].copy()
-                        
-                        # Fast bulk pandas assignment override
-                        raw_df.loc[raw_df['Rota'] == origin_veh, 'Rota'] = dest_veh
-                        
-                        # Restore temporal continuity & recalc
-                        reordered = Phase3Planning._simple_reorder_routes(raw_df)
-                        final_df = Phase3Planning._recalculate_all_metrics(reordered)
-                        
-                        st.session_state['routes_solution'] = final_df
-                        st.toast(f"✅ Transferidos {origin_count} clientes para {dest_veh}!", icon="🚛")
-                        st.rerun()
-                        
-        with deck2:
-            with st.container(border=True):
-                st.markdown("##### 🔄 Trocar Cargas (Permuta)")
-                st.caption("Inverte a totalidade das cargas atribuídas entre dois veículos.")
-                
+            # Try to default vehicle B to second element to be helpful
+            b_idx = 1 if len(union_vehicles) > 1 else 0
+            
+            col_sel3, col_sel4 = st.columns(2)
+            with col_sel3:
                 veh_a = st.selectbox("Veículo A:", options=union_vehicles, index=0, key="bulk_op_swap_a")
-                
-                # Try to default vehicle B to second element to be helpful
-                b_idx = 1 if len(union_vehicles) > 1 else 0
+            with col_sel4:
                 veh_b = st.selectbox("Veículo B:", options=union_vehicles, index=b_idx, key="bulk_op_swap_b")
-                
-                count_a = len(routes_df[routes_df['Rota'] == veh_a])
-                count_b = len(routes_df[routes_df['Rota'] == veh_b])
-                st.caption(f"🔄 *Troca {count_a} cliente(s) por {count_b} cliente(s).*")
-                
-                if st.button("🔄 Inverter Cargas de Veículos", use_container_width=True, key="btn_bulk_swap_payloads"):
-                    if veh_a == veh_b:
-                        st.error("Selecione dois veículos diferentes para realizar a permuta!")
-                        return
-                        
-                    with st.spinner("A realizar permuta cruzada de frotas..."):
-                        raw_df = st.session_state['routes_solution'].copy()
-                        
-                        # Perform robust cross-swap using memory safe token
-                        swap_token = "__DISPATCH_SWAP_TOKEN_GUARD__"
-                        raw_df.loc[raw_df['Rota'] == veh_a, 'Rota'] = swap_token
-                        raw_df.loc[raw_df['Rota'] == veh_b, 'Rota'] = veh_a
-                        raw_df.loc[raw_df['Rota'] == swap_token, 'Rota'] = veh_b
-                        
-                        # Rebuild distances, times, and aggregations
-                        reordered = Phase3Planning._simple_reorder_routes(raw_df)
-                        final_df = Phase3Planning._recalculate_all_metrics(reordered)
-                        
-                        st.session_state['routes_solution'] = final_df
-                        st.toast(f"✅ Cargas trocadas com sucesso!", icon="🔄")
-                        st.rerun()
+            
+            count_a = len(routes_df[routes_df['Rota'] == veh_a])
+            count_b = len(routes_df[routes_df['Rota'] == veh_b])
+            st.caption(f"🔄 *Troca {count_a} cliente(s) por {count_b} cliente(s).*")
+            
+            if st.button("🔄 Inverter Cargas de Veículos", use_container_width=True, key="btn_bulk_swap_payloads"):
+                if veh_a == veh_b:
+                    st.error("Selecione dois veículos diferentes para realizar a permuta!")
+                    return
+                    
+                with st.spinner("A realizar permuta cruzada de frotas..."):
+                    raw_df = st.session_state['routes_solution'].copy()
+                    
+                    # Perform robust cross-swap using memory safe token
+                    swap_token = "__DISPATCH_SWAP_TOKEN_GUARD__"
+                    raw_df.loc[raw_df['Rota'] == veh_a, 'Rota'] = swap_token
+                    raw_df.loc[raw_df['Rota'] == veh_b, 'Rota'] = veh_a
+                    raw_df.loc[raw_df['Rota'] == swap_token, 'Rota'] = veh_b
+                    
+                    # Rebuild distances, times, and aggregations
+                    reordered = Phase3Planning._simple_reorder_routes(raw_df)
+                    final_df = Phase3Planning._recalculate_all_metrics(reordered)
+                    
+                    st.session_state['routes_solution'] = final_df
+                    st.toast(f"✅ Cargas trocadas com sucesso!", icon="🔄")
+                    st.rerun()
+                    
+        with tab3:
+            st.markdown("##### ⚙️ Ferramentas Futuras")
+            st.info("Espaço reservado para Balanceamento Automático de Rotas ou outras ferramentas táticas avançadas (Brevemente).")

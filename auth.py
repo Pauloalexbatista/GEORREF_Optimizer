@@ -141,7 +141,6 @@ def render_login_page():
                     st.error("Email ou password incorretos.")
         
         st.markdown("---")
-        st.info("**Conta Demo:** demo@georoute.pt / demo123")
     
     with tab2:
         with st.form("register_form"):
