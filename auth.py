@@ -3,11 +3,12 @@ Módulo de Autenticação
 Gerencia login/logout e sessão do utilizador
 """
 import streamlit as st
+from core.session_state import get_state, set_state
 import hashlib
 from datetime import datetime
 from database import (
     autenticar, criar_utilizador, criar_empresa, 
-    get_utilizador_por_id, get_empresa, get_projetos,
+    get_utilizador_por_id, get_empresa, get_projetos, get_projeto,
     log_action
 )
 
@@ -20,6 +21,8 @@ def hash_password(password):
 
 def init_session_state():
     """Inicializar estados da sessão"""
+    state = get_state()
+    # Keep legacy keys synchronized for backward compatibility
     if 'logged_in' not in st.session_state:
         st.session_state['logged_in'] = False
     if 'utilizador_id' not in st.session_state:
@@ -43,18 +46,28 @@ def login(email, password):
     user = autenticar(email, password)
     
     if user:
+        state = get_state()
+        state.logged_in = True
+        state.utilizador_id = user['id']
+        state.utilizador_nome = user['nome']
+        state.utilizador_email = user['email']
+        state.empresa_id = user['empresa_id']
+        state.is_admin = bool(user['is_admin'])
+        
         st.session_state['logged_in'] = True
         st.session_state['utilizador_id'] = user['id']
         st.session_state['utilizador_nome'] = user['nome']
         st.session_state['utilizador_email'] = user['email']
         st.session_state['empresa_id'] = user['empresa_id']
-        st.session_state['is_admin'] = user['is_admin']
+        st.session_state['is_admin'] = bool(user['is_admin'])
         
         # Obter nome da empresa
         empresa = get_empresa(user['empresa_id'])
         if empresa:
+            state.empresa_nome = empresa['nome']
             st.session_state['empresa_nome'] = empresa['nome']
         
+        set_state(state)
         # Log da ação
         log_action(user['empresa_id'], 'LOGIN', f'Utilizador {email} fez login')
         
@@ -64,11 +77,23 @@ def login(email, password):
 
 def logout():
     """Efectuar logout"""
-    if st.session_state.get('empresa_id'):
-        log_action(st.session_state['empresa_id'], 'LOGOUT', 
-                   f'Utilizador {st.session_state.get("utilizador_email")} fez logout')
+    state = get_state()
+    
+    if state.empresa_id:
+        log_action(state.empresa_id, 'LOGOUT', 
+                   f'Utilizador {state.utilizador_email} fez logout')
     
     # Limpar sessão
+    state.logged_in = False
+    state.utilizador_id = None
+    state.utilizador_nome = None
+    state.utilizador_email = None
+    state.empresa_id = None
+    state.empresa_nome = None
+    state.is_admin = False
+    state.projeto_atual = None
+    set_state(state)
+    
     st.session_state['logged_in'] = False
     st.session_state['utilizador_id'] = None
     st.session_state['utilizador_nome'] = None
@@ -81,7 +106,7 @@ def logout():
 
 def require_login():
     """Verificar se utilizador está logado"""
-    if not st.session_state.get('logged_in'):
+    if not get_state().logged_in:
         st.warning("Por favor, faça login para continuar.")
         st.stop()
 
@@ -89,7 +114,7 @@ def require_login():
 def require_admin():
     """Verificar se utilizador é admin"""
     require_login()
-    if not st.session_state.get('is_admin'):
+    if not get_state().is_admin:
         st.error("Acesso restrito a administradores.")
         st.stop()
 
@@ -177,17 +202,19 @@ def render_login_page():
 
 def render_sidebar():
     """Renderizar sidebar com info do utilizador"""
-    if not st.session_state.get('logged_in'):
+    if not get_state().logged_in:
         return
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 👤 Utilizador")
-    st.sidebar.write(f"**{st.session_state.get('utilizador_nome', 'N/A')}**")
-    st.sidebar.write(f"📧 {st.session_state.get('utilizador_email', 'N/A')}")
-    st.sidebar.write(f"🏢 {st.session_state.get('empresa_nome', 'N/A')}")
+    state = get_state()
+    st.sidebar.write(f"**{state.utilizador_nome or 'N/A'}**")
+    st.sidebar.write(f"📧 {state.utilizador_email or 'N/A'}")
+    st.sidebar.write(f"🏢 {state.empresa_nome or 'N/A'}")
     
     # Seletor de projeto
-    projetos = get_projetos(st.session_state.get('empresa_id'))
+    state = get_state()
+    projetos = get_projetos(state.empresa_id)
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📁 Projeto")
     
@@ -202,8 +229,38 @@ def render_sidebar():
             desc = st.text_area("Descrição")
             if st.form_submit_button("Criar"):
                 from database import criar_projeto
-                novo_id = criar_projeto(st.session_state.get('empresa_id'), nome, desc)
+                state = get_state()
+                novo_id = criar_projeto(state.empresa_id, nome, desc)
+                
+                # Reset all project-specific phase data for the new project
+                from core.session_state import AppState
+                new_state = AppState(
+                    logged_in=state.logged_in,
+                    utilizador_id=state.utilizador_id,
+                    utilizador_nome=state.utilizador_nome,
+                    utilizador_email=state.utilizador_email,
+                    empresa_id=state.empresa_id,
+                    empresa_nome=state.empresa_nome,
+                    is_admin=state.is_admin,
+                    projeto_atual=novo_id,
+                    projeto_nome=nome,
+                    google_api_key=state.google_api_key
+                )
+                set_state(new_state)
+                st.session_state['app_state'] = new_state
                 st.session_state['projeto_atual'] = novo_id
+                
+                # Sync key legacy session state fields
+                st.session_state['clients_geocoded'] = None
+                st.session_state['failed_clients'] = None
+                st.session_state['clients_original_df'] = None
+                st.session_state['phase_1_complete'] = False
+                st.session_state['phase_2_complete'] = False
+                st.session_state['current_phase'] = 1
+                for key in ['warehouses_geocoded', 'fleet_config', 'routes_solution', 'fleet_config_used', 'warehouses_used', 'optimization_params']:
+                    if key in st.session_state:
+                        st.session_state[key] = None
+                        
                 st.session_state['show_new_project'] = False
                 st.rerun()
     
@@ -216,21 +273,62 @@ def render_sidebar():
             "Selecionar Projeto",
             options=projeto_ids,
             format_func=lambda x: projeto_names.get(x, f"Projeto {x}"),
-            index=0 if not st.session_state.get('projeto_atual') else 
-                  projeto_ids.index(st.session_state.get('projeto_atual')) if st.session_state.get('projeto_atual') in projeto_ids else 0
+            index=0 if not state.projeto_atual else 
+                  projeto_ids.index(state.projeto_atual) if state.projeto_atual in projeto_ids else 0
         )
         
         if projeto_selecionado:
-            st.session_state['projeto_atual'] = projeto_selecionado
+            state = get_state()
+            previous_proj = state.projeto_atual
+            if projeto_selecionado != previous_proj:
+                # Reset all project-specific phase data to prevent leakage
+                from core.session_state import AppState
+                new_state = AppState(
+                    logged_in=state.logged_in,
+                    utilizador_id=state.utilizador_id,
+                    utilizador_nome=state.utilizador_nome,
+                    utilizador_email=state.utilizador_email,
+                    empresa_id=state.empresa_id,
+                    empresa_nome=state.empresa_nome,
+                    is_admin=state.is_admin,
+                    projeto_atual=projeto_selecionado,
+                    projeto_nome=projeto_names.get(projeto_selecionado),
+                    google_api_key=state.google_api_key
+                )
+                set_state(new_state)
+                st.session_state['app_state'] = new_state
+                st.session_state['projeto_atual'] = projeto_selecionado
+                
+                # Sync key legacy session state fields
+                st.session_state['clients_geocoded'] = None
+                st.session_state['failed_clients'] = None
+                st.session_state['clients_original_df'] = None
+                st.session_state['phase_1_complete'] = False
+                st.session_state['phase_2_complete'] = False
+                st.session_state['current_phase'] = 1
+                for key in ['warehouses_geocoded', 'fleet_config', 'routes_solution', 'fleet_config_used', 'warehouses_used', 'optimization_params']:
+                    if key in st.session_state:
+                        st.session_state[key] = None
+                
+                # Attempt to load latest snapshot for newly selected project
+                from utils.persistence_manager import get_snapshots_for_project, load_snapshot_into_session
+                snapshots = get_snapshots_for_project(projeto_selecionado, limit=1)
+                if snapshots:
+                    try:
+                        load_snapshot_into_session(snapshots[0]['id'])
+                    except Exception as e:
+                        print(f"Error loading snapshot on switch: {e}")
+                
+                st.rerun()
     else:
         st.sidebar.info("Crie o seu primeiro projeto!")
     
     # Botão admin (só para admins)
-    if st.session_state.get('is_admin'):
+    if get_state().is_admin:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### ⚙️ Admin")
         if st.sidebar.button("📊 Painel Admin", use_container_width=True):
-            st.switch_page("admin.py")
+            st.switch_page("pages/admin.py")
     
     # Botão logout
     st.sidebar.markdown("---")
@@ -241,14 +339,14 @@ def render_sidebar():
 
 def is_logged_in():
     """Verificar se está logado"""
-    return st.session_state.get('logged_in', False)
+    return bool(get_state().logged_in)
 
 
 def get_current_empresa_id():
     """Obter ID da empresa atual"""
-    return st.session_state.get('empresa_id')
+    return get_state().empresa_id
 
 
 def get_current_projeto_id():
     """Obter ID do projeto atual"""
-    return st.session_state.get('projeto_atual')
+    return get_state().projeto_atual

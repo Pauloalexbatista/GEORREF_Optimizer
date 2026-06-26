@@ -58,7 +58,7 @@ def start_server(port=DEFAULT_PORT, headless=True):
         sys.executable, "-m", "streamlit", "run", "app.py",
         "--server.port", str(port),
         "--server.headless", "true" if headless else "false",
-        "--server.enableCors", "false"
+        "--server.enableCORS", "false"
     ]
     
     # Iniciar processo

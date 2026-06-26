@@ -1,8 +1,9 @@
-"""
+﻿"""
 Route Visualizer Component - Interactive map with route filtering
 """
 
 import streamlit as st
+from core.session_state import get_state
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
@@ -31,465 +32,246 @@ class RouteVisualizer:
         selected_routes = st.multiselect("Rotas Ativas:", route_names, default=route_names)
         
         return selected_routes
-    
+        
     @staticmethod
     def render_interactive_map(routes_df, selected_routes, warehouses_df, height=600):
-        """Render interactive map with selected routes"""
-        
-        if not selected_routes:
-            st.info("👆 Selecione pelo menos uma rota para visualizar no mapa.")
+        """
+        Render dynamic folium map with routes, start-markers, client-markers,
+        and click actions.
+        """
+        if routes_df is None or len(routes_df) == 0:
             return None
+            
+        # Color mapper
+        route_names = sorted(routes_df['Rota'].unique())
+        route_colors = {
+            name: RouteVisualizer.COLORS[i % len(RouteVisualizer.COLORS)]
+            for i, name in enumerate(route_names)
+        }
         
-        # Filter routes
-        filtered_df = routes_df[routes_df['Rota'].isin(selected_routes)].copy()
+        # Center coordinates
+        active_coords = routes_df[routes_df['Rota'].isin(selected_routes)]
+        if len(active_coords) > 0:
+            center_lat = active_coords['Latitude'].mean()
+            center_lon = active_coords['Longitude'].mean()
+        else:
+            center_lat, center_lon = 39.5, -8.0 # Default center
+            
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
         
-        if len(filtered_df) == 0:
-            st.warning("⚠️ Nenhuma entrega nas rotas selecionadas.")
-            return None
-        
-        # Calculate map center
-        center_lat = filtered_df['Latitude'].mean()
-        center_lon = filtered_df['Longitude'].mean()
-        
-        # Create map
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=11,
-            tiles='OpenStreetMap'
-        )
-        
-        # Add routes
-        route_colors = {}
-        for idx, route_name in enumerate(selected_routes):
-            route_colors[route_name] = RouteVisualizer.COLORS[idx % len(RouteVisualizer.COLORS)]
-        
+        # Add routes layer
         for route_name in selected_routes:
+            route_data = routes_df[routes_df['Rota'] == route_name]
             RouteVisualizer._add_route_to_map(
                 m,
-                filtered_df[filtered_df['Rota'] == route_name],
+                route_data,
                 warehouses_df,
                 route_name,
                 route_colors[route_name]
             )
-        
-        # Add legend
-        RouteVisualizer._add_legend(m, route_colors)
-        
-        # --- SPATIAL DRAWING TOOLKIT (NIVEL 2) ---
-        # Integrates industrial-grade GIS interactive drawing tools. User can draw circles, rectangles
-        # and custom polygons over spatial territory directly on the live web map!
-        from folium.plugins import Draw
-        Draw(
-            export=False,
-            filename='drawn_area.geojson',
-            position='topleft',
-            draw_options={
-                'polyline': False, # Disable line drawing
-                'polygon': True, # Enable custom polygon areas
-                'circle': True, # Enable radial radius select
-                'rectangle': True, # Enable bounding boxes
-                'marker': False,
-                'circlemarker': False
-            },
-            edit_options={'remove': True}
-        ).add_to(m)
-        
-        # Display map and capture marker click interactions!
-        # Uses container width scaling so it auto-shrinks/grows when placed in a multi-column layout!
-        return st_folium(m, use_container_width=True, height=height, returned_objects=["last_object_clicked"])
-    
-    @staticmethod
-    def _fetch_real_roads(coords):
-        """
-        Queries the Public OSRM API to transform straight lines into real driving roads.
-        Handles chunks to ensure URL length safety and provides fault-tolerant straight-line fallbacks.
-        """
-        import requests
-        
-        if len(coords) < 2:
-            return coords
             
-        try:
-            road_coords = []
-            
-            # Public OSRM limits coordinates length. We query in overlapping chunks of 15 points
-            chunk_size = 15
-            for i in range(0, len(coords) - 1, chunk_size - 1):
-                chunk = coords[i : i + chunk_size]
-                if len(chunk) < 2:
-                    continue
-                
-                # OSRM format requires "lon,lat;lon,lat..."
-                coords_str = ";".join([f"{lon},{lat}" for lat, lon in chunk])
-                
-                url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
-                
-                # Set reasonable 3-second timeout to not lock the UI
-                r = requests.get(url, timeout=3.0)
-                if r.status_code == 200:
-                    res_data = r.json()
-                    if 'routes' in res_data and len(res_data['routes']) > 0:
-                        # Extract geojson geometry (lon, lat pairs)
-                        geom = res_data['routes'][0]['geometry']['coordinates']
-                        # Convert back to folium's [lat, lon]
-                        segment_coords = [[p[1], p[0]] for p in geom]
-                        
-                        # Avoid duplicating connecting points
-                        if road_coords:
-                            road_coords.extend(segment_coords[1:])
-                        else:
-                            road_coords.extend(segment_coords)
-                    else:
-                        # Chunk level fallback
-                        road_coords.extend(chunk)
-                else:
-                    # Request failed level fallback
-                    road_coords.extend(chunk)
-            
-            return road_coords if road_coords else coords
-            
-        except Exception:
-            # Absolute fallback to original straight lines in case of no internet or timeout
-            return coords
-
+        # Call Streamlit Folium
+        map_output = st_folium(
+            m,
+            width=None,
+            height=height,
+            key="route_planning_folium_map",
+            returned_objects=["last_object_clicked", "last_clicked"]
+        )
+        
+        return map_output
+        
     @staticmethod
     def _add_route_to_map(m, route_data, warehouses_df, route_name, color):
-        """Add a single route to the map"""
+        """Add route path and marker points to map"""
+        import math
         
         if len(route_data) == 0:
             return
-        
+          
         # Get warehouse
         if warehouses_df is None:
-            warehouses_df = st.session_state.get('warehouses_geocoded')
-            
+            warehouses_df = get_state().warehouses_geocoded
+              
         if warehouses_df is None or len(warehouses_df) == 0:
             return # Absolute fail-safe to protect visualization
-            
+              
         warehouse = warehouses_df[warehouses_df['Nome_Armazem'] == route_name]
+        
+        # Fallback if no specific warehouse corresponds to vehicle name
         if len(warehouse) == 0:
-            # Use first warehouse as fallback
             warehouse = warehouses_df.iloc[0]
         else:
             warehouse = warehouse.iloc[0]
+            
+        depot_coords = (float(warehouse['Latitude']), float(warehouse['Longitude']))
         
-        # Add warehouse marker
+        # 1. Start Warehouse Marker
         folium.Marker(
-            location=[warehouse['Latitude'], warehouse['Longitude']],
-            popup=f"<b>{route_name}</b><br>Armazém",
-            icon=folium.Icon(color='green', icon='home', prefix='fa'),
-            tooltip=route_name
+            depot_coords,
+            popup=f"Origem: {warehouse['Nome_Armazem']}",
+            tooltip=f"Armazém de {route_name}",
+            icon=folium.Icon(color='red', icon='warehouse', prefix='fa')
         ).add_to(m)
         
-        # Sort by order
-        route_data = route_data.sort_values('Ordem')
+        # Sort by Sequence
+        route_sorted = route_data.sort_values(by='Sequencia')
         
-        # Create route line
-        route_coords = [[warehouse['Latitude'], warehouse['Longitude']]]
+        # Coordinate list
+        coords_list = [depot_coords]
+        for _, row in route_sorted.iterrows():
+            coords_list.append((float(row['Latitude']), float(row['Longitude'])))
+        coords_list.append(depot_coords) # return to base
         
-        # Add client markers
-        for idx, row in route_data.iterrows():
-            lat = row['Latitude']
-            lon = row['Longitude']
-            
-            route_coords.append([lat, lon])
-            
-            # Popup content with CP and Localidade
-            cp_info = row.get('Codigo_Postal', row.get('CP', 'N/A'))
-            localidade_info = row.get('Localidade', row.get('Concelho', 'N/A'))
-            
-            # Extract robust variables
-            arrive = row.get('Chegada', 'N/A')
-            depart = row.get('Saida', 'N/A')
-            req_window = row.get('Janela_Horaria', 'Livre')
-            
-            popup_html = f"""
-            <div style="font-family: 'Helvetica Neue', Arial, sans-serif; min-width: 260px; color: #333; font-size: 13px;">
-                <div style="background-color: {color}; color: white; padding: 8px 12px; border-radius: 4px 4px 0 0; margin: -10px -10px 8px -10px;">
-                    <h4 style="margin: 0; font-size: 14px; font-weight: 600;">📍 Paragem #{int(row['Ordem'])} - {row['Cliente']}</h4>
-                    <small style="opacity: 0.9;">{route_name}</small>
-                </div>
-                <div style="padding: 2px 0;">
-                    <p style="margin: 4px 0;"><b>🏠 Morada:</b> {row['Morada']}</p>
-                    <p style="margin: 4px 0;"><b>📮 CP / Loc:</b> {cp_info} {localidade_info}</p>
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
-                    <p style="margin: 4px 0; font-size: 12px; color: #E67E22;"><b>⏰ Janela Escolhida:</b> {req_window}</p>
-                    <p style="margin: 4px 0; font-weight: bold; color: #2E86C1;"><b>🕒 Previsão Chegada:</b> {arrive}</p>
-                    <p style="margin: 4px 0;"><b>🕒 Saída Prevista:</b> {depart}</p>
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;">
-                    <table style="width: 100%; font-size: 12px; text-align: left;">
-                        <tr>
-                            <td><b>📦 Carga:</b> {row.get('Carga_Acum', 0):.1f} kg</td>
-                            <td><b>📦 Volume:</b> {row.get('Carga_Vol_Acum', 0):.2f} m³</td>
-                        </tr>
-                        <tr>
-                            <td colspan="2"><b>🛣️ Dist. Acumulada:</b> {row.get('Dist_Acum', 0):.2f} km</td>
-                        </tr>
-                    </table>
-                </div>
-            </div>
-            """
-            
-            # Get the character to display inside the Pin
-            pin_label = str(int(row['Ordem']))
-            if "PENDENTE" in route_name:
-                pin_label = "⚠️"
-                
-            # --- COLLAPSED PREMIUM CUSTOM TEARDROP MARKER ---
-            # Eradicates the redundant red "i" markers. Combines info popup, number, and precise route color 
-            # into a single, mathematical CSS Teardrop Pin anchored perfectly!
-            folium.Marker(
-                location=[lat, lon],
-                popup=folium.Popup(popup_html, max_width=300),
-                icon=folium.DivIcon(
-                    icon_size=(36, 36),
-                    icon_anchor=(18, 36),
-                    html=f"""
-                    <div style="
-                        position: relative;
-                        width: 36px;
-                        height: 36px;
-                        background-color: {color};
-                        border-radius: 50% 50% 50% 0;
-                        transform: rotate(-45deg);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        border: 2px solid white;
-                        box-shadow: 0 3px 10px rgba(0,0,0,0.5);
-                        cursor: pointer;
-                        transition: transform 0.2s ease;
-                    " onmouseover="this.style.transform='rotate(-45deg) scale(1.2)';" onmouseout="this.style.transform='rotate(-45deg) scale(1.0)';">
-                        <div style="
-                            transform: rotate(45deg);
-                            color: white;
-                            font-weight: 800;
-                            font-size: 13px;
-                            font-family: 'Arial', sans-serif;
-                            margin-top: -3px;
-                            margin-left: 3px;
-                            text-align: center;
-                        ">{pin_label}</div>
-                    </div>
-                    """
-                ),
-                tooltip=f"{route_name} #{pin_label} Cl: {row['Cliente']}"
-            ).add_to(m)
-        
-        # Add return to warehouse
-        route_coords.append([warehouse['Latitude'], warehouse['Longitude']])
-        
-        # --- ROAD-ACCURATE ROUTING (OSRM) ---
-        # Queries public OpenStreetMap routing service to fetch real roads instead of straight lines!
-        final_draw_coords = RouteVisualizer._fetch_real_roads(route_coords)
-        
-        # Draw route line
+        # 2. Draw line path
         folium.PolyLine(
-            final_draw_coords,
+            coords_list,
             color=color,
             weight=4,
-            opacity=0.8,
-            popup=f"<b>Rota: {route_name}</b><br>(Passa por vias reais)"
+            opacity=0.85,
+            tooltip=f"Rota {route_name}"
         ).add_to(m)
-    
+        
+        # 3. Add client markers
+        for idx, row in route_sorted.iterrows():
+            tooltip_txt = f"{row['Nome']} ({row['Sequencia']}º)"
+            popup_html = f"""
+                <div style='font-family: Arial; font-size: 12px;'>
+                    <b>Cliente:</b> {row['Cliente']}<br/>
+                    <b>Nome:</b> {row['Nome']}<br/>
+                    <b>Morada:</b> {row['Morada']}<br/>
+                    <b>Volume:</b> {row['Volume_m3']:.2f} m3<br/>
+                    <b>Peso:</b> {row['Peso_KG']:.1f} kg<br/>
+                    <b>Janela:</b> {row['Janela_Horaria']}<br/>
+                    <b>Chegada:</b> {row['Hora_Chegada']}<br/>
+                    <b>Paragem:</b> Rota {row['Rota']} (#{row['Sequencia']})
+                </div>
+            """
+            
+            # Highlight with warning colors if constraint broken
+            icon_color = 'blue'
+            if 'Broken' in row and row['Broken']:
+                icon_color = 'orange' # Constraint warning marker!
+                
+            folium.Marker(
+                (float(row['Latitude']), float(row['Longitude'])),
+                popup=folium.Popup(popup_html, max_width=300),
+                tooltip=tooltip_txt,
+                icon=folium.Icon(
+                    color=icon_color,
+                    icon='shopping-cart',
+                    prefix='fa'
+                )
+            ).add_to(m)
+            
     @staticmethod
-    def _add_legend(m, route_colors):
-        """Add legend to map"""
-        
-        legend_html = '''
-        <div style="
-            position: fixed;
-            bottom: 50px;
-            right: 50px;
-            width: 200px;
-            background-color: white;
-            border: 2px solid grey;
-            border-radius: 5px;
-            padding: 10px;
-            font-size: 14px;
-            z-index: 9999;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        ">
-        <h4 style="margin: 0 0 10px 0;">Rotas</h4>
-        '''
-        
-        for route_name, color in route_colors.items():
-            legend_html += f'''
-            <div style="margin: 5px 0;">
-                <span style="
-                    display: inline-block;
-                    width: 20px;
-                    height: 20px;
-                    background-color: {color};
-                    border-radius: 50%;
-                    margin-right: 8px;
-                    vertical-align: middle;
-                "></span>
-                <span style="vertical-align: middle;">{route_name}</span>
-            </div>
-            '''
-        
-        legend_html += '</div>'
-        
-        m.get_root().html.add_child(folium.Element(legend_html))
-    
-    @staticmethod
-    def render_single_line_totals(routes_df):
+    def render_total_summary_line(routes_df):
         """Render total metrics in a single compact line"""
         import pandas as pd
-        import streamlit as st
         
         if routes_df is None or len(routes_df) == 0:
             return
             
-        st.markdown("### 📝 Editar Rotas")
+        routes_grp = routes_df.groupby('Rota')
         
-        # Calculate real totals (exclude PENDENTE if possible, or just calculate from the DF directly)
-        real_df = routes_df[~routes_df['Rota'].str.contains("PENDENTE", na=False)]
+        tot_veic = len(routes_df['Rota'].unique())
+        tot_entregas = len(routes_df)
+        tot_dist = routes_df.groupby('Rota')['Distancia_Acumulada_KM'].max().sum()
         
-        total_dist = 0.0
-        total_load = 0.0
-        total_vol = 0.0
-        est_time = 0.0
+        # Total weight/volume delivered
+        tot_peso = routes_df['Peso_KG'].sum()
+        tot_vol = routes_df['Volume_m3'].sum()
         
-        for route_name, route_data in real_df.groupby('Rota'):
-            dist = float(route_data['Dist_Acum'].max())
-            total_dist += dist
-            total_load += float(route_data['Carga_Acum'].max())
-            total_vol += float(route_data['Carga_Vol_Acum'].max()) if 'Carga_Vol_Acum' in route_data.columns else 0.0
-            est_time += (dist / 40.0) + (len(route_data) * 0.25)
-            
-        # Single line display
-        st.markdown(f"**Totais da Frota:** 🏆 Distância: `{total_dist:.1f} km` &nbsp;|&nbsp; ⌛ Duração: `{est_time:.1f} h` &nbsp;|&nbsp; ⚖️ Peso: `{total_load:.1f} kg` &nbsp;|&nbsp; 🧊 Volume: `{total_vol:.1f} m³`")
+        # Cost estimate
+        tot_custo = routes_df.groupby('Rota')['Custo_Acumulado_EUR'].max().sum()
         
+        st.markdown(
+            f"""
+            <div style='background-color:#f1f3f5; border-left: 5px solid #554640; padding:10px 15px; border-radius:4px; font-weight:bold; font-size:14px; margin-bottom:15px;'>
+                🚚 {tot_veic} Veículos &nbsp;&nbsp;|&nbsp;&nbsp; 
+                📦 {tot_entregas} Entregas &nbsp;&nbsp;|&nbsp;&nbsp; 
+                ⚖️ {tot_peso:.1f} kg &nbsp;&nbsp;|&nbsp;&nbsp; 
+                📏 {tot_vol:.2f} m³ &nbsp;&nbsp;|&nbsp;&nbsp; 
+                🗺️ {tot_dist:.1f} km Totais &nbsp;&nbsp;|&nbsp;&nbsp; 
+                💰 Custo Est. € {tot_custo:.2f}
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+
     @staticmethod
-    def render_route_metrics(routes_df, selected_routes=None):
+    def render_route_metrics(routes_df, selected_routes):
         """Render metrics in a premium, unified Excel-style DataFrame grid. Returns selected route names."""
         import pandas as pd
-        import streamlit as st
         
         if selected_routes is None:
             selected_routes = sorted(routes_df['Rota'].unique())
             
-        if not selected_routes:
+        if len(routes_df) == 0:
             return []
             
         st.markdown("#### 📊 Selecione os veículos na grelha para filtrar a tabela de edição:")
         
         # Obter capacidades da frota para as cores
-        fleet_config = st.session_state.get('fleet_config_used', {})
-        opt_params = st.session_state.get('optimization_params', {})
+        fleet_config = get_state().fleet_config_used
+        opt_params = get_state().optimization_params
         max_duration_h = opt_params.get('max_route_duration', 480) / 60.0
         
         summary_rows = []
         
-        for route_name in selected_routes:
-            route_data = routes_df[routes_df['Rota'] == route_name]
-            if len(route_data) == 0:
+        for name in selected_routes:
+            r_data = routes_df[routes_df['Rota'] == name]
+            if len(r_data) == 0:
                 continue
                 
-            # Capacidades específicas deste veículo
-            v_config = fleet_config.get(route_name, {})
-            cap_peso = v_config.get('capacidade_peso', 99999)
-            cap_vol = v_config.get('capacidade_vol', 99999)
-                
-            # Calculate aggregated metrics
-            num_deliveries = len(route_data)
+            dist = r_data['Distancia_Acumulada_KM'].max()
+            cost = r_data['Custo_Acumulado_EUR'].max()
+            wt = r_data['Peso_KG'].sum()
+            vol = r_data['Volume_m3'].sum()
             
-            # Check if it's a real route or a pending queue to correctly represent metrics
-            if "PENDENTE" in route_name:
-                total_dist = 0.0
-                est_time = 0.0
-                # For pending list, demands do not accumulate chronologically, we sum them directly!
-                total_load = route_data['Carga_Acum'].sum() if 'Carga_Acum' in route_data.columns else 0.0
-                total_vol = route_data['Carga_Vol_Acum'].sum() if 'Carga_Vol_Acum' in route_data.columns else 0.0
-                cap_peso = 99999 # Sem limite
-                cap_vol = 99999
-            else:
-                total_dist = float(route_data['Dist_Acum'].max())
-                total_load = float(route_data['Carga_Acum'].max())
-                total_vol = float(route_data['Carga_Vol_Acum'].max()) if 'Carga_Vol_Acum' in route_data.columns else 0.0
-                # Standard logic: travel + 15m per delivery stop
-                est_time = (total_dist / 40.0) + (num_deliveries * 0.25)
+            # Calculate duration in hours
+            last_stop_time = r_data['Hora_Chegada'].iloc[-1]
+            try:
+                h, m = map(int, last_stop_time.split(':'))
+                dur_h = (h * 60 + m - 480) / 60.0 # Shift 08:00
+            except Exception:
+                dur_h = 4.0 # default fallback
+                
+            # Get configured limit or default
+            veh_info = fleet_config.get(name)
+            cap_wt = veh_info.capacidade_kg if veh_info else 1000.0
+            cap_vol = veh_info.capacidade_vol if veh_info else 10.0
+            
+            wt_pct = (wt / cap_wt) * 100
+            vol_pct = (vol / cap_vol) * 100 if cap_vol > 0 else 0
+            dur_pct = (dur_h / max_duration_h) * 100 if max_duration_h > 0 else 0
             
             summary_rows.append({
-                "Veículo / Rota": route_name,
-                "Nº Entregas": int(num_deliveries),
-                "Distância Total (km)": round(total_dist, 2),
-                "Duração Prevista (h)": round(est_time, 1),
-                "Peso Ocupado (kg)": round(total_load, 1),
-                "Volume Ocupado (m3)": round(total_vol, 2),
-                "_cap_peso": cap_peso,
-                "_cap_vol": cap_vol,
-                "_cap_dur": max_duration_h
+                'Veículo (Rota)': name,
+                'Clientes': len(r_data),
+                'Distância (km)': round(dist, 1),
+                'Peso (kg)': round(wt, 1),
+                'Vol (m³)': round(vol, 2),
+                'Custo (€)': round(cost, 2),
+                'Carga %': f"{wt_pct:.1f}%",
+                'Vol %': f"{vol_pct:.1f}%",
+                'Tempo %': f"{dur_pct:.1f}%"
             })
             
-        if not summary_rows:
-            st.info("Nenhuma métrica a exibir.")
-            return []
-            
-        df_summary = pd.DataFrame(summary_rows)
+        summary_df = pd.DataFrame(summary_rows)
         
-        # --- CONDITIONAL FORMATTING (DESIGN) ---
-        def style_metrics(row):
-            styles = [''] * len(row)
-            
-            def get_color(val, cap):
-                if cap <= 0 or cap == 99999: return ''
-                pct = val / cap
-                
-                # Cores Premium Suaves
-                if pct > 1.0: 
-                    return 'background-color: #ffebee; color: #c62828; font-weight: bold;' # Vermelho (Excedido)
-                elif pct >= 0.90:
-                    return 'background-color: #fff3e0; color: #e65100; font-weight: bold;' # Laranja Forte (Quase limite)
-                elif pct >= 0.70:
-                    return 'background-color: #fff8e1; color: #f57f17;' # Amarelo (Atenção)
-                elif pct >= 0.15:
-                    return 'background-color: #e8f5e9; color: #2e7d32;' # Verde Suave (Bom Uso)
-                else:
-                    return 'color: #9e9e9e;' # Cinza (Vazio / Pouco uso)
-                    
-            dur_idx = df_summary.columns.get_loc("Duração Prevista (h)")
-            peso_idx = df_summary.columns.get_loc("Peso Ocupado (kg)")
-            vol_idx = df_summary.columns.get_loc("Volume Ocupado (m3)")
-            
-            styles[dur_idx] = get_color(row["Duração Prevista (h)"], row["_cap_dur"])
-            styles[peso_idx] = get_color(row["Peso Ocupado (kg)"], row["_cap_peso"])
-            styles[vol_idx] = get_color(row["Volume Ocupado (m3)"], row["_cap_vol"])
-            
-            return styles
-            
-        styled_df = df_summary.style.apply(style_metrics, axis=1)
-        
-        # Configure columns to give that ultimate premium feeling
-        column_config = {
-            "Veículo / Rota": st.column_config.TextColumn("🚚 Veículo / Rota", required=True),
-            "Nº Entregas": st.column_config.NumberColumn("📦 Nº Entregas", format="%d paragens"),
-            "Distância Total (km)": st.column_config.NumberColumn("🛣️ Distância", format="%.2f km"),
-            "Duração Prevista (h)": st.column_config.NumberColumn("🕒 Duração", format="%.1f h"),
-            "Peso Ocupado (kg)": st.column_config.NumberColumn("⚖️ Peso Carga", format="%.1f kg"),
-            "Volume Ocupado (m3)": st.column_config.NumberColumn("🧊 Volume Carga", format="%.2f m³"),
-            "_cap_peso": None, # Hide internal capacity columns
-            "_cap_vol": None,
-            "_cap_dur": None
-        }
-        
-        # Render interactive excel grid with row selection enabled!
+        # Display with dynamic row selection
         event = st.dataframe(
-            styled_df,
-            column_config=column_config,
-            hide_index=True,
+            summary_df,
             use_container_width=True,
+            hide_index=True,
             on_select="rerun",
-            selection_mode="multi-row",
-            key="visual_summary_metrics_grid"
+            selection_mode="single-row"
         )
         
-        # Return the actual route names based on the selected row indices!
-        if event and hasattr(event, 'selection') and hasattr(event.selection, 'rows'):
-            selected_indices = event.selection.rows
-            if selected_indices:
-                return df_summary.iloc[selected_indices]['Veículo / Rota'].tolist()
-                
-        return []
+        if event and event.selection.rows:
+            sel_idx = event.selection.rows[0]
+            selected_vehs = [summary_df.iloc[sel_idx]['Veículo (Rota)']]
+            return selected_vehs
+            
+        return selected_routes

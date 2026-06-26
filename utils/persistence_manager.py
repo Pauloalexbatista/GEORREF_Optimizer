@@ -23,6 +23,8 @@ CRITICAL_KEYS = [
 
 def serialize_state(session_state):
     """Converts streamlit session state payload into a serializable JSON dictionary."""
+    import dataclasses
+    from core.session_state import FleetVehicle
     payload = {}
     
     for key in CRITICAL_KEYS:
@@ -37,17 +39,25 @@ def serialize_state(session_state):
                 '__type__': 'pd_dataframe',
                 'data': val.to_json(orient='split', date_format='iso')
             }
-        # Handle Dicts/Lists directly
-        elif isinstance(val, (dict, list, int, float, str, bool)):
+        # Handle FleetVehicle dataclass dicts specifically
+        elif isinstance(val, dict):
+            serialized_dict = {}
+            for k, v in val.items():
+                if isinstance(v, FleetVehicle):
+                    d = dataclasses.asdict(v)
+                    d['__type__'] = 'FleetVehicle'
+                    serialized_dict[k] = d
+                else:
+                    serialized_dict[k] = v
+            payload[key] = serialized_dict
+        elif isinstance(val, (list, int, float, str, bool)) or val is None:
              payload[key] = val
-        else:
-             # Log warning if something skipped, or convert to string fallback
-             pass
              
     return json.dumps(payload)
 
 def deserialize_state(payload_json):
     """Reconstructs actual Python objects (like DataFrames) from JSON payload."""
+    from core.session_state import FleetVehicle
     try:
         raw = json.loads(payload_json)
         restored = {}
@@ -58,6 +68,16 @@ def deserialize_state(payload_json):
                 from io import StringIO
                 json_data = val['data']
                 restored[key] = pd.read_json(StringIO(json_data), orient='split')
+            # Detect packed FleetVehicle dicts
+            elif isinstance(val, dict):
+                reconstructed_dict = {}
+                for k, v in val.items():
+                    if isinstance(v, dict) and v.get('__type__') == 'FleetVehicle':
+                        data = {inner_k: inner_v for inner_k, inner_v in v.items() if inner_k != '__type__'}
+                        reconstructed_dict[k] = FleetVehicle(**data)
+                    else:
+                        reconstructed_dict[k] = v
+                restored[key] = reconstructed_dict
             else:
                 restored[key] = val
                 
@@ -120,8 +140,13 @@ def load_snapshot_into_session(snapshot_id):
             restored = deserialize_state(payload)
             
             # Perform update
+            from core.session_state import get_state, set_state
+            state = get_state()
             for k, v in restored.items():
                 st.session_state[k] = v
+                if hasattr(state, k):
+                    setattr(state, k, v)
+            set_state(state)
                 
             # --- RETRO-COMPATIBILITY BRIDGE FOR OLD SNAPSHOTS ---
             # If an old snapshot lacks the geocoded DF but has the raw array, reconstruct it instantly!
@@ -153,6 +178,10 @@ def load_snapshot_into_session(snapshot_id):
             # ---------------------------------------------------
 
             # Update current phase context
+            from core.session_state import get_state, set_state
+            state = get_state()
+            state.next_phase_queued = fase
+            set_state(state)
             st.session_state['next_phase_queued'] = fase
             return True
             

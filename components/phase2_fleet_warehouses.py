@@ -4,6 +4,7 @@ Import combined Excel file with 2 sheets: Warehouses + Fleet
 """
 
 import streamlit as st
+from core.session_state import get_state, set_state
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
@@ -18,6 +19,19 @@ class Phase2FleetWarehouses:
     
     @staticmethod
     def render():
+        from core.session_state import get_state, set_state
+        state = get_state()
+        
+        # Sync AppState → session_state ONLY if session_state doesn't already have value
+        # This prevents an empty AppState from overwriting data just saved by the geocoder
+        keys = ['warehouses_geocoded', 'fleet_config', 'phase_2_complete', 'google_api_key']
+        for k in keys:
+            app_val = getattr(state, k, None) if hasattr(state, k) else None
+            sess_val = st.session_state.get(k)
+            # Only push from AppState if session_state is empty but AppState has data
+            if app_val is not None and sess_val is None:
+                st.session_state[k] = app_val
+
         st.title("🚚 Etapa 3: Frota e Armazéns")
         st.markdown("Importe ou configure a sua frota e armazéns.")
         
@@ -26,6 +40,17 @@ class Phase2FleetWarehouses:
             Phase2FleetWarehouses.show_summary()
         else:
             Phase2FleetWarehouses.show_configuration()
+
+        # Sync session_state → AppState (always, to capture new saves)
+        state = get_state()
+        updated = False
+        for k in keys:
+            sess_val = st.session_state.get(k)
+            if sess_val is not None:
+                setattr(state, k, sess_val)
+                updated = True
+        if updated:
+            set_state(state)
     
     @staticmethod
     def is_complete():
@@ -169,6 +194,15 @@ class Phase2FleetWarehouses:
             }
         
         st.session_state['fleet_config'] = fleet_dict
+        
+        # Immediately sync to AppState so data survives tab switches
+        from core.session_state import get_state, set_state
+        state = get_state()
+        state.fleet_config = fleet_dict
+        state.warehouses_geocoded = warehouses_df
+        state.warehouses_used = warehouses_df
+        state.phase_2_complete = True
+        set_state(state)
         
         st.success(f"✅ {len(warehouses)} armazéns georreferenciados!")
         st.session_state['phase_2_complete'] = True
@@ -416,5 +450,7 @@ class Phase2FleetWarehouses:
                         pass # Silent fail to not block user flow
 
                 # Correct mapping: Tab 4 corresponds to Phase 3 (Planeamento)
-                st.session_state['next_phase_queued'] = 4 
+                state = get_state()
+                state.next_phase_queued = 4
+                set_state(state) 
                 st.rerun()

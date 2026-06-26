@@ -21,8 +21,17 @@ class Phase1Georeferencing:
     
     @staticmethod
     def render():
-        # Eliminated Large redundant Title and Subtitle to maximize vertical space.
+        from core.session_state import get_state, set_state
+        state = get_state()
         
+        # Sync AppState → session_state ONLY if session_state doesn't already have value
+        keys = ['clients_geocoded', 'clients_original_df', 'phase_1_complete', 'processing_time', 'learned_count', 'failed_clients', 'google_api_key']
+        for k in keys:
+            app_val = getattr(state, k, None) if hasattr(state, k) else None
+            sess_val = st.session_state.get(k)
+            if app_val is not None and sess_val is None:
+                st.session_state[k] = app_val
+
         # Clear any problematic file uploader state
         if 'clients_upload' in st.session_state and st.session_state.get('clients_geocoded') is None:
             pass
@@ -32,6 +41,17 @@ class Phase1Georeferencing:
             Phase1Georeferencing.show_results_and_corrections()
         else:
             Phase1Georeferencing.render_upload_and_geocode()
+
+        # Sync session_state → AppState (always, to capture new saves)
+        state = get_state()
+        updated = False
+        for k in keys:
+            sess_val = st.session_state.get(k)
+            if sess_val is not None:
+                setattr(state, k, sess_val)
+                updated = True
+        if updated:
+            set_state(state)
     
     @staticmethod
     def render_upload_and_geocode():
@@ -202,6 +222,15 @@ class Phase1Georeferencing:
         st.session_state['processing_time'] = time_str
         st.session_state['learned_count'] = learned_count
         
+        # Immediately sync to AppState so data survives tab switches
+        from core.session_state import get_state, set_state
+        state = get_state()
+        state.clients_geocoded = df_res
+        state.clients_original_df = df
+        state.processing_time = time_str
+        state.learned_count = learned_count
+        set_state(state)
+        
         # Store failed clients for correction
         if falhas > 0:
             failures = df_res[df_res['Nivel_Qualidade'] == 8]
@@ -239,6 +268,10 @@ class Phase1Georeferencing:
             
             # Botões de Ação
             if falhas == 0:
+                from core.session_state import get_state, set_state
+                state = get_state()
+                state.phase_1_complete = True
+                set_state(state)
                 st.session_state['phase_1_complete'] = True
                 if st.button("➡️ Avançar para Etapa 3: Frota & Armazéns", type="primary", use_container_width=True):
                     # AUTOMATIC SAVE: Ensure hard work is committed before leaping phases
@@ -259,6 +292,10 @@ class Phase1Georeferencing:
                             print(f"Silent auto-save failure: {e}")
                             
                     # Point explicit index to 3 (the Fleet & Warehouses Tab)
+                    from core.session_state import get_state, set_state
+                    state = get_state()
+                    state.next_phase_queued = 3
+                    set_state(state)
                     st.session_state['next_phase_queued'] = 3 
                     st.rerun()
             

@@ -77,18 +77,26 @@ class AdvancedRouteOptimizer:
         
         # 1. Distance and Cost Evaluation (Scale by 100)
         def distance_callback(from_index, to_index):
-            from_node = self.manager.IndexToNode(from_index)
-            to_node = self.manager.IndexToNode(to_index)
-            return int(float(distance_matrix[from_node][to_node]) * 100)
+            try:
+                from_node = self.manager.IndexToNode(from_index)
+                to_node = self.manager.IndexToNode(to_index)
+                if 0 <= from_node < len(distance_matrix) and 0 <= to_node < len(distance_matrix[0]):
+                    return int(float(distance_matrix[from_node][to_node]) * 100)
+            except Exception:
+                pass
+            return 0
             
         transit_callback_index = self.routing.RegisterTransitCallback(distance_callback)
         self.routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
         # 2. Weight Capacity (Strict Hard Constraint!)
         def demand_callback(from_index):
-            from_node = self.manager.IndexToNode(from_index)
-            if from_node < len(clean_demands):
-                return clean_demands[from_node]
+            try:
+                from_node = self.manager.IndexToNode(from_index)
+                if 0 <= from_node < len(clean_demands):
+                    return clean_demands[from_node]
+            except Exception:
+                pass
             return 0
             
         demand_callback_index = self.routing.RegisterUnaryTransitCallback(demand_callback)
@@ -112,9 +120,12 @@ class AdvancedRouteOptimizer:
             clean_v_capacities = _safe_int_scale(vehicle_volume_capacities)
             
             def volume_callback(from_index):
-                from_node = self.manager.IndexToNode(from_index)
-                if from_node < len(clean_v_demands):
-                    return clean_v_demands[from_node]
+                try:
+                    from_node = self.manager.IndexToNode(from_index)
+                    if 0 <= from_node < len(clean_v_demands):
+                        return clean_v_demands[from_node]
+                except Exception:
+                    pass
                 return 0
                 
             volume_callback_index = self.routing.RegisterUnaryTransitCallback(volume_callback)
@@ -137,13 +148,17 @@ class AdvancedRouteOptimizer:
         # we approximate: Travel Time = (Distance / 40km/h Avg Speed) * 60 mins + 15 mins service.
         # For maximum simplicity and bulletproof constraint, we register a dedicated duration matrix:
         def time_callback(from_index, to_index):
-            from_node = self.manager.IndexToNode(from_index)
-            to_node = self.manager.IndexToNode(to_index)
-            # 1 km @ 40 km/h = 1.5 minutes
-            dist = float(distance_matrix[from_node][to_node])
-            travel_min = (dist / 40.0) * 60.0
-            service_min = 15.0 if from_node != depot_indices[0] else 0.0
-            return int((travel_min + service_min) * 100)
+            try:
+                from_node = self.manager.IndexToNode(from_index)
+                to_node = self.manager.IndexToNode(to_index)
+                if 0 <= from_node < len(distance_matrix) and 0 <= to_node < len(distance_matrix[0]):
+                    dist = float(distance_matrix[from_node][to_node])
+                    travel_min = (dist / 40.0) * 60.0
+                    service_min = 15.0 if len(depot_indices) > 0 and from_node != depot_indices[0] else 0.0
+                    return int((travel_min + service_min) * 100)
+            except Exception:
+                pass
+            return 0
             
         time_callback_index = self.routing.RegisterTransitCallback(time_callback)
         

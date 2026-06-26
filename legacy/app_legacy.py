@@ -1104,13 +1104,9 @@ def main():
         
     # --- FINAL ZEN SOLUTION ---
     # 0. INTERCEPT PROGRAMMATIC QUEUE: Safely process redirects requested by buttons!
-    from core.session_state import get_state, set_state
-    state = get_state()
-    if state.next_phase_queued is not None:
-        st.session_state['current_phase'] = state.next_phase_queued
-        state.current_phase = state.next_phase_queued
-        state.next_phase_queued = None
-        set_state(state)
+    if 'next_phase_queued' in st.session_state:
+        st.session_state['current_phase'] = st.session_state['next_phase_queued']
+        del st.session_state['next_phase_queued']
 
     # 1. Defuse infinite recursion loop by binding the variable DIRECTLY to widget key.
     if 'current_phase' not in st.session_state or st.session_state['current_phase'] is None:

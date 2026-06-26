@@ -1,4 +1,4 @@
-"""
+﻿"""
 Phase 2: Complete Validation Component
 Validates clients, warehouses, and fleet before proceeding to planning.
 """
@@ -9,6 +9,7 @@ import folium
 from streamlit_folium import st_folium
 
 from utils.geocoder_engine import WaterfallGeocoder
+from core.session_state import get_state, set_state, FleetVehicle
 
 
 class Phase2Validation:
@@ -36,32 +37,32 @@ class Phase2Validation:
         
         # Zone 1: Clients
         with st.container():
-            st.markdown("### 📍 Zona 1: Clientes Georreferenciados")
+            st.markdown("### 👥 Zona 1: Clientes Georreferenciados")
             Phase2Validation.render_clients_zone()
         
         st.markdown("---")
         
         # Zone 2: Warehouses
         with st.container():
-            st.markdown("### 🏭 Zona 2: Armazéns/Lojas")
+            st.markdown("### 🏢 Zona 2: Armazéns/Lojas")
             Phase2Validation.render_warehouses_zone()
         
         st.markdown("---")
         
         # Zone 3: Fleet
         with st.container():
-            st.markdown("### 🚗 Zona 3: Frota")
+            st.markdown("### 🚚 Zona 3: Frota")
             Phase2Validation.render_fleet_zone()
     
     @staticmethod
     def render_clients_zone():
         """Zone 1: Validate clients are geocoded"""
-        
-        clients_geocoded = st.session_state.get('clients_geocoded')
+        state = get_state()
+        clients_geocoded = state.clients_geocoded
         
         if clients_geocoded is None:
             st.error("❌ **Nenhum cliente georreferenciado**")
-            st.info("👉 Volte à **Fase 1** para carregar e georreferenciar clientes.")
+            st.info("💡 Volte à **Fase 1** para carregar e georreferenciar clientes.")
             return
         
         # Check for failures
@@ -70,8 +71,9 @@ class Phase2Validation:
         if len(failed_clients) > 0:
             st.warning(f"⚠️ **{len(failed_clients)} clientes** precisam de correção manual.")
             
-            # Store failed clients
-            st.session_state['failed_clients'] = failed_clients
+            # Store failed clients in state
+            state.failed_clients = failed_clients
+            set_state(state)
             
             # Correction interface
             Phase2Validation.render_client_correction(failed_clients)
@@ -92,8 +94,9 @@ class Phase2Validation:
     @staticmethod
     def render_client_correction(failed_clients):
         """Correction interface for failed clients"""
+        state = get_state()
         
-        with st.expander("🔧 Corrigir Clientes Falhados", expanded=True):
+        with st.expander("🛠️ Corrigir Clientes Falhados", expanded=True):
             # Progress
             total_failed = st.session_state.get('total_failed_count', len(failed_clients))
             if 'total_failed_count' not in st.session_state:
@@ -104,7 +107,7 @@ class Phase2Validation:
             if corrections_made > 0:
                 progress = corrections_made / total_failed
                 st.progress(progress)
-                st.info(f"📊 Progresso: {corrections_made}/{total_failed} corrigidos ({progress*100:.1f}%)")
+                st.info(f"📈 Progresso: {corrections_made}/{total_failed} corrigidos ({progress*100:.1f}%)")
             
             # Select client
             client_options = [
@@ -145,7 +148,7 @@ class Phase2Validation:
     @staticmethod
     def _map_correction(client_row, client_idx):
         """Map-based correction"""
-        st.info("👆 Clique no mapa para definir a localização")
+        st.info("📍 Clique no mapa para definir a localização")
         
         center_lat = st.session_state.get('temp_correction', {}).get('lat', 39.5)
         center_lon = st.session_state.get('temp_correction', {}).get('lon', -8.0)
@@ -168,7 +171,7 @@ class Phase2Validation:
                 'lon': clicked['lng'],
                 'client_idx': client_idx
             }
-            st.success(f"✅ Localização: {clicked['lat']:.5f}, {clicked['lng']:.5f}")
+            st.success(f"📍 Localização: {clicked['lat']:.5f}, {clicked['lng']:.5f}")
         
         if st.button("💾 Guardar", disabled='temp_correction' not in st.session_state, type="primary"):
             Phase2Validation._save_correction(client_row)
@@ -176,6 +179,7 @@ class Phase2Validation:
     @staticmethod
     def _edit_correction(client_row, client_idx):
         """Edit-based correction"""
+        state = get_state()
         col1, col2 = st.columns(2)
         
         with col1:
@@ -186,7 +190,7 @@ class Phase2Validation:
             new_conc = st.text_input("Concelho", value=client_row.get('Concelho', ''), key=f"conc_{client_idx}")
         
         if st.button("🔍 Re-geocodificar", type="primary"):
-            api_key = st.session_state.get('google_api_key')
+            api_key = state.google_api_key
             geocoder = WaterfallGeocoder(Phase2Validation.DB_FILE, google_api_key=api_key)
             
             with st.spinner("Geocodificando..."):
@@ -213,8 +217,9 @@ class Phase2Validation:
     @staticmethod
     def _save_correction(client_row):
         """Save correction"""
+        state = get_state()
         correction = st.session_state['temp_correction']
-        clients_geocoded = st.session_state['clients_geocoded'].copy()
+        clients_geocoded = state.clients_geocoded.copy()
         
         codigo = client_row.get('Codigo_Cliente')
         mask = clients_geocoded['Codigo_Cliente'] == codigo if codigo else clients_geocoded['Morada'] == client_row.get('Morada')
@@ -229,11 +234,12 @@ class Phase2Validation:
             clients_geocoded.loc[mask, 'Codigo_Postal'] = correction['cp']
             clients_geocoded.loc[mask, 'Concelho'] = correction['concelho']
         
-        failed_clients = st.session_state['failed_clients'].copy()
+        failed_clients = state.failed_clients.copy()
         failed_clients = failed_clients[failed_clients['Codigo_Cliente'] != codigo] if codigo else failed_clients[failed_clients['Morada'] != client_row.get('Morada')]
         
-        st.session_state['clients_geocoded'] = clients_geocoded
-        st.session_state['failed_clients'] = failed_clients
+        state.clients_geocoded = clients_geocoded
+        state.failed_clients = failed_clients
+        set_state(state)
         
         if 'temp_correction' in st.session_state:
             del st.session_state['temp_correction']
@@ -244,70 +250,120 @@ class Phase2Validation:
     @staticmethod
     def render_warehouses_zone():
         """Zone 2: Validate warehouses"""
+        state = get_state()
+        warehouses_df = state.warehouses_geocoded
         
-        warehouses = st.session_state.get('warehouses', [])
-        
-        if len(warehouses) == 0:
+        if warehouses_df is None or warehouses_df.empty:
             st.error("❌ **Nenhum armazém definido**")
-            st.info("👉 Volte à **Fase 1** (tab Armazéns) para adicionar armazéns.")
+            st.info("💡 Volte à **Fase 2** (tab Armazéns e Frota) para adicionar armazéns.")
         else:
-            st.success(f"✅ **{len(warehouses)} armazém(s)** configurado(s)")
+            st.success(f"✅ **{len(warehouses_df)} armazém(s)** configurado(s)")
             
             # Show list
-            for idx, wh in enumerate(warehouses):
+            for idx, row in warehouses_df.iterrows():
                 col1, col2, col3 = st.columns([3, 2, 1])
-                col1.write(f"**{wh['name']}**")
-                col2.write(f"{wh['lat']:.5f}, {wh['lon']:.5f}")
+                col1.write(f"**{row['Nome_Armazem']}**")
+                col2.write(f"{row['Latitude']:.5f}, {row['Longitude']:.5f}")
                 if col3.button("🗑️", key=f"del_wh_v2_{idx}"):
-                    st.session_state['warehouses'].pop(idx)
+                    state.warehouses_geocoded = warehouses_df.drop(idx).reset_index(drop=True)
+                    set_state(state)
                     st.rerun()
     
     @staticmethod
     def render_fleet_zone():
         """Zone 3: Validate fleet"""
+        state = get_state()
         
-        if 'fleet_config' not in st.session_state:
-            st.session_state['fleet_config'] = pd.DataFrame({
+        # Convert dict to DataFrame for display
+        fleet_data = []
+        if state.fleet_config:
+            for vehicle_name, vehicle_data in state.fleet_config.items():
+                fleet_data.append({
+                    'Veiculo': vehicle_name,
+                    'Capacidade_KG': vehicle_data.capacidade_kg,
+                    'Cap_Volume_m3': vehicle_data.capacidade_vol,
+                    'Custo_KM': vehicle_data.custo_km,
+                    'Velocidade_Media': vehicle_data.velocidade_media,
+                    'Horario_Inicio': vehicle_data.horario_inicio,
+                    'Horario_Fim': vehicle_data.horario_fim,
+                    'Armazem': vehicle_data.armazem
+                })
+        
+        fleet_df = pd.DataFrame(fleet_data)
+        if fleet_df.empty:
+            # Setup defaults if empty
+            fleet_df = pd.DataFrame({
                 'Veiculo': ['Veículo 1', 'Veículo 2', 'Veículo 3'],
                 'Capacidade_KG': [500, 750, 1000],
+                'Cap_Volume_m3': [0.0, 0.0, 0.0],
                 'Custo_KM': [0.50, 0.60, 0.70],
                 'Velocidade_Media': [40, 40, 40],
                 'Horario_Inicio': ['08:00', '08:00', '08:00'],
-                'Horario_Fim': ['18:00', '18:00', '18:00']
+                'Horario_Fim': ['18:00', '18:00', '18:00'],
+                'Armazem': ['' for _ in range(3)]
             })
+            # Try to associate first warehouse if exists
+            if state.warehouses_geocoded is not None and not state.warehouses_geocoded.empty:
+                first_wh = state.warehouses_geocoded.iloc[0]['Nome_Armazem']
+                fleet_df['Armazem'] = first_wh
         
-        fleet = st.session_state['fleet_config']
-        
-        if len(fleet) == 0:
+        if len(fleet_df) == 0:
             st.error("❌ **Nenhum veículo configurado**")
         else:
-            st.success(f"✅ **{len(fleet)} veículo(s)** configurado(s)")
+            st.success(f"✅ **{len(fleet_df)} veículo(s)** configurado(s)")
         
+        # Get warehouse names for selectbox
+        warehouse_names = []
+        if state.warehouses_geocoded is not None:
+            warehouse_names = state.warehouses_geocoded['Nome_Armazem'].tolist()
+            
         # Editable table
         edited_fleet = st.data_editor(
-            fleet,
+            fleet_df,
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Armazem": st.column_config.SelectboxColumn(
+                    "Armazém",
+                    options=warehouse_names,
+                    required=True
+                )
+            },
             key="fleet_editor_v2"
         )
         
-        st.session_state['fleet_config'] = edited_fleet
+        # Save back to state as dict of FleetVehicle
+        new_fleet_dict = {}
+        if isinstance(edited_fleet, pd.DataFrame) and not edited_fleet.empty:
+            for _, row in edited_fleet.iterrows():
+                new_fleet_dict[row['Veiculo']] = FleetVehicle(
+                    capacidade_kg=row['Capacidade_KG'],
+                    capacidade_vol=row.get('Cap_Volume_m3', 0.0),
+                    custo_km=row['Custo_KM'],
+                    velocidade_media=row['Velocidade_Media'],
+                    horario_inicio=str(row['Horario_Inicio']),
+                    horario_fim=str(row['Horario_Fim']),
+                    armazem=row['Armazem']
+                )
+        
+        if new_fleet_dict != state.fleet_config:
+            state.fleet_config = new_fleet_dict
+            set_state(state)
     
     @staticmethod
     def render_completion_check():
         """Check if all zones are complete"""
+        state = get_state()
         
         # Check each zone
         clients_ok = (
-            st.session_state.get('clients_geocoded') is not None and
-            len(st.session_state.get('clients_geocoded', pd.DataFrame())[
-                st.session_state.get('clients_geocoded', pd.DataFrame())['Nivel_Qualidade'] == 8
-            ]) == 0
+            state.clients_geocoded is not None and
+            len(state.clients_geocoded[state.clients_geocoded['Nivel_Qualidade'] == 8]) == 0
         )
         
-        warehouses_ok = len(st.session_state.get('warehouses', [])) > 0
-        fleet_ok = len(st.session_state.get('fleet_config', pd.DataFrame())) > 0
+        warehouses_ok = state.warehouses_geocoded is not None and len(state.warehouses_geocoded) > 0
+        fleet_ok = len(state.fleet_config) > 0
         
         all_ok = clients_ok and warehouses_ok and fleet_ok
         
@@ -338,11 +394,14 @@ class Phase2Validation:
         if all_ok:
             st.balloons()
             st.success("🎉 **Tudo validado!** Pronto para planeamento de rotas.")
-            st.session_state['phase_2_complete'] = True
+            state.phase_2_complete = True
+            set_state(state)
             
-            if st.button("➡️ Avançar para Fase 3: Planeamento", type="primary", use_container_width=True):
-                st.session_state['next_phase_queued'] = 3
+            if st.button("🚀 Avançar para Fase 3: Planeamento", type="primary", use_container_width=True):
+                from components.phase_navigator import PhaseNavigator
+                PhaseNavigator.set_phase(3)
                 st.rerun()
         else:
             st.warning("⚠️ Complete todas as zonas para avançar.")
-            st.session_state['phase_2_complete'] = False
+            state.phase_2_complete = False
+            set_state(state)

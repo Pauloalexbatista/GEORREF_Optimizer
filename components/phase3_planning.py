@@ -7,12 +7,30 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+from typing import Dict, Any
 
 from utils.optimization_solver import AdvancedRouteOptimizer
 from utils.distance_calculator import calculate_haversine_matrix
 from utils.export_engine import generate_route_excel
 from components.route_editor import RouteEditor
 from components.route_visualizer import RouteVisualizer
+from core.session_state import get_state, set_state, FleetVehicle
+
+
+def fleet_to_solver_dict(fleet_config: Dict[str, FleetVehicle]) -> Dict[str, Dict[str, Any]]:
+    """Convert FleetVehicle dataclass to solver-compatible dict format."""
+    result = {}
+    for vehicle_name, vehicle in fleet_config.items():
+        result[vehicle_name] = {
+            'capacity': vehicle.capacidade_kg,
+            'capacity_volume': vehicle.capacidade_vol,
+            'cost_per_km': vehicle.custo_km,
+            'speed': vehicle.velocidade_media,
+            'start_time': vehicle.horario_inicio,
+            'end_time': vehicle.horario_fim,
+            'warehouse': vehicle.armazem
+        }
+    return result
 
 
 class Phase3Planning:
@@ -20,7 +38,7 @@ class Phase3Planning:
     
     @staticmethod
     def render():
-        view_mode = st.session_state.get('view_mode', 'full')
+        view_mode = get_state().view_mode
         if view_mode == 'full':
             st.title("🧠 Etapa 4: Dashboard Tático")
         
@@ -35,10 +53,11 @@ class Phase3Planning:
     @staticmethod
     def check_prerequisites():
         """Check if all prerequisites are met"""
-        has_clients = st.session_state.get('clients_geocoded') is not None
-        has_fleet = st.session_state.get('fleet_config') is not None
-        has_warehouses = st.session_state.get('warehouses_geocoded') is not None
-        
+        state = get_state()
+        has_clients = state.clients_geocoded is not None
+        has_fleet = state.fleet_config is not None and len(state.fleet_config) > 0
+        has_warehouses = state.warehouses_geocoded is not None
+    
         return has_clients and has_fleet and has_warehouses
     
     @staticmethod
@@ -48,33 +67,33 @@ class Phase3Planning:
         
         st.markdown("Para avançar para o planeamento de rotas, precisa de:")
         
-        has_clients = st.session_state.get('clients_geocoded') is not None
-        has_fleet = st.session_state.get('fleet_config') is not None
-        has_warehouses = st.session_state.get('warehouses_geocoded') is not None
+        has_clients = get_state().clients_geocoded is not None
+        has_fleet = get_state().fleet_config is not None and len(get_state().fleet_config) > 0
+        has_warehouses = get_state().warehouses_geocoded is not None
         
         status_clients = "✅" if has_clients else "❌"
         status_fleet = "✅" if has_fleet else "❌"
         status_warehouses = "✅" if has_warehouses else "❌"
         
         st.markdown(f"""
-        - {status_clients} **Clientes georreferenciados** (Fase 1)
-        - {status_warehouses} **Armazéns georreferenciados** (Fase 2)
-        - {status_fleet} **Frota configurada** (Fase 2)
+        - {status_clients} **Clientes georreferenciados** (Etapa 2)
+        - {status_warehouses} **Armazéns georreferenciados** (Etapa 3)
+        - {status_fleet} **Frota configurada** (Etapa 3)
         """)
         
         if not has_clients:
-            if st.button("⬅️ Voltar para Fase 1", use_container_width=True):
-                st.session_state['next_phase_queued'] = 1
+            if st.button("⬅️ Voltar para Etapa 2", use_container_width=True):
+                state = get_state(); state.next_phase_queued = 2; set_state(state)
                 st.rerun()
         elif not (has_fleet and has_warehouses):
-            if st.button("⬅️ Voltar para Fase 2", use_container_width=True):
-                st.session_state['next_phase_queued'] = 2
+            if st.button("⬅️ Voltar para Etapa 3", use_container_width=True):
+                state = get_state(); state.next_phase_queued = 3; set_state(state)
                 st.rerun()
     
     @staticmethod
     def render_planning_interface():
         """Main planning interface"""
-        view_mode = st.session_state.get('view_mode', 'full')
+        view_mode = get_state().view_mode
         
         # Se for ecrã escravo (multi-monitor), ignorar menus externos e focar só no Dashboard
         if view_mode != 'full':
@@ -84,24 +103,29 @@ class Phase3Planning:
         # Step 1: Execute Optimization
         st.markdown("## 1️⃣ Calcular Rotas Otimizadas")
         
-        if 'routes_solution' not in st.session_state:
+        # Use AppState as the single source of truth (not st.session_state)
+        _has_routes = get_state().routes_solution is not None
+        
+        if not _has_routes:
             Phase3Planning.render_optimization_config()
         else:
             st.success("✅ Rotas calculadas!")
             
             if st.button("🔄 Recalcular Rotas", key="recalc_routes"):
-                del st.session_state['routes_solution']
+                state = get_state()
+                state.routes_solution = None
+                set_state(state)
                 if 'edited_routes' in st.session_state:
                     del st.session_state['edited_routes']
                 st.rerun()
         
         # Step 2: Edit Routes (if solution exists)
-        if 'routes_solution' in st.session_state:
+        if _has_routes:
             st.markdown("---")
             st.markdown("## 2️⃣ Editar Rotas")
             
-            routes_df = st.session_state['routes_solution']
-            fleet_config = st.session_state.get('fleet_config_used', {})
+            routes_df = get_state().routes_solution
+            fleet_config = get_state().fleet_config_used
             
             # 1. Avisos (Warnings)
             # RouteEditor handles real-time validation warnings natively!
@@ -142,8 +166,8 @@ class Phase3Planning:
                 st.info("💡 Satisfeito com os resultados? Clique abaixo para concluir.")
                 if st.button("🏁 Guardar e Concluir Planeamento", type="primary", use_container_width=True, help="Garante que os resultados calculados são salvos e avança para Exportação."):
                     import utils.persistence_manager as pm
-                    active_proj = st.session_state.get('projeto_atual')
-                    curr_user = st.session_state.get('utilizador_id', 1)
+                    active_proj = get_state().projeto_atual
+                    curr_user = (get_state().utilizador_id or 1)
                     
                     if active_proj:
                         try:
@@ -158,7 +182,7 @@ class Phase3Planning:
                             pass # Fault-tolerant backup
 
                     # Jump forward to the final Tab 5 (Export)
-                    st.session_state['next_phase_queued'] = 5
+                    state = get_state(); state.next_phase_queued = 5; set_state(state)
                     st.rerun()
     
     @staticmethod
@@ -202,9 +226,17 @@ class Phase3Planning:
     def run_optimization(params):
         """Execute route optimization"""
         
-        clients_df = st.session_state['clients_geocoded']
-        fleet_config = st.session_state['fleet_config']
-        warehouses_df = st.session_state['warehouses_geocoded']
+        clients_df = get_state().clients_geocoded
+        fleet_config = get_state().fleet_config
+        warehouses_df = get_state().warehouses_geocoded
+        
+        # Show any previous errors or warnings from last optimization attempt
+        _opt_error = st.session_state.pop('_opt_error', None)
+        _opt_warning = st.session_state.pop('_opt_warning', None)
+        if _opt_error:
+            st.error(_opt_error)
+        if _opt_warning:
+            st.warning(_opt_warning)
         
         with st.spinner("🔄 Calculando rotas otimizadas..."):
             # Prepare data
@@ -279,101 +311,43 @@ class Phase3Planning:
                 )
                 
                 if result['status'] != 'SUCCESS':
-                    st.error("❌ **Falha na otimização**")
-                    
-                    # Detailed diagnostics
-                    st.markdown("### 🔍 Diagnóstico")
-                    
+                    # Build diagnostic message — cannot use st.error() inside spinner+rerun
                     total_demand = sum(demands)
                     total_capacity = sum(vehicle_capacities)
-                    
                     total_vol_demand = sum(volume_demands)
                     total_vol_capacity = sum(vehicle_volume_capacities)
-                    
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Total Peso", f"{total_demand:.0f} kg")
-                    col2.metric("Capac. Peso Total", f"{total_capacity:.0f} kg")
-                    col3.metric("Diferença Peso", f"{total_capacity - total_demand:.0f} kg", 
-                               delta_color="normal" if total_capacity >= total_demand else "inverse")
-                    
-                    col4, col5, col6 = st.columns(3)
-                    col4.metric("Total Volume", f"{total_vol_demand:.1f} m3")
-                    col5.metric("Capac. Volume Total", f"{total_vol_capacity:.1f} m3")
-                    col6.metric("Diferença Volume", f"{total_vol_capacity - total_vol_demand:.1f} m3", 
-                               delta_color="normal" if total_vol_capacity >= total_vol_demand else "inverse")
-                    
-                    st.markdown("### 💡 Possíveis Causas")
-                    
-                    issues = []
-                    
-                    # Check capacity (Weight)
-                    if total_capacity < total_demand:
-                        issues.append("🔴 **Capacidade de Peso insuficiente**: A frota não tem capacidade para todas as entregas")
-                        st.error(f"A capacidade total de peso da frota ({total_capacity:.0f} kg) é menor que o peso total das entregas ({total_demand:.0f} kg).")
-                        st.info(f"💡 **Solução**: Adicione mais veículos ou aumente a capacidade dos existentes em pelo menos {total_demand - total_capacity:.0f} kg")
-                    
-                    # Check capacity (Volume)
-                    if total_vol_capacity < total_vol_demand:
-                        issues.append("🔴 **Capacidade de Volume insuficiente**: Volume total excede a frota")
-                        st.error(f"A capacidade volumétrica total ({total_vol_capacity:.1f} m3) é menor que o volume total das entregas ({total_vol_demand:.1f} m3).")
-                        st.info(f"💡 **Solução**: Adicione mais veículos ou use veículos com maior capacidade volumétrica.")
-                    
-                    # Check time limits
-                    max_duration = params.get('max_route_duration', 480)
-                    if max_duration < 120:
-                        issues.append("🟡 **Tempo muito restrito**: Duração máxima por rota pode ser muito baixa")
-                        st.warning(f"A duração máxima por rota está definida para {max_duration/60:.1f} horas. Isto pode ser muito restritivo.")
-                        st.info("💡 **Solução**: Aumente o valor de 'Máx. Horas por Rota' para 6-8 horas")
-                    
-                    # Check number of vehicles vs clients
                     num_clients = len(clients_df)
                     num_vehicles = len(vehicle_capacities)
-                    if num_vehicles > num_clients:
-                        issues.append("🟡 **Mais veículos que clientes**: Pode causar problemas de otimização")
-                        st.warning(f"Tem {num_vehicles} veículos para apenas {num_clients} clientes.")
-                        st.info("💡 **Solução**: Reduza o número de veículos ou adicione mais clientes")
-                    
-                    # Check if demands are too large (Weight)
                     max_demand = max(demands) if demands else 0
                     max_capacity = max(vehicle_capacities) if vehicle_capacities else 0
-                    if max_demand > max_capacity:
-                        issues.append("🔴 **Cliente com peso excessivo**: Há clientes que não cabem em nenhum veículo")
-                        st.error(f"Há pelo menos um cliente com {max_demand:.0f} kg, mas o maior veículo só tem {max_capacity:.0f} kg de capacidade.")
-                        st.info(f"💡 **Solução**: Aumente a capacidade do maior veículo ou divida a entrega")
-                    
-                    # Check if demands are too large (Volume)
                     max_vol_dem = max(volume_demands) if volume_demands else 0
                     max_vol_cap = max(vehicle_volume_capacities) if vehicle_volume_capacities else 0
+                    
+                    diag_parts = [f"❌ **Falha na otimização** (status: {result.get('status','desconhecido')})\n"]
+                    if total_capacity < total_demand:
+                        diag_parts.append(f"🚨 Capacidade de peso insuficiente: frota={total_capacity:.0f}kg < pedidos={total_demand:.0f}kg. Adicione veículos ou aumente capacidade.")
+                    if total_vol_capacity < total_vol_demand:
+                        diag_parts.append(f"🚨 Capacidade volumétrica insuficiente: frota={total_vol_capacity:.1f}m³ < pedidos={total_vol_demand:.1f}m³.")
+                    if max_demand > max_capacity:
+                        diag_parts.append(f"🚨 Cliente com {max_demand:.0f}kg não cabe no maior veículo ({max_capacity:.0f}kg). Divida a entrega.")
                     if max_vol_dem > max_vol_cap:
-                        issues.append("🔴 **Cliente com volume excessivo**: Há clientes que não cabem em nenhum veículo")
-                        st.error(f"Há pelo menos um cliente com {max_vol_dem:.1f} m3, mas o maior veículo só tem {max_vol_cap:.1f} m3 de capacidade volumétrica.")
-                        st.info(f"💡 **Solução**: Divida a entrega volumosa.")
-                    
-                    if not issues:
-                        st.warning("⚠️ Não foi possível identificar a causa específica. Tente:")
-                        st.markdown("""
-                        - Aumentar o tempo máximo por rota
-                        - Reduzir o peso de balanceamento
-                        - Verificar se todos os clientes têm coordenadas válidas
-                        - Verificar se os armazéns estão corretamente configurados
-                        """)
-                    
-                    st.markdown("### ⚙️ Parâmetros Atuais")
-                    st.json({
-                        "Clientes": num_clients,
-                        "Veículos": num_vehicles,
-                        "Peso Distância": params.get('distance_weight', 100),
-                        "Peso Balanceamento": params.get('balance_weight', 10),
-                        "Máx. Duração (min)": params.get('max_route_duration', 480),
-                        "Tempo Limite Busca (s)": params.get('time_limit_seconds', 30)
-                    })
-                    
+                        diag_parts.append(f"🚨 Cliente com {max_vol_dem:.1f}m³ não cabe no maior veículo ({max_vol_cap:.1f}m³). Divida a entrega.")
+                    if num_vehicles > num_clients:
+                        diag_parts.append(f"⚠️ Mais veículos ({num_vehicles}) que clientes ({num_clients}). Pode causar falha.")
+                    max_dur = params.get('max_route_duration', 480)
+                    if max_dur < 120:
+                        diag_parts.append(f"⚠️ Duração máx. por rota ({max_dur/60:.1f}h) pode ser muito baixa. Aumente para 6-8h.")
+                    if len(diag_parts) == 1:
+                        diag_parts.append("⚠️ Causa não identificada. Tente: aumentar tempo máximo por rota, reduzir peso de balanceamento, ou verificar coordenadas dos clientes.")
+                    st.session_state['_opt_error'] = "\n\n".join(diag_parts)
+                    st.rerun()
                     return
                     
             except Exception as e:
-                st.error(f"❌ **Erro inesperado durante a otimização**")
-                st.exception(e)
-                st.info("💡 Se o erro persistir, tente reduzir o número de clientes ou veículos.")
+                import traceback
+                err_msg = f"❌ **Erro inesperado durante a otimização**\n\n```\n{traceback.format_exc()}\n```"
+                st.session_state['_opt_error'] = err_msg
+                st.rerun()
                 return
             
             # Convert to DataFrame
@@ -392,9 +366,14 @@ class Phase3Planning:
             if dropped_count > 0:
                 st.warning(f"⚠️ Otimização concluída, mas {dropped_count} entrega(s) ficaram de fora por falta de capacidade e foram colocadas na lista 'PENDENTES'.")
             
+            # Save to AppState AND session_state for consistency
+            state = get_state()
+            state.routes_solution = routes_df
+            state.fleet_config_used = fleet_config
+            state.warehouses_used = warehouses_df
+            set_state(state)
+            # Also mirror to session_state for backward compatibility checks
             st.session_state['routes_solution'] = routes_df
-            st.session_state['fleet_config_used'] = fleet_config
-            st.session_state['warehouses_used'] = warehouses_df
             
             st.success(f"✅ Rotas calculadas! {len(result['routes'])} rotas geradas.")
             st.rerun()
@@ -560,17 +539,17 @@ class Phase3Planning:
     def render_tactical_dashboard():
         """Render unified dashboard combining Excel Grid, Map and Editable Table."""
         
-        routes_df = st.session_state.get('routes_solution')
-        fleet_config = st.session_state.get('fleet_config_used', {})
-        warehouses_df = st.session_state.get('warehouses_used')
+        routes_df = get_state().routes_solution
+        fleet_config = get_state().fleet_config_used
+        warehouses_df = get_state().warehouses_used
         
         if warehouses_df is None:
-            warehouses_df = st.session_state.get('warehouses_geocoded')
+            warehouses_df = get_state().warehouses_geocoded
             
         if routes_df is None:
             return
             
-        view_mode = st.session_state.get('view_mode', 'full')
+        view_mode = get_state().view_mode
         
         # ==========================================
         # 1. MOTOR DE SINCRONIZAÇÃO (MULTI-ECRÃ)
@@ -580,7 +559,7 @@ class Phase3Planning:
             with col_b2:
                 st.info(f"📺 Modo Multi-Ecrã Ativo: {view_mode.upper()}")
                 if st.button("🔄 Puxar Atualizações do Ecrã Principal", type="primary", use_container_width=True):
-                    projeto_id = st.session_state.get('projeto_atual')
+                    projeto_id = get_state().projeto_atual
                     if projeto_id:
                         from utils.persistence_manager import get_snapshots_for_project, load_snapshot_into_session
                         snaps = get_snapshots_for_project(projeto_id, limit=20)
@@ -598,8 +577,8 @@ class Phase3Planning:
                 RouteVisualizer.render_single_line_totals(routes_df)
             with col_s2:
                 if st.button("📡 Emitir Sincronização (Ecrãs Externos)", type="primary", use_container_width=True):
-                    projeto_id = st.session_state.get('projeto_atual')
-                    user_id = st.session_state.get('utilizador_id', 1)
+                    projeto_id = get_state().projeto_atual
+                    user_id = (get_state().utilizador_id or 1)
                     if projeto_id:
                         from utils.persistence_manager import create_snapshot
                         from datetime import datetime
@@ -657,7 +636,7 @@ class Phase3Planning:
                     st.markdown(" ")
                     st.markdown("##### 🖥️ Abrir Monitores Secundários")
                     
-                    projeto_id = st.session_state.get('projeto_atual')
+                    projeto_id = get_state().projeto_atual
                     if projeto_id:
                         from utils.persistence_manager import get_snapshots_for_project
                         snaps = get_snapshots_for_project(projeto_id, limit=1)
@@ -706,11 +685,11 @@ class Phase3Planning:
                 
                 if auto_opt:
                     optimized_df = Phase3Planning._smart_reorder_routes(new_full_df)
-                    st.session_state['routes_solution'] = optimized_df
+                    state = get_state(); state.routes_solution = optimized_df; set_state(state)
                     st.success("✅ Rotas otimizadas automaticamente!")
                 else:
                     reordered_df = Phase3Planning._simple_reorder_routes(new_full_df)
-                    st.session_state['routes_solution'] = reordered_df
+                    state = get_state(); state.routes_solution = reordered_df; set_state(state)
                     st.success("✅ Alterações manuais aplicadas!")
                     
                 st.rerun()
@@ -752,7 +731,7 @@ class Phase3Planning:
                 reordered_rows.append(route_data)
                 continue
             
-            warehouses_df = st.session_state.get('warehouses_used')
+            warehouses_df = get_state().warehouses_used
             if warehouses_df is not None and len(warehouses_df) > 0:
                 depot_lat = warehouses_df.iloc[0]['Latitude']
                 depot_lon = warehouses_df.iloc[0]['Longitude']
@@ -797,7 +776,7 @@ class Phase3Planning:
     def render_export_section():
         """Render final export section"""
         
-        routes_df = st.session_state.get('routes_solution')
+        routes_df = get_state().routes_solution
         
         if routes_df is None:
             return
@@ -818,7 +797,7 @@ class Phase3Planning:
     def export_excel():
         """Export routes to Excel"""
         
-        routes_df = st.session_state.get('routes_solution')
+        routes_df = get_state().routes_solution
         
         if routes_df is None:
             st.error("❌ Nenhuma rota para exportar.")
@@ -844,8 +823,8 @@ class Phase3Planning:
     def export_map():
         """Export interactive map to HTML"""
         
-        routes_df = st.session_state.get('routes_solution')
-        warehouses_df = st.session_state.get('warehouses_used')
+        routes_df = get_state().routes_solution
+        warehouses_df = get_state().warehouses_used
         
         if routes_df is None:
             st.error("❌ Nenhuma rota para exportar.")
@@ -999,7 +978,7 @@ class Phase3Planning:
         
         # Fetch configuration metadata for payload limit displays!
         import streamlit as st
-        fleet_config = st.session_state.get('fleet_config_used', {})
+        fleet_config = get_state().fleet_config_used
         
         active_route_num = 1
         
@@ -1225,7 +1204,7 @@ class Phase3Planning:
             st.markdown("---")
             
             # Populate vehicle choices (consolidated configured + active)
-            fleet_config = st.session_state.get('fleet_config_used', {})
+            fleet_config = get_state().fleet_config_used
             opts = list(dict.fromkeys(list(fleet_config.keys()) + routes_df['Rota'].unique().tolist()))
             if "⚠️ PENDENTE" not in opts:
                 opts.append("⚠️ PENDENTE")
@@ -1249,7 +1228,7 @@ class Phase3Planning:
                 
             if st.button("⚡ Confirmar Rota", type="primary", use_container_width=True, key="btn_persistent_cmd_transfer"):
                 with st.spinner("A transferir..."):
-                    raw_df = st.session_state['routes_solution'].copy()
+                    raw_df = get_state().routes_solution.copy()
                     
                     # Perform Mutate
                     raw_df.loc[raw_df['Cliente'] == c_id, 'Rota'] = target_dest
@@ -1259,7 +1238,7 @@ class Phase3Planning:
                     synced = Phase3Planning._recalculate_all_metrics(reordered)
                     
                     # Save State
-                    st.session_state['routes_solution'] = synced
+                    state = get_state(); state.routes_solution = synced; set_state(state)
                     
                     # DO NOT CLEAR active_commander_client_id so they can see the update and continue!
                     st.toast(f"✅ {c_id} transferido para {target_dest}!", icon="🛰️")
@@ -1285,14 +1264,14 @@ class Phase3Planning:
             c = 2 * math.asin(math.sqrt(a))
             return R * c
             
-        warehouses_df = st.session_state.get('warehouses_used')
+        warehouses_df = get_state().warehouses_used
         if warehouses_df is None or len(warehouses_df) == 0:
             ref_lat, ref_lon = 38.7223, -9.1393
         else:
             ref_lat = float(warehouses_df.iloc[0]['Latitude'])
             ref_lon = float(warehouses_df.iloc[0]['Longitude'])
             
-        clients_geocoded = st.session_state.get('clients_geocoded')
+        clients_geocoded = get_state().clients_geocoded
         
         recalc_rows = []
         
@@ -1382,8 +1361,8 @@ class Phase3Planning:
         """
         import pandas as pd
         
-        routes_df = st.session_state.get('routes_solution')
-        fleet_config = st.session_state.get('fleet_config_used', {})
+        routes_df = get_state().routes_solution
+        fleet_config = get_state().fleet_config_used
         
         if routes_df is None:
             return
@@ -1441,7 +1420,7 @@ class Phase3Planning:
                     return
                     
                 with st.spinner("A realizar transferência de cargas em massa..."):
-                    raw_df = st.session_state['routes_solution'].copy()
+                    raw_df = get_state().routes_solution.copy()
                     
                     # Fast bulk pandas assignment override
                     raw_df.loc[raw_df['Rota'] == origin_veh, 'Rota'] = dest_veh
@@ -1450,7 +1429,7 @@ class Phase3Planning:
                     reordered = Phase3Planning._simple_reorder_routes(raw_df)
                     final_df = Phase3Planning._recalculate_all_metrics(reordered)
                     
-                    st.session_state['routes_solution'] = final_df
+                    state = get_state(); state.routes_solution = final_df; set_state(state)
                     st.toast(f"✅ Transferidos {origin_count} clientes para {dest_veh}!", icon="🚛")
                     st.rerun()
                         
@@ -1477,7 +1456,7 @@ class Phase3Planning:
                     return
                     
                 with st.spinner("A realizar permuta cruzada de frotas..."):
-                    raw_df = st.session_state['routes_solution'].copy()
+                    raw_df = get_state().routes_solution.copy()
                     
                     # Perform robust cross-swap using memory safe token
                     swap_token = "__DISPATCH_SWAP_TOKEN_GUARD__"
@@ -1489,7 +1468,7 @@ class Phase3Planning:
                     reordered = Phase3Planning._simple_reorder_routes(raw_df)
                     final_df = Phase3Planning._recalculate_all_metrics(reordered)
                     
-                    st.session_state['routes_solution'] = final_df
+                    state = get_state(); state.routes_solution = final_df; set_state(state)
                     st.toast(f"✅ Cargas trocadas com sucesso!", icon="🔄")
                     st.rerun()
                     

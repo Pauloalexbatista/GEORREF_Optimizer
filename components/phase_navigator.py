@@ -4,6 +4,7 @@ Manages navigation between the 3 main phases of the application.
 """
 
 import streamlit as st
+from core.session_state import get_state, set_state
 from utils.persistence_manager import (
     create_snapshot, get_snapshots_for_project, load_snapshot_into_session
 )
@@ -24,7 +25,7 @@ class PhaseNavigator:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🗺️ Fases do Processo")
         
-        current_phase = st.session_state.get('current_phase', 1)
+        current_phase = get_state().current_phase
         
         for phase_num, phase_info in PhaseNavigator.PHASES.items():
             # Check if phase is unlocked
@@ -50,7 +51,7 @@ class PhaseNavigator:
                 use_container_width=True,
                 key=f"nav_phase_{phase_num}"
             ):
-                st.session_state['next_phase_queued'] = phase_num
+                get_state().next_phase_queued = phase_num
                 st.rerun()
         
         # Show phase description
@@ -101,13 +102,13 @@ class PhaseNavigator:
     @staticmethod
     def get_current_phase():
         """Get the current active phase"""
-        return st.session_state.get('current_phase', 1)
+        return get_state().current_phase
     
     @staticmethod
     def set_phase(phase_num):
         """Set the current phase"""
         if PhaseNavigator.is_phase_unlocked(phase_num):
-            st.session_state['next_phase_queued'] = phase_num
+            get_state().next_phase_queued = phase_num
             return True
         return False
         
@@ -115,9 +116,9 @@ class PhaseNavigator:
     def _render_persistence_controls():
         """Renders Save and Load snapshot controls in the sidebar."""
         
-        proj_id = st.session_state.get('projeto_atual')
-        user_id = st.session_state.get('utilizador_id')
-        current_fase = st.session_state.get('current_phase', 1)
+        proj_id = get_state().projeto_atual
+        user_id = get_state().utilizador_id
+        current_fase = get_state().current_phase
         
         if not proj_id:
             return
@@ -161,8 +162,8 @@ class PhaseNavigator:
         from utils.persistence_manager import create_snapshot, get_snapshots_for_project, load_snapshot_into_session
         import pandas as pd
         
-        proj_id = st.session_state.get('projeto_atual')
-        user_id = st.session_state.get('utilizador_id')
+        proj_id = get_state().projeto_atual
+        user_id = get_state().utilizador_id
         
         if not proj_id:
             st.warning("⚠️ Por favor, crie ou selecione um Projeto primeiro.")
@@ -181,7 +182,7 @@ class PhaseNavigator:
             
             if st.button("💾 Guardar Estado Atual", type="primary", use_container_width=True):
                 with st.spinner("A gravar..."):
-                    current_fase = st.session_state.get('current_phase', 1)
+                    current_fase = get_state().current_phase
                     sid = create_snapshot(proj_id, user_id, current_fase, snapshot_name=nome_snap if nome_snap else None)
                     if sid:
                         st.success("✅ Gravado com sucesso na base de dados!")
