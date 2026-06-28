@@ -1125,6 +1125,11 @@ def main():
         state.current_phase = state.next_phase_queued
         state.next_phase_queued = None
         set_state(state)
+        
+    if st.session_state.get('multi_monitor_mode', False):
+        st.session_state['current_phase'] = 4
+        state.current_phase = 4
+        set_state(state)
 
     # 1. Defuse infinite recursion loop by binding the variable DIRECTLY to widget key.
     if 'current_phase' not in st.session_state or st.session_state['current_phase'] is None:
@@ -1133,14 +1138,15 @@ def main():
     st.markdown('<div style="margin-bottom: -10px;"></div>', unsafe_allow_html=True)
     
     # 2. Modern Single-Variable Binding. Streamlit manages bidirectional updates automatically!
-    st.segmented_control(
+    if not st.session_state.get('multi_monitor_mode', False):
+        st.segmented_control(
         "Navegação",
         options=list(tab_options.keys()),
         format_func=lambda k: tab_options[k],
         selection_mode="single",
         label_visibility="collapsed",
         key="current_phase" # Binds natively to st.session_state['current_phase']
-    )
+        )
     
     # 3. Explicit Guard: prevent the user from deselecting (becoming None)
     if st.session_state['current_phase'] is None:
