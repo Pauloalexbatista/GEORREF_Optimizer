@@ -200,7 +200,7 @@ class RouteVisualizer:
         )
 
     @staticmethod
-    def render_route_metrics(routes_df, selected_routes):
+    def render_route_metrics(routes_df, selected_routes=None):
         """Render metrics in a premium, unified Excel-style DataFrame grid. Returns selected route names."""
         import pandas as pd
         
