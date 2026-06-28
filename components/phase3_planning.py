@@ -574,7 +574,7 @@ class Phase3Planning:
             # Ecrã Mestre
             col_s1, col_s2 = st.columns([3, 1])
             with col_s1:
-                RouteVisualizer.render_single_line_totals(routes_df)
+                RouteVisualizer.render_total_summary_line(routes_df)
             with col_s2:
                 if st.button("📡 Emitir Sincronização (Ecrãs Externos)", type="primary", use_container_width=True):
                     projeto_id = get_state().projeto_atual
