@@ -18,15 +18,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!selectedProject) return;
+    const projId = selectedProject.id;
 
     async function loadStats() {
       try {
         setStats((prev) => ({ ...prev, loading: true }));
-        const deliveries = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+        const deliveries = await apiRequest(`/api/geocoding/${projId}`);
         const total = deliveries.length;
         const geocoded = deliveries.filter((d: any) => d.latitude !== 0.0 && d.longitude !== 0.0).length;
 
-        const fleetData = await apiRequest(`/api/fleet/${selectedProject.id}`);
+        const fleetData = await apiRequest(`/api/fleet/${projId}`);
         const hasWh = fleetData.warehouses && fleetData.warehouses.length > 0;
         const hasVeh = fleetData.fleet && fleetData.fleet.length > 0;
 
@@ -54,7 +55,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-zinc-50">
             Bem-vindo ao Planeamento de Rotas
           </h1>
-          <p className="text-zinc-400 text-sm mt-2 max-w-xl">
+          <p className="text-zinc-450 text-sm mt-2 max-w-xl">
             Siga os três passos para importar dados de clientes, configurar a sua frota e calcular as rotas otimizadas com o motor OR-Tools.
           </p>
         </div>

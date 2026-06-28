@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
@@ -274,6 +275,7 @@ export default function TacticalDashboardPage() {
                 }))}
                 warehouses={warehouses.map(w => ({
                   name: w.name,
+                  address: w.address || "",
                   lat: w.lat,
                   lon: w.lon
                 }))}

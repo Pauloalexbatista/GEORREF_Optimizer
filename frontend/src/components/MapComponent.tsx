@@ -27,6 +27,7 @@ interface MapClient {
 
 interface MapWarehouse {
   name: string;
+  address: string;
   lat: number;
   lon: number;
 }
@@ -231,12 +232,7 @@ export default function MapComponent({
           const points: [number, number][] = [];
           
           // Try to append warehouse depot at the beginning of polyline
-          const whName = warehouses.find(w => w.name)?.[0]; // Fallback to first warehouse
-          const matchedWh = warehouses.find(w => warehouses.some(item => firstClient.Carga_Acum !== undefined)); // Just a helper placeholder
-          
           if (warehouses.length > 0) {
-            // Find matched warehouse for this route (usually matches the vehicle depot)
-            // For now, draw connecting all coordinates of clients
             points.push([warehouses[0].lat, warehouses[0].lon]);
           }
           
