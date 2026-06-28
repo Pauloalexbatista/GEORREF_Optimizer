@@ -222,7 +222,7 @@ class RouteVisualizer:
             
         # Dynamic Cost calculation based on distance and vehicle cost_per_km
         tot_custo = 0.0
-        fleet_config = get_state().fleet_config_used or {}
+        fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
         for name in routes_df['Rota'].unique():
             r_data = routes_df[routes_df['Rota'] == name]
             dist = r_data[dist_col].max() if dist_col in r_data.columns else 0.0
@@ -263,7 +263,7 @@ class RouteVisualizer:
         st.markdown("#### 📊 Selecione os veículos na grelha para filtrar a tabela de edição:")
         
         # Obter capacidades da frota para as cores
-        fleet_config = get_state().fleet_config_used
+        fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
         opt_params = get_state().optimization_params
         max_duration_h = opt_params.get('max_route_duration', 480) / 60.0
         

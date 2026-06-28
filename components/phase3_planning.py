@@ -125,7 +125,7 @@ class Phase3Planning:
             st.markdown("## 2️⃣ Editar Rotas")
             
             routes_df = get_state().routes_solution
-            fleet_config = get_state().fleet_config_used
+            fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
             
             # 1. Avisos (Warnings)
             # RouteEditor handles real-time validation warnings natively!
@@ -540,7 +540,7 @@ class Phase3Planning:
         """Render unified dashboard combining Excel Grid, Map and Editable Table."""
         
         routes_df = get_state().routes_solution
-        fleet_config = get_state().fleet_config_used
+        fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
         warehouses_df = get_state().warehouses_used
         
         if warehouses_df is None:
@@ -989,7 +989,7 @@ class Phase3Planning:
         
         # Fetch configuration metadata for payload limit displays!
         import streamlit as st
-        fleet_config = get_state().fleet_config_used
+        fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
         
         active_route_num = 1
         
@@ -1215,7 +1215,7 @@ class Phase3Planning:
             st.markdown("---")
             
             # Populate vehicle choices (consolidated configured + active)
-            fleet_config = get_state().fleet_config_used
+            fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
             opts = list(dict.fromkeys(list(fleet_config.keys()) + routes_df['Rota'].unique().tolist()))
             if "⚠️ PENDENTE" not in opts:
                 opts.append("⚠️ PENDENTE")
@@ -1373,7 +1373,7 @@ class Phase3Planning:
         import pandas as pd
         
         routes_df = get_state().routes_solution
-        fleet_config = get_state().fleet_config_used
+        fleet_config = get_state().fleet_config_used or get_state().fleet_config or {}
         
         if routes_df is None:
             return
