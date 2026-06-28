@@ -78,10 +78,11 @@ if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
             # 1. Recuperar o utilizador que criou o snapshot para fazer auto-login
             with get_db() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT utilizador_id FROM snapshots WHERE id = ?", (snap_id,))
+                cursor.execute("SELECT utilizador_id, projeto_id FROM snapshots WHERE id = ?", (snap_id,))
                 row = cursor.fetchone()
                 if row:
                     uid = row['utilizador_id']
+                    pid = row['projeto_id']
                     user = get_utilizador_por_id(uid)
                     if user:
                         from core.session_state import get_state
@@ -92,6 +93,7 @@ if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
                         state.utilizador_email = user['email']
                         state.empresa_id = user['empresa_id']
                         state.is_admin = user['is_admin']
+                        state.projeto_atual = pid
                         
                         st.session_state['logged_in'] = True
                         st.session_state['utilizador_id'] = user['id']
@@ -99,6 +101,7 @@ if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
                         st.session_state['utilizador_email'] = user['email']
                         st.session_state['empresa_id'] = user['empresa_id']
                         st.session_state['is_admin'] = user['is_admin']
+                        st.session_state['projeto_atual'] = pid
                         
             # 2. Carregar o snapshot de transferência
             load_snapshot_into_session(int(snap_id))
