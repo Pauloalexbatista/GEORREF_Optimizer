@@ -6,7 +6,7 @@ import os
 # Ensure root import works
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from backend.api import auth, projects, geocoding
+from backend.api import auth, projects, geocoding, fleet
 
 app = FastAPI(
     title=\'GeoRoute Pro API\',
