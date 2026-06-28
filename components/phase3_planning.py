@@ -560,17 +560,17 @@ class Phase3Planning:
             with col_b2:
                 st.info(f"📺 Modo Multi-Ecrã Ativo: {view_mode.upper()}")
                 if st.button("🔄 Puxar Atualizações do Ecrã Principal", type="primary", use_container_width=True):
-                    projeto_id = get_state().projeto_atual
-                    if projeto_id:
-                        from utils.persistence_manager import get_snapshots_for_project, load_snapshot_into_session
-                        snaps = get_snapshots_for_project(projeto_id, limit=20)
-                        sync_snaps = [s for s in snaps if "Sincronização" in s['nome_snapshot']]
-                        if sync_snaps:
-                            load_snapshot_into_session(sync_snaps[0]['id'])
-                            st.success("Sincronizado com sucesso!")
-                            st.rerun()
-                        else:
-                            st.warning("Ainda não existe nenhum ponto de sincronização emitido pelo Ecrã Principal.")
+                      projeto_id = get_state().projeto_atual
+                      if projeto_id:
+                          from utils.persistence_manager import get_snapshots_for_project, load_snapshot_into_session
+                          snaps = get_snapshots_for_project(projeto_id, limit=1)
+                          if snaps:
+                              load_snapshot_into_session(snaps[0]['id'])
+                              st.session_state['last_loaded_snap_id'] = snaps[0]['id']
+                              st.success("Sincronizado com sucesso!")
+                              st.rerun()
+                          else:
+                              st.warning("Ainda não existe nenhum ponto de sincronização emitido pelo Ecrã Principal.")
         else:
             # Ecrã Mestre
             col_s1, col_s2 = st.columns([3, 1])
