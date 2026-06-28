@@ -74,7 +74,9 @@ class Phase4InteractiveMap:
             st.markdown("---")
             
             # Simple metrics
-            RouteVisualizer.render_route_metrics(routes_df, selected_routes)
+            selected_grid_routes = RouteVisualizer.render_route_metrics(routes_df, selected_routes)
+            if selected_grid_routes:
+                selected_routes = selected_grid_routes
             
         with col_map:
             # Huge Interactive Map
