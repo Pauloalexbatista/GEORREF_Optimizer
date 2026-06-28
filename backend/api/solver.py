@@ -313,3 +313,59 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{project_id}")
+def get_solver_solution(project_id: int, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(project_id)
+    if not proj or proj["empresa_id"] != current_user.empresa_id:
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return {"status": "none", "routes": []}
+                
+            state_dict = deserialize_state(row["payload_json"])
+            raw_routes = state_dict.get("routes_solution")
+            
+            routes_list = []
+            if raw_routes is not None:
+                if isinstance(raw_routes, pd.DataFrame):
+                    df_routes = raw_routes
+                else:
+                    df_routes = pd.DataFrame(raw_routes)
+                    
+                if not df_routes.empty:
+                    for idx, r in df_routes.iterrows():
+                        routes_list.append({
+                            "Rota": r.get("Rota", "⚠️ PENDENTE"),
+                            "Armazem": r.get("Armazem", "N/A"),
+                            "Ordem": int(r.get("Ordem", 1)),
+                            "Cliente": r.get("Cliente", ""),
+                            "Morada": r.get("Morada", ""),
+                            "CP": r.get("CP", ""),
+                            "Localidade": r.get("Localidade", ""),
+                            "Janela_Horaria": r.get("Janela_Horaria", "Qualquer"),
+                            "Latitude": float(r.get("Latitude", 0.0)),
+                            "Longitude": float(r.get("Longitude", 0.0)),
+                            "Chegada": r.get("Chegada", "00:00"),
+                            "Tempo_Entrega": int(r.get("Tempo_Entrega", 15)),
+                            "Saida": r.get("Saida", "00:00"),
+                            "Nivel_Qualidade": int(r.get("Nivel_Qualidade", 1)),
+                            "KM_Anterior": float(r.get("KM_Anterior", 0.0)),
+                            "Dist_Acum": float(r.get("Dist_Acum", 0.0)),
+                            "Carga_Acum": float(r.get("Carga_Acum", 0.0)),
+                            "Carga_Vol_Acum": float(r.get("Carga_Vol_Acum", 0.0))
+                        })
+                        
+            return {
+                "status": "success" if routes_list else "none",
+                "routes": routes_list,
+                "quality_metrics": state_dict.get("routes_metrics", {})
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
