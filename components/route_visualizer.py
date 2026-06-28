@@ -1,4 +1,4 @@
-﻿"""
+"""
 Route Visualizer Component - Interactive map with route filtering
 """
 
@@ -25,7 +25,7 @@ class RouteVisualizer:
         if routes_df is None or len(routes_df) == 0:
             return []
         
-        st.markdown("### 🗺️ Selecionar e Filtrar Rotas")
+        st.markdown("### 🔍 Selecionar e Filtrar Rotas")
         st.caption("Poupe espaço de ecrã: clique na caixa abaixo para adicionar ou remover as rotas visíveis.")
         
         route_names = sorted(routes_df['Rota'].unique())
@@ -114,8 +114,12 @@ class RouteVisualizer:
             icon=folium.Icon(color='red', icon='warehouse', prefix='fa')
         ).add_to(m)
         
-        # Sort by Sequence
-        route_sorted = route_data.sort_values(by='Sequencia')
+        # Sort by Order (since Sequencia is old schema)
+        sort_col = 'Ordem' if 'Ordem' in route_data.columns else ('Sequencia' if 'Sequencia' in route_data.columns else None)
+        if sort_col:
+            route_sorted = route_data.sort_values(by=sort_col)
+        else:
+            route_sorted = route_data
         
         # Coordinate list
         coords_list = [depot_coords]
@@ -132,19 +136,38 @@ class RouteVisualizer:
             tooltip=f"Rota {route_name}"
         ).add_to(m)
         
+        # Get geocoded clients for dynamic lookups of Name, Weight, Volume
+        clients_geocoded = get_state().clients_geocoded
+        
         # 3. Add client markers
         for idx, row in route_sorted.iterrows():
-            tooltip_txt = f"{row['Nome']} ({row['Sequencia']}º)"
+            client_id = row['Cliente']
+            client_name = row.get('Nome', client_id)
+            client_weight = row.get('Peso_KG', row.get('Carga_Acum', 0.0))
+            client_vol = row.get('Volume_m3', row.get('Carga_Vol_Acum', 0.0))
+            
+            # Dynamic lookup for extra robustness
+            if clients_geocoded is not None:
+                match = clients_geocoded[clients_geocoded['Codigo_Cliente'] == client_id]
+                if len(match) > 0:
+                    client_name = match.iloc[0].get('Nome', client_id)
+                    client_weight = match.iloc[0].get('Peso_KG', client_weight)
+                    client_vol = match.iloc[0].get('Volume_m3', client_vol)
+            
+            order_val = row.get('Ordem', row.get('Sequencia', 1))
+            arrival_val = row.get('Chegada', row.get('Hora_Chegada', '00:00'))
+            
+            tooltip_txt = f"{client_name} ({order_val}°)"
             popup_html = f"""
                 <div style='font-family: Arial; font-size: 12px;'>
-                    <b>Cliente:</b> {row['Cliente']}<br/>
-                    <b>Nome:</b> {row['Nome']}<br/>
+                    <b>Cliente:</b> {client_id}<br/>
+                    <b>Nome:</b> {client_name}<br/>
                     <b>Morada:</b> {row['Morada']}<br/>
-                    <b>Volume:</b> {row['Volume_m3']:.2f} m3<br/>
-                    <b>Peso:</b> {row['Peso_KG']:.1f} kg<br/>
+                    <b>Volume:</b> {client_vol:.2f} m3<br/>
+                    <b>Peso:</b> {client_weight:.1f} kg<br/>
                     <b>Janela:</b> {row['Janela_Horaria']}<br/>
-                    <b>Chegada:</b> {row['Hora_Chegada']}<br/>
-                    <b>Paragem:</b> Rota {row['Rota']} (#{row['Sequencia']})
+                    <b>Chegada:</b> {arrival_val}<br/>
+                    <b>Paragem:</b> Rota {row['Rota']} (#{order_val})
                 </div>
             """
             
@@ -172,27 +195,54 @@ class RouteVisualizer:
         if routes_df is None or len(routes_df) == 0:
             return
             
-        routes_grp = routes_df.groupby('Rota')
-        
         tot_veic = len(routes_df['Rota'].unique())
         tot_entregas = len(routes_df)
-        tot_dist = routes_df.groupby('Rota')['Distancia_Acumulada_KM'].max().sum()
         
-        # Total weight/volume delivered
-        tot_peso = routes_df['Peso_KG'].sum()
-        tot_vol = routes_df['Volume_m3'].sum()
-        
-        # Cost estimate
-        tot_custo = routes_df.groupby('Rota')['Custo_Acumulado_EUR'].max().sum()
-        
+        # Column names robust fallback
+        dist_col = 'Dist_Acum' if 'Dist_Acum' in routes_df.columns else ('Distancia_Acumulada_KM' if 'Distancia_Acumulada_KM' in routes_df.columns else None)
+        if dist_col:
+            tot_dist = routes_df.groupby('Rota')[dist_col].max().sum()
+        else:
+            tot_dist = 0.0
+            
+        # Weight / Volume fallbacks
+        if 'Peso_KG' in routes_df.columns:
+            tot_peso = routes_df['Peso_KG'].sum()
+        elif 'Carga_Acum' in routes_df.columns:
+            tot_peso = routes_df.groupby('Rota')['Carga_Acum'].max().sum()
+        else:
+            tot_peso = 0.0
+            
+        if 'Volume_m3' in routes_df.columns:
+            tot_vol = routes_df['Volume_m3'].sum()
+        elif 'Carga_Vol_Acum' in routes_df.columns:
+            tot_vol = routes_df.groupby('Rota')['Carga_Vol_Acum'].max().sum()
+        else:
+            tot_vol = 0.0
+            
+        # Dynamic Cost calculation based on distance and vehicle cost_per_km
+        tot_custo = 0.0
+        fleet_config = get_state().fleet_config_used or {}
+        for name in routes_df['Rota'].unique():
+            r_data = routes_df[routes_df['Rota'] == name]
+            dist = r_data[dist_col].max() if dist_col in r_data.columns else 0.0
+            veh_info = fleet_config.get(name)
+            cost_per_km = 0.5
+            if veh_info:
+                if hasattr(veh_info, 'custo_km'):
+                    cost_per_km = veh_info.custo_km
+                elif isinstance(veh_info, dict):
+                    cost_per_km = veh_info.get('cost_per_km', 0.5)
+            tot_custo += dist * cost_per_km
+            
         st.markdown(
             f"""
             <div style='background-color:#f1f3f5; border-left: 5px solid #554640; padding:10px 15px; border-radius:4px; font-weight:bold; font-size:14px; margin-bottom:15px;'>
-                🚚 {tot_veic} Veículos &nbsp;&nbsp;|&nbsp;&nbsp; 
+                🚌 {tot_veic} Veículos &nbsp;&nbsp;|&nbsp;&nbsp; 
                 📦 {tot_entregas} Entregas &nbsp;&nbsp;|&nbsp;&nbsp; 
                 ⚖️ {tot_peso:.1f} kg &nbsp;&nbsp;|&nbsp;&nbsp; 
-                📏 {tot_vol:.2f} m³ &nbsp;&nbsp;|&nbsp;&nbsp; 
-                🗺️ {tot_dist:.1f} km Totais &nbsp;&nbsp;|&nbsp;&nbsp; 
+                🪣 {tot_vol:.2f} m³ &nbsp;&nbsp;|&nbsp;&nbsp; 
+                🏁 {tot_dist:.1f} km Totais &nbsp;&nbsp;|&nbsp;&nbsp; 
                 💰 Custo Est. € {tot_custo:.2f}
             </div>
             """, 
@@ -219,30 +269,58 @@ class RouteVisualizer:
         
         summary_rows = []
         
+        # Column names robust fallbacks
+        dist_col = 'Dist_Acum' if 'Dist_Acum' in routes_df.columns else ('Distancia_Acumulada_KM' if 'Distancia_Acumulada_KM' in routes_df.columns else None)
+        
         for name in selected_routes:
             r_data = routes_df[routes_df['Rota'] == name]
             if len(r_data) == 0:
                 continue
                 
-            dist = r_data['Distancia_Acumulada_KM'].max()
-            cost = r_data['Custo_Acumulado_EUR'].max()
-            wt = r_data['Peso_KG'].sum()
-            vol = r_data['Volume_m3'].sum()
+            dist = r_data[dist_col].max() if dist_col and dist_col in r_data.columns else 0.0
+            
+            # Resolve cost
+            veh_info = fleet_config.get(name)
+            cost_per_km = 0.5
+            if veh_info:
+                if hasattr(veh_info, 'custo_km'):
+                    cost_per_km = veh_info.custo_km
+                elif isinstance(veh_info, dict):
+                    cost_per_km = veh_info.get('cost_per_km', 0.5)
+            cost = dist * cost_per_km
+            
+            # Weight and volume
+            if 'Peso_KG' in r_data.columns:
+                wt = r_data['Peso_KG'].sum()
+            elif 'Carga_Acum' in r_data.columns:
+                wt = r_data['Carga_Acum'].max()
+            else:
+                wt = 0.0
+                
+            if 'Volume_m3' in r_data.columns:
+                vol = r_data['Volume_m3'].sum()
+            elif 'Carga_Vol_Acum' in r_data.columns:
+                vol = r_data['Carga_Vol_Acum'].max()
+            else:
+                vol = 0.0
             
             # Calculate duration in hours
-            last_stop_time = r_data['Hora_Chegada'].iloc[-1]
-            try:
-                h, m = map(int, last_stop_time.split(':'))
-                dur_h = (h * 60 + m - 480) / 60.0 # Shift 08:00
-            except Exception:
-                dur_h = 4.0 # default fallback
+            time_col = 'Chegada' if 'Chegada' in r_data.columns else ('Hora_Chegada' if 'Hora_Chegada' in r_data.columns else None)
+            if time_col:
+                last_stop_time = r_data[time_col].iloc[-1]
+                try:
+                    h, m = map(int, last_stop_time.split(':'))
+                    dur_h = (h * 60 + m - 480) / 60.0 # Shift 08:00
+                except Exception:
+                    dur_h = 4.0 # default fallback
+            else:
+                dur_h = 4.0
                 
             # Get configured limit or default
-            veh_info = fleet_config.get(name)
-            cap_wt = veh_info.capacidade_kg if veh_info else 1000.0
-            cap_vol = veh_info.capacidade_vol if veh_info else 10.0
+            cap_wt = veh_info.capacidade_kg if (veh_info and hasattr(veh_info, 'capacidade_kg')) else (veh_info.get('capacity', 1000.0) if isinstance(veh_info, dict) else 1000.0)
+            cap_vol = veh_info.capacidade_vol if (veh_info and hasattr(veh_info, 'capacidade_vol')) else (veh_info.get('capacity_volume', 10.0) if isinstance(veh_info, dict) else 10.0)
             
-            wt_pct = (wt / cap_wt) * 100
+            wt_pct = (wt / cap_wt) * 100 if cap_wt > 0 else 0
             vol_pct = (vol / cap_vol) * 100 if cap_vol > 0 else 0
             dur_pct = (dur_h / max_duration_h) * 100 if max_duration_h > 0 else 0
             
