@@ -84,6 +84,15 @@ if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
                     uid = row['utilizador_id']
                     user = get_utilizador_por_id(uid)
                     if user:
+                        from core.session_state import get_state
+                        state = get_state()
+                        state.logged_in = True
+                        state.utilizador_id = user['id']
+                        state.utilizador_nome = user['nome']
+                        state.utilizador_email = user['email']
+                        state.empresa_id = user['empresa_id']
+                        state.is_admin = user['is_admin']
+                        
                         st.session_state['logged_in'] = True
                         st.session_state['utilizador_id'] = user['id']
                         st.session_state['utilizador_nome'] = user['nome']
@@ -97,6 +106,11 @@ if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
         # 3. Configurar Visualização Multi-Ecrã
         if modo:
             st.session_state['multi_monitor_mode'] = True
+            from core.session_state import get_state
+            state = get_state()
+            state.view_mode = modo
+            state.current_phase = 4
+            
             st.session_state['view_mode'] = modo
             st.session_state['current_phase'] = 4  # O Dashboard Tático agora está no 4
             
