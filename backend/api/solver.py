@@ -369,3 +369,114 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class ReassignRequest(BaseModel):
+    project_id: int
+    client_code: str
+    new_route: str
+
+@router.post("/reassign")
+def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(req.project_id)
+    if not proj or proj["empresa_id"] != current_user.empresa_id:
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                raise HTTPException(status_code=400, detail="Não existem rotas calculadas para reatribuir.")
+                
+            state_dict = deserialize_state(row["payload_json"])
+            raw_routes = state_dict.get("routes_solution")
+            
+            if raw_routes is None:
+                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
+                
+            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+            
+        if df_routes.empty:
+             raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
+             
+        client_idx = df_routes[df_routes["Cliente"] == req.client_code].index
+        if len(client_idx) == 0:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado nas rotas.")
+            
+        df_routes.loc[client_idx[0], "Rota"] = req.new_route
+        
+        warehouses_df = state_dict.get("warehouses_geocoded")
+        depot_lat = warehouses_df.iloc[0]["Latitude"] if not warehouses_df.empty else 39.5
+        depot_lon = warehouses_df.iloc[0]["Longitude"] if not warehouses_df.empty else -8.0
+        
+        updated_rows = []
+        unique_routes = df_routes["Rota"].unique()
+        
+        for r_name in unique_routes:
+            route_clients = df_routes[df_routes["Rota"] == r_name].copy()
+            if "PENDENTE" in r_name:
+                order = 1
+                for idx, row_c in route_clients.iterrows():
+                    row_c["Ordem"] = order
+                    row_c["Chegada"] = "00:00"
+                    row_c["Saida"] = "00:00"
+                    row_c["KM_Anterior"] = 0.0
+                    row_c["Dist_Acum"] = 0.0
+                    updated_rows.append(row_c.to_dict())
+                    order += 1
+                continue
+                
+            route_clients = route_clients.sort_values(by="Ordem")
+            
+            order = 1
+            cumulative_dist = 0.0
+            cumulative_load = 0.0
+            cumulative_volume = 0.0
+            current_time = datetime.strptime("08:00", "%H:%M")
+            
+            prev_lat = depot_lat
+            prev_lon = depot_lon
+            
+            for idx, row_c in route_clients.iterrows():
+                c_lat = row_c["Latitude"]
+                c_lon = row_c["Longitude"]
+                
+                dist = haversine_distance(prev_lat, prev_lon, c_lat, c_lon)
+                cumulative_dist += dist
+                
+                travel_time = (dist / 40.0) * 60.0
+                arrival = current_time + timedelta(minutes=travel_time)
+                service = int(row_c.get("Tempo_Entrega", 15))
+                departure = arrival + timedelta(minutes=service)
+                
+                row_c["Ordem"] = order
+                row_c["Chegada"] = arrival.strftime("%H:%M")
+                row_c["Saida"] = departure.strftime("%H:%M")
+                row_c["KM_Anterior"] = round(dist, 2)
+                row_c["Dist_Acum"] = round(cumulative_dist, 2)
+                
+                updated_rows.append(row_c.to_dict())
+                
+                prev_lat = c_lat
+                prev_lon = c_lon
+                current_time = departure
+                order += 1
+                
+        df_new_routes = pd.DataFrame(updated_rows)
+        state_dict["routes_solution"] = df_new_routes
+        
+        payload = serialize_state(state_dict)
+        snapshot_name = f"Reatribuição Manual ({datetime.now().strftime('%H:%M:%S')})"
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)", (req.project_id, current_user.id, 3, snapshot_name, payload))
+            conn.commit()
+            
+        routes_list = df_new_routes.to_dict(orient="records")
+        return {"status": "success", "routes": routes_list}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
