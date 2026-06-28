@@ -64,7 +64,7 @@ if st.session_state.get('multi_monitor_mode', False):
             /* Puxar o mapa para o topo para aproveitar todo o espaço */
             .block-container { padding-top: 1rem !important; max-width: 98% !important; }
         </style>
-        <meta http-equiv="refresh" content="5">
+        
     """, unsafe_allow_html=True)
 
 # --- SINCROMIZAÇÃO MULTI-MONITOR (URL PARAMS) E AUTO-LOGIN ---
