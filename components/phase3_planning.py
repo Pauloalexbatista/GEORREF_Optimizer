@@ -635,21 +635,32 @@ class Phase3Planning:
                     
                     st.markdown(" ")
                     st.markdown("##### 🖥️ Abrir Monitores Secundários")
-                    
                     projeto_id = get_state().projeto_atual
                     if projeto_id:
-                        from utils.persistence_manager import get_snapshots_for_project
-                        snaps = get_snapshots_for_project(projeto_id, limit=1)
-                        if snaps:
-                            snap_id = snaps[0]['id']
-                            st.markdown(f"""
-                                <div style="display: flex; gap: 10px;">
-                                    <a href="/?modo=mapa&snapshot_id={snap_id}" target="_blank" style="flex: 1; text-align: center; background-color: #8DA7BE; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; border: 1px solid #707078;">🌍 Abrir 2º Ecrã (Só Mapa)</a>
-                                    <a href="/?modo=tabelas&snapshot_id={snap_id}" target="_blank" style="flex: 1; text-align: center; background-color: #8DA7BE; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; border: 1px solid #707078;">📊 Abrir 3º Ecrã (Só Tabelas)</a>
+                        if st.button("🔗 Sincronizar e Atualizar Monitores Externos", use_container_width=True, type="primary"):
+                            from utils.persistence_manager import create_snapshot
+                            user_id = (get_state().utilizador_id or 1)
+                            snap_id = create_snapshot(projeto_id, user_id, 4, "Sync Ecrãs Externos")
+                            st.session_state['active_sync_snap_id'] = snap_id
+                            st.toast("✅ Sinal de Sincronização emitido!", icon="📡")
+                            st.rerun()
+                            
+                        snap_id = st.session_state.get('active_sync_snap_id')
+                        if not snap_id:
+                            from utils.persistence_manager import get_snapshots_for_project
+                            snaps = get_snapshots_for_project(projeto_id, limit=1)
+                            if snaps:
+                                snap_id = snaps[0]['id']
+                                
+                        if snap_id:
+                            st.markdown(f'''
+                                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                    <a href="/?modo=mapa&snapshot_id={snap_id}" target="_blank" style="flex: 1; text-align: center; background-color: #554640; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; border: 1px solid #554640;">🌐 Abrir 2º Ecrã (Só Mapa)</a>
+                                    <a href="/?modo=tabelas&snapshot_id={snap_id}" target="_blank" style="flex: 1; text-align: center; background-color: #554640; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold; border: 1px solid #554640;">📊 Abrir 3º Ecrã (Só Tabelas)</a>
                                 </div>
-                            """, unsafe_allow_html=True)
+                            ''', unsafe_allow_html=True)
                         else:
-                            st.warning("⚠️ Grava o projeto na Etapa 1 ou clica em 'Emitir Sincronização' para gerar os links dos ecrãs.")
+                            st.warning("⚠️ Clicar no botão acima para inicializar os links dos ecrãs.")
                     else:
                         st.error("Projeto não identificado.")
                         
