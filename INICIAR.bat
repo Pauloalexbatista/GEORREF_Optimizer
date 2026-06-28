@@ -1,35 +1,47 @@
 @echo off
-title GeoRoute Pro
+title GeoRoute Pro - Gestão de Arranque
 
 cd /d "%~dp0"
 
+echo ===================================================
+echo             GeoRoute Pro - Arranque
+echo ===================================================
 echo.
-echo ===============================
-echo   GeoRoute Pro - A Iniciar
-echo ===============================
+echo   1. Nova Aplicação Profissional (FastAPI + Next.js)
+echo   2. Protótipo Streamlit (Legado)
+echo.
+echo ===================================================
+set /p choice="Escolha uma opção (1 ou 2) e prima ENTER: "
 
-rem Limpar processos órfãos na porta 8503
+if "%choice%"=="1" goto option1
+if "%choice%"=="2" goto option2
+goto option1
+
+:option1
+echo.
+echo A iniciar Nova Aplicação Profissional...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING 2^>nul') do (
+    taskkill /F /PID %%a 2>nul
+)
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING 2^>nul') do (
+    taskkill /F /PID %%a 2>nul
+)
+start /b python -m uvicorn backend.main:app --port 8000
+cd frontend
+start /b npm run dev
+ping -n 4 127.0.0.1 >nul
+start http://localhost:3000
+exit
+
+:option2
+echo.
+echo A iniciar Protótipo Streamlit Legado...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8503 ^| findstr LISTENING 2^>nul') do (
     taskkill /F /PID %%a 2>nul
 )
 taskkill /F /IM streamlit.exe 2>nul
-
-pip install -r requirements.txt -q 2>nul
-
 python -c "from database import init_database; init_database()" 2>nul
-
 start /b python -m streamlit run app.py --server.port 8503 --server.headless true
-
-echo.
-echo ===============================
-echo   GeoRoute Pro INICIADO!
-echo ===============================
-echo.
-echo   Browser: http://localhost:8503
-echo.
-echo   Login: demo@georoute.pt / demo123
-echo.
-
 ping -n 3 127.0.0.1 >nul
-
 start http://localhost:8503
+exit
