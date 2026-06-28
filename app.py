@@ -72,56 +72,60 @@ if 'modo' in st.query_params or 'snapshot_id' in st.query_params:
     snap_id = st.query_params.get('snapshot_id')
     modo = st.query_params.get('modo')
     
-    from utils.persistence_manager import load_snapshot_into_session
-    from database import get_db, get_utilizador_por_id
-    try:
-        if snap_id:
-            # 1. Recuperar o utilizador que criou o snapshot para fazer auto-login
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT utilizador_id, projeto_id FROM snapshots WHERE id = ?", (snap_id,))
-                row = cursor.fetchone()
-                if row:
-                    uid = row['utilizador_id']
-                    pid = row['projeto_id']
-                    user = get_utilizador_por_id(uid)
-                    if user:
-                        from core.session_state import get_state
-                        state = get_state()
-                        state.logged_in = True
-                        state.utilizador_id = user['id']
-                        state.utilizador_nome = user['nome']
-                        state.utilizador_email = user['email']
-                        state.empresa_id = user['empresa_id']
-                        state.is_admin = user['is_admin']
-                        state.projeto_atual = pid
-                        
-                        st.session_state['logged_in'] = True
-                        st.session_state['utilizador_id'] = user['id']
-                        st.session_state['utilizador_nome'] = user['nome']
-                        st.session_state['utilizador_email'] = user['email']
-                        st.session_state['empresa_id'] = user['empresa_id']
-                        st.session_state['is_admin'] = user['is_admin']
-                        st.session_state['projeto_atual'] = pid
-                        
-            # 2. Carregar o snapshot de transferência
-            load_snapshot_into_session(int(snap_id))
-            
-        # 3. Configurar Visualização Multi-Ecrã
-        if modo:
-            st.session_state['multi_monitor_mode'] = True
-            from core.session_state import get_state
-            state = get_state()
-            state.view_mode = modo
-            state.current_phase = 4
-            
-            st.session_state['view_mode'] = modo
-            st.session_state['current_phase'] = 4  # O Dashboard Tático agora está no 4
-            
-        st.query_params.clear() # Limpa a URL para não entrar em loop
-        st.rerun()
-    except Exception as e:
-        st.error(f"Erro ao carregar monitor secundário: {str(e)}")
+    # Prevenir loop infinito se já carregado nesta sessão
+    if snap_id and st.session_state.get('last_loaded_snap_id') == int(snap_id):
+        pass
+    else:
+        from utils.persistence_manager import load_snapshot_into_session
+        from database import get_db, get_utilizador_por_id
+        try:
+            if snap_id:
+                # 1. Recuperar o utilizador que criou o snapshot para fazer auto-login
+                with get_db() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT utilizador_id, projeto_id FROM snapshots WHERE id = ?", (snap_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        uid = row['utilizador_id']
+                        pid = row['projeto_id']
+                        user = get_utilizador_por_id(uid)
+                        if user:
+                            from core.session_state import get_state
+                            state = get_state()
+                            state.logged_in = True
+                            state.utilizador_id = user['id']
+                            state.utilizador_nome = user['nome']
+                            state.utilizador_email = user['email']
+                            state.empresa_id = user['empresa_id']
+                            state.is_admin = user['is_admin']
+                            state.projeto_atual = pid
+                            
+                            st.session_state['logged_in'] = True
+                            st.session_state['utilizador_id'] = user['id']
+                            st.session_state['utilizador_nome'] = user['nome']
+                            st.session_state['utilizador_email'] = user['email']
+                            st.session_state['empresa_id'] = user['empresa_id']
+                            st.session_state['is_admin'] = user['is_admin']
+                            st.session_state['projeto_atual'] = pid
+                            
+                # 2. Carregar o snapshot de transferência
+                load_snapshot_into_session(int(snap_id))
+                st.session_state['last_loaded_snap_id'] = int(snap_id)
+                
+            # 3. Configurar Visualização Multi-Ecrã
+            if modo:
+                st.session_state['multi_monitor_mode'] = True
+                from core.session_state import get_state
+                state = get_state()
+                state.view_mode = modo
+                state.current_phase = 4
+                
+                st.session_state['view_mode'] = modo
+                st.session_state['current_phase'] = 4
+                
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao carregar monitor secundário: {str(e)}")
 
 # Verificar autenticação - se não estiver logado, mostrar página de login
 if not auth.is_logged_in():
