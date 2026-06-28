@@ -64,6 +64,7 @@ if st.session_state.get('multi_monitor_mode', False):
             /* Puxar o mapa para o topo para aproveitar todo o espaço */
             .block-container { padding-top: 1rem !important; max-width: 98% !important; }
         </style>
+        <meta http-equiv="refresh" content="5">
     """, unsafe_allow_html=True)
 
 # --- SINCROMIZAÇÃO MULTI-MONITOR (URL PARAMS) E AUTO-LOGIN ---
@@ -1093,6 +1094,23 @@ def render_main_app():
                 )
 
 def main():
+    # --- AUTO-PULL SNAPSHOT UPDATE ---
+    from core.session_state import get_state
+    state = get_state()
+    if state.projeto_atual:
+        from utils.persistence_manager import get_snapshots_for_project, load_snapshot_into_session
+        snaps = get_snapshots_for_project(state.projeto_atual, limit=1)
+        if snaps:
+            latest_snap_id = snaps[0]['id']
+            # Only pull if this session has a different snap loaded
+            if latest_snap_id != st.session_state.get('last_loaded_snap_id'):
+                try:
+                    load_snapshot_into_session(latest_snap_id)
+                    st.session_state['last_loaded_snap_id'] = latest_snap_id
+                    st.rerun()
+                except Exception:
+                    pass
+
     # 1. Render User Context & Projects in Sidebar
     auth.render_sidebar()
     

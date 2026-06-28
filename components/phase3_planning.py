@@ -369,6 +369,7 @@ class Phase3Planning:
             # Save to AppState AND session_state for consistency
             state = get_state()
             state.routes_solution = routes_df
+            Phase3Planning._save_auto_sync()
             state.fleet_config_used = fleet_config
             state.warehouses_used = warehouses_df
             set_state(state)
@@ -697,10 +698,12 @@ class Phase3Planning:
                 if auto_opt:
                     optimized_df = Phase3Planning._smart_reorder_routes(new_full_df)
                     state = get_state(); state.routes_solution = optimized_df; set_state(state)
+                    Phase3Planning._save_auto_sync()
                     st.success("✅ Rotas otimizadas automaticamente!")
                 else:
                     reordered_df = Phase3Planning._simple_reorder_routes(new_full_df)
                     state = get_state(); state.routes_solution = reordered_df; set_state(state)
+                    Phase3Planning._save_auto_sync()
                     st.success("✅ Alterações manuais aplicadas!")
                     
                 st.rerun()
@@ -1250,10 +1253,22 @@ class Phase3Planning:
                     
                     # Save State
                     state = get_state(); state.routes_solution = synced; set_state(state)
+                    Phase3Planning._save_auto_sync()
                     
                     # DO NOT CLEAR active_commander_client_id so they can see the update and continue!
                     st.toast(f"✅ {c_id} transferido para {target_dest}!", icon="🛰️")
                     st.rerun()
+
+    @staticmethod
+    def _save_auto_sync():
+        projeto_id = get_state().projeto_atual
+        user_id = (get_state().utilizador_id or 1)
+        if projeto_id:
+            from utils.persistence_manager import create_snapshot
+            from datetime import datetime
+            name = f"Auto-Sync ({datetime.now().strftime('%H:%M:%S')})"
+            snap_id = create_snapshot(projeto_id, user_id, 4, snapshot_name=name)
+            st.session_state['last_loaded_snap_id'] = snap_id
 
     @staticmethod
     def _recalculate_all_metrics(df):
@@ -1441,6 +1456,7 @@ class Phase3Planning:
                     final_df = Phase3Planning._recalculate_all_metrics(reordered)
                     
                     state = get_state(); state.routes_solution = final_df; set_state(state)
+                    Phase3Planning._save_auto_sync()
                     st.toast(f"✅ Transferidos {origin_count} clientes para {dest_veh}!", icon="🚛")
                     st.rerun()
                         
@@ -1480,6 +1496,7 @@ class Phase3Planning:
                     final_df = Phase3Planning._recalculate_all_metrics(reordered)
                     
                     state = get_state(); state.routes_solution = final_df; set_state(state)
+                    Phase3Planning._save_auto_sync()
                     st.toast(f"✅ Cargas trocadas com sucesso!", icon="🔄")
                     st.rerun()
                     
