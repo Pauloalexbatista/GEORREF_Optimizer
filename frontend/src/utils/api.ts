@@ -16,11 +16,17 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
     headers,
   });
 
-  if (!response.ok) {
+    if (!response.ok) {
     let errorDetail = "Ocorreu um erro na requisição.";
     try {
       const errorData = await response.json();
-      errorDetail = errorData.detail || errorDetail;
+      if (typeof errorData.detail === "string") {
+        errorDetail = errorData.detail;
+      } else if (Array.isArray(errorData.detail)) {
+        errorDetail = errorData.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+      } else if (errorData.detail) {
+        errorDetail = JSON.stringify(errorData.detail);
+      }
     } catch (e) {}
     throw new Error(errorDetail);
   }

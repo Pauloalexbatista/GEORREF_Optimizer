@@ -30,13 +30,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function restoreSession() {
       const token = localStorage.getItem("georoute_token");
-      if (token) {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      let attempts = 0;
+      const maxAttempts = 5;
+
+      while (attempts < maxAttempts) {
         try {
           const userData = await apiRequest("/api/auth/me");
           setUser(userData);
-        } catch (e) {
+          setLoading(false);
+          return;
+        } catch (e: any) {
+          attempts++;
+          const isNetworkErr = e.message?.includes("Failed to fetch") || e.name === "TypeError";
+          if (isNetworkErr && attempts < maxAttempts) {
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
+          }
+          
           console.error("Session restoration failed:", e);
-          localStorage.removeItem("georoute_token");
+          if (!isNetworkErr) {
+            localStorage.removeItem("georoute_token");
+          }
+          break;
         }
       }
       setLoading(false);

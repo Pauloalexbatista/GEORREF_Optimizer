@@ -195,13 +195,23 @@ def init_database():
 
 def hash_password(password):
     """Hash de password com salt"""
+    if password.startswith('$2b$') or password.startswith('$2a$') or password.startswith('$2y$'):
+        return password
     salt = "georoute2024"  # Em produção, usar salt único por utilizador
     return hashlib.sha256((password + salt).encode()).hexdigest()
 
 
 def verify_password(password, password_hash):
     """Verificar password"""
-    return hash_password(password) == password_hash
+    # 1. Tenta hash legacy SHA-256
+    if hash_password(password) == password_hash:
+        return True
+    # 2. Tenta bcrypt
+    try:
+        import bcrypt
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    except Exception:
+        return False
 
 
 # ============ EMPRESAS ============

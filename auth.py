@@ -15,6 +15,8 @@ from database import (
 
 def hash_password(password):
     """Hash de password"""
+    if password.startswith('$2b$') or password.startswith('$2a$') or password.startswith('$2y$'):
+        return password
     salt = "georoute2024"
     return hashlib.sha256((password + salt).encode()).hexdigest()
 

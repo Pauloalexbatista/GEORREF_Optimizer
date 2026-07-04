@@ -41,7 +41,7 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8503 ^| findstr LISTENING 2^
 )
 taskkill /F /IM streamlit.exe 2>nul
 python -c "from database import init_database; init_database()" 2>nul
-start /b python -m streamlit run app.py --server.port 8503 --server.headless true
+start /b python -c "import collections, collections.abc; collections.MutableMapping = collections.abc.MutableMapping; collections.Mapping = collections.abc.Mapping; collections.Sequence = collections.abc.Sequence; collections.Iterable = collections.abc.Iterable; collections.Container = collections.abc.Container; collections.Callable = collections.abc.Callable; from streamlit.web import cli; cli.main(['run', 'app.py', '--server.port', '8503', '--server.headless', 'true'])"
 ping -n 3 127.0.0.1 >nul
 start http://localhost:8503
 exit

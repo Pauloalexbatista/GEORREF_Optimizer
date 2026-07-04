@@ -33,12 +33,13 @@ class AdvancedRouteOptimizer:
         """
         
         if optimization_params is None:
-            optimization_params = {
-                'distance_weight': 100,
-                'balance_weight': 10,
-                'max_route_duration': 8 * 60,
-                'time_limit_seconds': 30
-            }
+            optimization_params = {}
+            
+        # Defensive parameter extraction with defaults for robust execution
+        dist_weight = float(optimization_params.get('distance_weight', 100))
+        bal_weight = float(optimization_params.get('balance_weight', 30))
+        max_duration = float(optimization_params.get('max_route_duration') or (optimization_params.get('max_hours', 8) * 60) or 480)
+        limit_sec = int(optimization_params.get('time_limit_seconds') or optimization_params.get('time_limit') or 30)
             
         # --- RIGOROUS DATA SANITIZATION AND INTEGER SCALE TRANSFORM ---
         # SWIG OR-Tools core demands ABSOLUTE integers. Inline float conversions inside callbacks
@@ -163,7 +164,7 @@ class AdvancedRouteOptimizer:
         time_callback_index = self.routing.RegisterTransitCallback(time_callback)
         
         # ENFORCE maximum absolute hard duration threshold per route!
-        max_time_scaled = int(float(optimization_params['max_route_duration']) * 100)
+        max_time_scaled = int(max_duration * 100)
         self.routing.AddDimension(
             time_callback_index,
             30 * 100, # allow 30 minutes slack/waiting
@@ -180,7 +181,7 @@ class AdvancedRouteOptimizer:
             time_dimension.SetCumulVarSoftUpperBound(
                 index,
                 max_time_scaled,
-                int(float(optimization_params['balance_weight']) * 100)
+                int(bal_weight * 100)
             )
         
         # 5. Time windows (if provided)
@@ -201,7 +202,7 @@ class AdvancedRouteOptimizer:
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
-        search_parameters.time_limit.seconds = optimization_params['time_limit_seconds']
+        search_parameters.time_limit.seconds = limit_sec
         search_parameters.log_search = False
         
         # 7. Allow dropping nodes with DYNAMIC, distance-prioritized penalty.

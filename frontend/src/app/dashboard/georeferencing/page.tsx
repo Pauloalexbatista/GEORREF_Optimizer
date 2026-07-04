@@ -21,6 +21,7 @@ interface Delivery {
   nivel_qualidade: number;
   fonte_match: string;
   morada_encontrada: string;
+  motivo_falha?: string;
 }
 
 export default function GeoreferencingPage() {
@@ -53,6 +54,114 @@ export default function GeoreferencingPage() {
   const [corrCity, setCorrCity] = useState("");
   const [corrLat, setCorrLat] = useState(0.0);
   const [corrLon, setCorrLon] = useState(0.0);
+
+  // Suggestions state
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+
+  // Filter and sort states
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
+  const [sortField, setSortField] = useState<string>("status");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const handleDownloadFile = async (endpoint: string, filename: string) => {
+    try {
+      const token = localStorage.getItem("georoute_token");
+      const headers = new Headers();
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+      const response = await fetch(`http://localhost:8000${endpoint}`, {
+        headers
+      });
+      if (!response.ok) {
+        throw new Error("Erro ao descarregar ficheiro.");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(e.message || "Erro ao efetuar o download.");
+    }
+  };
+
+  const filteredAndSortedDeliveries = React.useMemo(() => {
+    let result = [...deliveries];
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(d => 
+        d.codigo_cliente.toLowerCase().includes(term) ||
+        d.morada.toLowerCase().includes(term) ||
+        (d.concelho && d.concelho.toLowerCase().includes(term))
+      );
+    }
+    if (statusFilter === "success") {
+      result = result.filter(d => !(d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99));
+    } else if (statusFilter === "failed") {
+      result = result.filter(d => (d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99));
+    }
+    result.sort((a, b) => {
+      const isFailedA = a.latitude === 0.0 || a.longitude === 0.0 || a.nivel_qualidade === 99;
+      const isFailedB = b.latitude === 0.0 || b.longitude === 0.0 || b.nivel_qualidade === 99;
+      if (sortField === "status") {
+        if (isFailedA && !isFailedB) return sortDirection === "asc" ? -1 : 1;
+        if (!isFailedA && isFailedB) return sortDirection === "asc" ? 1 : -1;
+        return sortDirection === "asc" ? a.nivel_qualidade - b.nivel_qualidade : b.nivel_qualidade - a.nivel_qualidade;
+      }
+      let valA = a[sortField as keyof Delivery] || "";
+      let valB = b[sortField as keyof Delivery] || "";
+      if (typeof valA === "string") {
+        valA = (valA as string).toLowerCase();
+        valB = (valB as string).toLowerCase();
+      }
+      if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+      if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+    return result;
+  }, [deliveries, searchTerm, statusFilter, sortField, sortDirection]);
+
+  // Load suggestions on change of address fields
+  useEffect(() => {
+    if (!editingDelivery) return;
+    if (!corrAddr && !corrCp) {
+      setSuggestions([]);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const queryParams = new URLSearchParams();
+        if (corrAddr) queryParams.append("morada", corrAddr);
+        if (corrCp) queryParams.append("cp", corrCp);
+        if (corrCity) queryParams.append("concelho", corrCity);
+
+        const data = await apiRequest(`/api/geocoding/suggestions?${queryParams.toString()}`);
+        setSuggestions(data);
+      } catch (err) {
+        console.error("Failed to fetch suggestions:", err);
+      }
+    }, 450);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [corrAddr, corrCp, corrCity, editingDelivery]);
 
   // Load existing deliveries on mount/project change
   useEffect(() => {
@@ -167,8 +276,8 @@ export default function GeoreferencingPage() {
     setCorrLon(del.longitude);
   };
 
-  const submitCorrection = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitCorrection = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!editingDelivery || !selectedProject) return;
 
     setLoading(true);
@@ -187,9 +296,38 @@ export default function GeoreferencingPage() {
       // Refresh list
       const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
       setDeliveries(data);
-      setEditingDelivery(null);
+
+      // Find index of corrected delivery in currently visible list
+      const currentIndex = filteredAndSortedDeliveries.findIndex(d => d.id === editingDelivery.id);
+      
+      // Find the next failed delivery in sequence
+      let nextFailed = filteredAndSortedDeliveries.slice(currentIndex + 1).find(d => 
+        d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99
+      );
+      
+      // Wrap around to start if not found in remainder of list
+      if (!nextFailed) {
+        nextFailed = filteredAndSortedDeliveries.slice(0, currentIndex).find(d => 
+          d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99
+        );
+      }
+
+      if (nextFailed) {
+        // Automatically load next failed client
+        setEditingDelivery(nextFailed);
+        setCorrAddr(nextFailed.morada);
+        setCorrCp(nextFailed.codigo_postal);
+        setCorrCity(nextFailed.concelho);
+        setCorrLat(nextFailed.latitude);
+        setCorrLon(nextFailed.longitude);
+        setSuggestions([]);
+      } else {
+        // No more failed clients remaining
+        setEditingDelivery(null);
+        alert("Todos os clientes em falha foram corrigidos com sucesso!");
+      }
     } catch (err: any) {
-      alert(err.message || "Erro ao salvar correção.");
+      alert(err.message || "Erro ao salvar correcao.");
     } finally {
       setLoading(false);
     }
@@ -396,25 +534,118 @@ export default function GeoreferencingPage() {
 
             {/* Deliveries Table */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
-                <h3 className="text-base font-bold text-zinc-150">Lista de Entregas</h3>
-                <span className="text-xs text-zinc-500">{deliveries.length} clientes carregados</span>
+              <div className="p-6 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-zinc-150">Lista de Entregas</h3>
+                  <span className="text-xs text-zinc-500">{deliveries.length} clientes carregados</span>
+                </div>
+                
+                {deliveries.length > 0 && (
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}?type=success`, `clientes_georreferenciados_${selectedProject?.id}.xlsx`)}
+                      className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-emerald-400 hover:text-emerald-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors flex items-center space-x-2"
+                    >
+                      <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span>Exportar Sucessos</span>
+                    </button>
+                    
+                    {deliveries.some(d => d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99) && (
+                      <button
+                        onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}?type=failed`, `falhas_georreferenciacao_${selectedProject?.id}.xlsx`)}
+                        className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-red-400 hover:text-red-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors flex items-center space-x-2"
+                      >
+                        <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span>Exportar Falhas</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Filter and Search controls */}
+              {deliveries.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 bg-zinc-950/20 border-b border-zinc-800">
+                  {/* Search */}
+                  <div className="relative flex-1 max-w-xs">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-550">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Pesquisar cliente ou morada..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-9 pr-4 py-2 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Status Filters */}
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <button
+                      onClick={() => setStatusFilter("all")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        statusFilter === "all"
+                          ? "bg-zinc-800 border-zinc-700 text-zinc-150"
+                          : "bg-zinc-900/40 border-zinc-850 text-zinc-450 hover:text-zinc-300"
+                      }`}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter("success")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        statusFilter === "success"
+                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                          : "bg-zinc-900/40 border-zinc-850 text-zinc-450 hover:text-zinc-300"
+                      }`}
+                    >
+                      Sucessos
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter("failed")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        statusFilter === "failed"
+                          ? "bg-red-500/10 border-red-500/20 text-red-400"
+                          : "bg-zinc-900/40 border-zinc-850 text-zinc-450 hover:text-zinc-300"
+                      }`}
+                    >
+                      Falhas
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-zinc-950/40 border-b border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-zinc-450">
-                      <th className="px-6 py-3.5">Código</th>
-                      <th className="px-6 py-3.5">Morada</th>
-                      <th className="px-6 py-3.5">C. Postal</th>
-                      <th className="px-6 py-3.5">Concelho</th>
+                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("codigo_cliente")}>
+                        Codigo {sortField === "codigo_cliente" && (sortDirection === "asc" ? "▲" : "▼")}
+                      </th>
+                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("morada")}>
+                        Morada {sortField === "morada" && (sortDirection === "asc" ? "▲" : "▼")}
+                      </th>
+                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("codigo_postal")}>
+                        C. Postal {sortField === "codigo_postal" && (sortDirection === "asc" ? "▲" : "▼")}
+                      </th>
+                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("concelho")}>
+                        Concelho {sortField === "concelho" && (sortDirection === "asc" ? "▲" : "▼")}
+                      </th>
                       <th className="px-6 py-3.5 text-center">Peso / Vol</th>
-                      <th className="px-6 py-3.5">Qualidade / Fonte</th>
-                      <th className="px-6 py-3.5 text-right">Ação</th>
+                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("status")}>
+                        Qualidade / Fonte {sortField === "status" && (sortDirection === "asc" ? "▲" : "▼")}
+                      </th>
+                      <th className="px-6 py-3.5 text-right">Acao</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/60 text-xs">
-                    {deliveries.map((del) => {
+                    {filteredAndSortedDeliveries.map((del) => {
                       const isFailed = del.latitude === 0.0 || del.longitude === 0.0 || del.nivel_qualidade === 99;
                       return (
                         <tr key={del.id} className="hover:bg-zinc-850/20 transition-colors">
@@ -425,9 +656,16 @@ export default function GeoreferencingPage() {
                           <td className="px-6 py-4 text-zinc-400 text-center font-mono">{del.peso_kg}kg / {del.volume_m3}m³</td>
                           <td className="px-6 py-4">
                             {isFailed ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 border border-red-500/20 text-red-400">
-                                Falha
-                              </span>
+                              <div className="flex flex-col space-y-1">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 border border-red-500/20 text-red-400 w-fit">
+                                  Falha
+                                </span>
+                                {del.motivo_falha && (
+                                  <span className="text-[10px] text-red-400/80 italic font-medium max-w-[150px] truncate" title={del.motivo_falha}>
+                                    {del.motivo_falha}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <div className="flex items-center space-x-2">
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -461,93 +699,172 @@ export default function GeoreferencingPage() {
 
         {/* Correction Modal */}
         {editingDelivery && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
-              <div>
-                <h3 className="text-lg font-bold text-zinc-100">Corrigir Georreferenciação</h3>
-                <p className="text-zinc-450 text-xs mt-0.5">Corrija a morada e defina as coordenadas geográficas para o cliente: <b>{editingDelivery.codigo_cliente}</b></p>
-              </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-5xl rounded-2xl p-6 shadow-2xl space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-zinc-150">Corrigir Georreferenciacao</h3>
+              <p className="text-zinc-450 text-xs mt-0.5">Corrija a morada e defina as coordenadas geograficas para o cliente: <b>{editingDelivery.codigo_cliente}</b></p>
+            </div>
 
-              <form onSubmit={submitCorrection} className="space-y-4">
+            {/* Failure Reason Alert */}
+            {(editingDelivery.latitude === 0.0 || editingDelivery.longitude === 0.0 || editingDelivery.nivel_qualidade === 99) && editingDelivery.motivo_falha && (
+              <div className="bg-red-950/20 border border-red-900/30 text-red-300 text-xs rounded-xl p-3 flex items-start space-x-2">
+                <svg className="w-4.5 h-4.5 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Morada Correta</label>
+                  <span className="font-semibold block text-red-400">Motivo da Falha:</span>
+                  <span>{editingDelivery.motivo_falha}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Two-column layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Column: Input fields (7 cols) */}
+              <div className="lg:col-span-7 space-y-4">
+                {/* Morada Correta */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Morada Correta</label>
                   <input
                     type="text"
                     required
+                    autoComplete="chrome-off-addr"
                     value={corrAddr}
                     onChange={e => setCorrAddr(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-sm text-zinc-100 outline-none"
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none"
                   />
                 </div>
 
+                {/* CP & Concelho Grid */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Código Postal</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Codigo Postal</label>
                     <input
                       type="text"
                       required
+                      autoComplete="chrome-off-cp"
                       value={corrCp}
                       onChange={e => setCorrCp(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-sm text-zinc-100 outline-none"
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Concelho / Cidade</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Concelho / Cidade</label>
                     <input
                       type="text"
                       required
+                      autoComplete="chrome-off-city"
                       value={corrCity}
                       onChange={e => setCorrCity(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-sm text-zinc-100 outline-none"
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none"
                     />
                   </div>
                 </div>
 
+                {/* Lat & Lon Grid */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Latitude</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Latitude</label>
                     <input
                       type="number"
                       step="any"
                       required
-                      value={corrLat}
+                      autoComplete="chrome-off-lat"
+                      value={corrLat || ""}
                       onChange={e => setCorrLat(parseFloat(e.target.value) || 0.0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-sm text-zinc-100 outline-none"
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Longitude</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Longitude</label>
                     <input
                       type="number"
                       step="any"
                       required
-                      value={corrLon}
+                      autoComplete="chrome-off-lon"
+                      value={corrLon || ""}
                       onChange={e => setCorrLon(parseFloat(e.target.value) || 0.0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-sm text-zinc-100 outline-none"
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none font-mono"
                     />
                   </div>
                 </div>
+              </div>
 
-                <div className="flex justify-end space-x-3 pt-4 border-t border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => setEditingDelivery(null)}
-                    className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-indigo-500/10 cursor-pointer"
-                  >
-                    Confirmar Correção
-                  </button>
+              {/* Right Column: Database Suggestions (5 cols) */}
+              <div className="lg:col-span-5 flex flex-col h-full min-h-[220px]">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-455 mb-1.5 flex items-center justify-between">
+                  <span>📌 Sugestoes (Fuzzy Match)</span>
+                  {suggestionsLoading && <span className="text-indigo-400 animate-pulse text-[9px] lowercase">a pesquisar...</span>}
+                </label>
+                
+                <div className="flex-1 bg-zinc-950/60 border border-zinc-800 rounded-xl p-3.5 flex flex-col justify-between">
+                  <div className="space-y-1.5 overflow-y-auto max-h-[190px] pr-1 flex-1">
+                    {suggestions.length > 0 ? (
+                      suggestions.map((s, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setCorrAddr(s.morada);
+                            setCorrCp(s.cp);
+                            setCorrCity(s.concelho.trim());
+                            setCorrLat(s.lat);
+                            setCorrLon(s.lon);
+                          }}
+                          className="w-full text-left bg-zinc-900 hover:bg-zinc-850 border border-zinc-800/80 hover:border-zinc-700/80 rounded-lg p-2 text-[10px] text-zinc-350 transition-all flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="truncate pr-2">{s.display}</span>
+                          <span className="text-[9px] text-indigo-400 font-semibold shrink-0">{s.score}% Match</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-center p-4">
+                        <p className="text-[10px] text-zinc-550 italic">
+                          Escreva na morada ou codigo postal para pesquisar na base de dados de Portugal.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {suggestions.length > 0 && (
+                    <p className="text-[9px] text-zinc-500 italic mt-2 border-t border-zinc-800/60 pt-2 shrink-0">
+                      Clique numa sugestao para preencher automaticamente os campos e coordenadas.
+                    </p>
+                  )}
                 </div>
-              </form>
+              </div>
+
             </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-end space-x-3 pt-4 border-t border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => setEditingDelivery(null)}
+                className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => submitCorrection()}
+                disabled={loading}
+                className="bg-indigo-500 hover:bg-indigo-650 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer"
+              >
+                {loading && (
+                  <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+                <span>{loading ? "A gravar..." : "Gravar & Proximo"}</span>
+              </button>
+            </div>
+
           </div>
-        )}
+        </div>
+      )}
       </div>
     </DashboardLayout>
   );
