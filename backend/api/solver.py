@@ -1,4 +1,4 @@
-from fastapi.responses import StreamingResponse
+﻿from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -36,7 +36,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
     # 1. Verify project permission
     proj = get_projeto(req.project_id)
     if not proj or proj["empresa_id"] != current_user.empresa_id:
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
         
     try:
         # 2. Get latest snapshot to retrieve fleet config and warehouses
@@ -46,7 +46,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             row = cursor.fetchone()
             
             if not row:
-                raise HTTPException(status_code=400, detail="Por favor configure a frota e os armazéns antes de otimizar.")
+                raise HTTPException(status_code=400, detail="Por favor configure a frota e os armazÃ©ns antes de otimizar.")
                 
             state_dict = deserialize_state(row["payload_json"])
             
@@ -80,19 +80,20 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     "Slot1_Fim": dr["janela_fim"],
                     "Latitude": dr["latitude"],
                     "Longitude": dr["longitude"],
-                    "Nivel_Qualidade": dr["nivel_qualidade"]
+                    "Nivel_Qualidade": dr["nivel_qualidade"],
+                    "Armazem": dr.get("armazem")
                 })
             deliveries_df = pd.DataFrame(df_rows)
             
         # 4. Prepare fleet config and warehouses DataFrames
         raw_wh = state_dict.get("warehouses_geocoded")
         if raw_wh is None or (isinstance(raw_wh, pd.DataFrame) and raw_wh.empty):
-            raise HTTPException(status_code=400, detail="Nenhum armazém configurado no projeto.")
+            raise HTTPException(status_code=400, detail="Nenhum armazÃ©m configurado no projeto.")
         warehouses_df = raw_wh if isinstance(raw_wh, pd.DataFrame) else pd.DataFrame(raw_wh)
         
         fleet_config = state_dict.get("fleet_config")
         if not fleet_config:
-            raise HTTPException(status_code=400, detail="Nenhum veículo configurado na frota.")
+            raise HTTPException(status_code=400, detail="Nenhum veÃ­culo configurado na frota.")
             
         # 5. Build coordinates locations array and solver demands
         locations = []
@@ -158,6 +159,15 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         if 'time_limit' in solver_params and 'time_limit_seconds' not in solver_params:
             solver_params['time_limit_seconds'] = solver_params['time_limit']
 
+        client_warehouses = list(deliveries_df["Armazem"].fillna(""))
+        
+        vehicle_warehouses = []
+        for vehicle_name, vehicle_data in fleet_config.items():
+            if isinstance(vehicle_data, dict):
+                vehicle_warehouses.append(vehicle_data.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"]))
+            else:
+                vehicle_warehouses.append(getattr(vehicle_data, "armazem", warehouses_df.iloc[0]["Nome_Armazem"]))
+                
         optimizer = AdvancedRouteOptimizer()
         result = optimizer.optimize_routes(
             distance_matrix,
@@ -166,7 +176,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             depot_indices,
             optimization_params=solver_params,
             volume_demands=volume_demands,
-            vehicle_volume_capacities=vehicle_volume_capacities
+            vehicle_volume_capacities=vehicle_volume_capacities,
+            client_warehouses=client_warehouses,
+            vehicle_warehouses=vehicle_warehouses
         )
         
         if result["status"] != "SUCCESS":
@@ -190,7 +202,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         # 7. Convert solver output to routes list
         routes_list = []
         for vehicle_idx, route in enumerate(result["routes"]):
-            vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
+            vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"VeÃ­culo {vehicle_idx + 1}"
             
             order = 1
             cumulative_dist = 0
@@ -303,7 +315,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         state_dict["optimization_params"] = req.params
         
         payload = serialize_state(state_dict)
-        snapshot_name = f"Otimização VRP ({datetime.now().strftime('%H:%M:%S')})"
+        snapshot_name = f"OtimizaÃ§Ã£o VRP ({datetime.now().strftime('%H:%M:%S')})"
         user_id = current_user.id
         
         with get_db() as conn:
@@ -323,7 +335,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
 def get_solver_solution(project_id: int, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(project_id)
     if not proj or proj["empresa_id"] != current_user.empresa_id:
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
         
     try:
         with get_db() as conn:
@@ -347,7 +359,7 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                 if not df_routes.empty:
                     for idx, r in df_routes.iterrows():
                         routes_list.append({
-                            "Rota": r.get("Rota", "⚠️ PENDENTE"),
+                            "Rota": r.get("Rota", "âš ï¸ PENDENTE"),
                             "Armazem": r.get("Armazem", "N/A"),
                             "Ordem": int(r.get("Ordem", 1)),
                             "Cliente": r.get("Cliente", ""),
@@ -390,7 +402,7 @@ class ReassignRequest(BaseModel):
 def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
     if not proj or proj["empresa_id"] != current_user.empresa_id:
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
         
     try:
         with get_db() as conn:
@@ -399,18 +411,18 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
             row = cursor.fetchone()
             
             if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas para reatribuir.")
+                raise HTTPException(status_code=400, detail="NÃ£o existem rotas calculadas para reatribuir.")
                 
             state_dict = deserialize_state(row["payload_json"])
             raw_routes = state_dict.get("routes_solution")
             
             if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
+                raise HTTPException(status_code=400, detail="NÃ£o existem rotas ativas neste projeto.")
                 
             df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
             
         if df_routes.empty:
-             raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
+             raise HTTPException(status_code=400, detail="A lista de rotas estÃ¡ vazia.")
              
         # Robust case and space insensitive matching
         clean_target_code = str(req.client_code).strip().upper()
@@ -421,7 +433,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
             client_idx = df_routes[df_routes["Cliente"].astype(str).str.contains(clean_target_code, case=False, na=False)].index
             
         if len(client_idx) == 0:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado nas rotas.")
+            raise HTTPException(status_code=404, detail="Cliente nÃ£o encontrado nas rotas.")
             
         target_idx = client_idx[0]
         df_routes.loc[target_idx, "Rota"] = req.new_route
@@ -489,7 +501,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
         state_dict["routes_solution"] = df_new_routes
         
         payload = serialize_state(state_dict)
-        snapshot_name = f"Reatribuição Manual ({datetime.now().strftime('%H:%M:%S')})"
+        snapshot_name = f"ReatribuiÃ§Ã£o Manual ({datetime.now().strftime('%H:%M:%S')})"
         
         with get_db() as conn:
             cursor = conn.cursor()
@@ -507,7 +519,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
 def reorder_client_stop(req: ReorderRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
     if not proj or proj["empresa_id"] != current_user.empresa_id:
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
         
     try:
         with get_db() as conn:
@@ -516,23 +528,23 @@ def reorder_client_stop(req: ReorderRequest, current_user: UserResponse = Depend
             row = cursor.fetchone()
             
             if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas.")
+                raise HTTPException(status_code=400, detail="NÃ£o existem rotas calculadas.")
                 
             state_dict = deserialize_state(row["payload_json"])
             raw_routes = state_dict.get("routes_solution")
             
             if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
+                raise HTTPException(status_code=400, detail="NÃ£o existem rotas ativas neste projeto.")
                 
             df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
             
         if df_routes.empty:
-             raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
+             raise HTTPException(status_code=400, detail="A lista de rotas estÃ¡ vazia.")
              
         # Get all clients in this specific route
         route_clients = df_routes[df_routes["Rota"] == req.route_name].copy()
         if route_clients.empty:
-            raise HTTPException(status_code=404, detail="Rota não encontrada ou vazia.")
+            raise HTTPException(status_code=404, detail="Rota nÃ£o encontrada ou vazia.")
             
         # Sort by current order
         route_clients = route_clients.sort_values(by="Ordem")
@@ -548,7 +560,7 @@ def reorder_client_stop(req: ReorderRequest, current_user: UserResponse = Depend
                 break
                 
         if target_idx == -1:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado na rota.")
+            raise HTTPException(status_code=404, detail="Cliente nÃ£o encontrado na rota.")
             
         # Remove target client and insert at new_order - 1 (clamped)
         target_client = clients_list.pop(target_idx)
@@ -649,7 +661,7 @@ def export_optimized_routes(
 ):
     proj = get_projeto(project_id)
     if not proj or proj["empresa_id"] != current_user.empresa_id:
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
         
     try:
         with get_db() as conn:
@@ -658,18 +670,18 @@ def export_optimized_routes(
             row = cursor.fetchone()
             
         if not row:
-            raise HTTPException(status_code=400, detail="Não existem rotas calculadas para este projeto.")
+            raise HTTPException(status_code=400, detail="NÃ£o existem rotas calculadas para este projeto.")
             
         state_dict = deserialize_state(row["payload_json"])
         raw_routes = state_dict.get("routes_solution")
         
         if raw_routes is None:
-            raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
+            raise HTTPException(status_code=400, detail="NÃ£o existem rotas ativas neste projeto.")
             
         df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
         
         if df_routes.empty:
-            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
+            raise HTTPException(status_code=400, detail="A lista de rotas estÃ¡ vazia.")
             
         from utils.export_engine import generate_route_excel
         excel_data = generate_route_excel(df_routes)
@@ -693,6 +705,106 @@ def export_optimized_routes(
         raise HTTPException(status_code=500, detail=f"Erro ao exportar rotas: {str(e)}")
 
 
+
+@router.get("/export-full/{project_id}")
+def export_full_project(
+    project_id: int,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Export the complete project Excel: ArmazÃ©ns, Frota, Entregas, Rotas, Manifesto, OpÃ§Ãµes."""
+    import io as _io
+    from fastapi.responses import StreamingResponse as _SR
+    proj = get_projeto(project_id)
+    if not proj or proj["empresa_id"] != current_user.empresa_id:
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
+
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1",
+                (project_id,)
+            )
+            snap_row = cursor.fetchone()
+
+            cursor.execute(
+                """SELECT codigo_cliente, morada, codigo_postal, _concelho, latitude, longitude,
+                          peso_kg, volume_m3, prioridade, janela_inicio, janela_fim, armazem,
+                          nivel_qualidade, fonte_match, morada_encontrada
+                   FROM entregas WHERE projeto_id = ?""",
+                (project_id,)
+            )
+            del_rows = cursor.fetchall()
+
+        deliveries_df = None
+        if del_rows:
+            deliveries_df = pd.DataFrame([dict(r) for r in del_rows])
+            deliveries_df = deliveries_df.rename(columns={
+                'codigo_cliente': 'Codigo_Cliente',
+                'morada': 'Morada',
+                'codigo_postal': 'Codigo_Postal',
+                '_concelho': 'Localidade',
+                'latitude': 'Latitude',
+                'longitude': 'Longitude',
+                'peso_kg': 'Peso_KG',
+                'volume_m3': 'Volume_m3',
+                'prioridade': 'Prioridade',
+                'janela_inicio': 'Janela_Inicio',
+                'janela_fim': 'Janela_Fim',
+                'armazem': 'Armazem',
+                'nivel_qualidade': 'Nivel_Qualidade',
+                'fonte_match': 'Fonte_Match',
+                'morada_encontrada': 'Morada_Encontrada'
+            })
+
+        routes_df = None
+        warehouses_df = None
+        fleet_config = None
+        optimization_params = None
+
+        if snap_row:
+            state_dict = deserialize_state(snap_row["payload_json"])
+            raw_routes = state_dict.get("routes_solution")
+            if raw_routes is not None:
+                routes_df = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+
+            wh_data = state_dict.get('warehouses_used')
+            if wh_data is None or (hasattr(wh_data, 'empty') and wh_data.empty):
+                wh_data = state_dict.get('warehouses_geocoded')
+            if wh_data is not None:
+                warehouses_df = wh_data if isinstance(wh_data, pd.DataFrame) else pd.DataFrame(wh_data)
+
+            fleet_config = state_dict.get('fleet_config_used')
+            if fleet_config is None or (hasattr(fleet_config, 'empty') and fleet_config.empty):
+                fleet_config = state_dict.get('fleet_config')
+            optimization_params = state_dict.get("optimization_params")
+
+        from utils.export_engine import generate_full_project_excel
+        excel_data = generate_full_project_excel(
+            routes_df=routes_df,
+            deliveries_df=deliveries_df,
+            warehouses_df=warehouses_df,
+            fleet_config=fleet_config,
+            optimization_params=optimization_params
+        )
+
+        output = _io.BytesIO(excel_data)
+        output.seek(0)
+
+        from datetime import date
+        date_str = date.today().strftime('%Y%m%d')
+        filename = f"GeoRoute_Completo_{project_id}_{date_str}.xlsx"
+        return _SR(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao exportar projeto completo: {str(e)}")
+
 class OptimizeRouteRequest(BaseModel):
     project_id: int
     route_name: str
@@ -701,7 +813,7 @@ class OptimizeRouteRequest(BaseModel):
 def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
     if not proj or proj["empresa_id"] != current_user.empresa_id:
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        raise HTTPException(status_code=403, detail="NÃ£o tem permissÃ£o para aceder a este projeto.")
         
     try:
         with get_db() as conn:
@@ -710,18 +822,18 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
             row = cursor.fetchone()
             
             if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas.")
+                raise HTTPException(status_code=400, detail="NÃ£o existem rotas calculadas.")
                 
             state_dict = deserialize_state(row["payload_json"])
             raw_routes = state_dict.get("routes_solution")
             
             if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
+                raise HTTPException(status_code=400, detail="NÃ£o existem rotas ativas neste projeto.")
                 
             df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
 
         if df_routes.empty:
-            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
+            raise HTTPException(status_code=400, detail="A lista de rotas estÃ¡ vazia.")
 
         route_mask = df_routes["Rota"] == req.route_name
         route_stops = df_routes[route_mask].copy()
@@ -837,7 +949,7 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
         state_dict["routes_solution"] = df_new_routes
         payload = serialize_state(state_dict)
 
-        snapshot_name = f"Otimização Rota {req.route_name} ({datetime.now().strftime('%H:%M:%S')})"
+        snapshot_name = f"OtimizaÃ§Ã£o Rota {req.route_name} ({datetime.now().strftime('%H:%M:%S')})"
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
@@ -847,3 +959,4 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
         return {"status": "success", "routes": df_new_routes.to_dict(orient="records")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

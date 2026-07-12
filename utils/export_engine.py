@@ -1,129 +1,128 @@
 import pandas as pd
 import io
+import json
 
 def generate_route_excel(routes_df):
-    """
-    Generates an Excel file with optimized routes using the integrated dataframe.
-    Args:
-        routes_df: Full Pandas DataFrame derived from Phase3Planning.
-    """
+    return generate_full_project_excel(
+        routes_df=routes_df,
+        deliveries_df=None,
+        warehouses_df=None,
+        fleet_config=None,
+        optimization_params=None
+    )
+
+
+def generate_full_project_excel(
+    routes_df,
+    deliveries_df=None,
+    warehouses_df=None,
+    fleet_config=None,
+    optimization_params=None
+):
     output = io.BytesIO()
     
-    # Ensure df is working copy
-    df_export = routes_df.copy()
-    
-    # 1. Generate dynamic risk flags based on Nivel_Qualidade
-    def get_risk(q):
-        try:
-            q_int = int(q)
-            if q_int >= 5:
-                return "⚠️ Risco: Morada Genérica"
-            if q_int == 8:
-                return "❌ Risco: Não Encontrada"
-        except:
-            pass
-        return ""
-    
-    if 'Nivel_Qualidade' in df_export.columns:
-        df_export['Risco_Aviso'] = df_export['Nivel_Qualidade'].apply(get_risk)
-    else:
-        df_export['Risco_Aviso'] = ""
-
-    # 2. Generate Deep Links
-    def get_gmaps_link(row):
-        return f"https://www.google.com/maps/dir/?api=1&destination={row['Latitude']},{row['Longitude']}"
-    
-    def get_waze_link(row):
-        return f"https://waze.com/ul?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
-        
-    df_export['Link_Google'] = df_export.apply(get_gmaps_link, axis=1)
-    df_export['Link_Waze'] = df_export.apply(get_waze_link, axis=1)
-    
-    # Fill NaN values to prevent Excel errors
-    df_export = df_export.fillna("")
-    
-    # Write to Excel
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- SHEET 1: ROUTES ---
-        df_export.to_excel(writer, index=False, sheet_name='Rotas Otimizadas')
-        
         workbook = writer.book
-        worksheet = writer.sheets['Rotas Otimizadas']
         
-        # Formats
-        link_format = workbook.add_format({'font_color': 'blue', 'underline': 1})
-        header_format = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3'})
-        risk_format = workbook.add_format({'font_color': 'red', 'bold': True})
-        
-        # Apply header format
-        for col_num, value in enumerate(df_export.columns.values):
-            worksheet.write(0, col_num, value, header_format)
+        # 1. Rotas Detalhadas
+        if routes_df is not None and not routes_df.empty:
+            routes_df.to_excel(writer, index=False, sheet_name='Rotas_Detalhadas')
             
-        # Apply link format and Risk format
-        col_idx_google = df_export.columns.get_loc('Link_Google')
-        col_idx_waze = df_export.columns.get_loc('Link_Waze')
-        col_idx_risk = df_export.columns.get_loc('Risco_Aviso') if 'Risco_Aviso' in df_export.columns else -1
-        
-        for row_num in range(len(df_export)):
-            # Google Link
-            google_url = df_export.iloc[row_num]['Link_Google']
-            worksheet.write_url(row_num + 1, col_idx_google, google_url, link_format, string='Abrir Google Maps')
+            # 2. Manifesto de Carga (Visual Guia)
+            manifest_sheet = 'Manifesto_Carga'
+            worksheet = workbook.add_worksheet(manifest_sheet)
             
-            # Waze Link
-            waze_url = df_export.iloc[row_num]['Link_Waze']
-            worksheet.write_url(row_num + 1, col_idx_waze, waze_url, link_format, string='Abrir Waze')
+            # Formats
+            title_format = workbook.add_format({'bold': True, 'font_size': 14, 'bg_color': '#4F81BD', 'font_color': 'white', 'valign': 'vcenter', 'border': 1})
+            header_format = workbook.add_format({'bold': True, 'bg_color': '#DCE6F1', 'border': 1, 'text_wrap': True, 'align': 'center'})
+            cell_format = workbook.add_format({'border': 1, 'text_wrap': True})
+            cell_center = workbook.add_format({'border': 1, 'align': 'center'})
             
-            # Risk Warning Color
-            if col_idx_risk != -1:
-                    risk_val = df_export.iloc[row_num]['Risco_Aviso']
-                    if risk_val:
-                        worksheet.write(row_num + 1, col_idx_risk, risk_val, risk_format)
-            
-        # Auto-adjust columns width (approx)
-        worksheet.set_column(0, 0, 15) # Rota
-        worksheet.set_column(1, 1, 8)  # Ordem
-        worksheet.set_column(3, 3, 40) # Morada
-        worksheet.set_column(4, 4, 10) # CP
-        
-        # --- SHEET 2: LEGEND & DISCLAIMER ---
-        ws_legend = workbook.add_worksheet('Legenda e Avisos')
-        
-        # Title
-        title_format = workbook.add_format({'bold': True, 'font_size': 14})
-        ws_legend.write('A1', 'Legenda de Qualidade de Geocoding', title_format)
-        
-        # Legend Table
-        legend_data = [
-            ['Nível', 'Descrição', 'Significado'],
-            [0, 'Cliente', 'Coordenadas fornecidas pelo cliente ou corrigidas manualmente.'],
-            [1, 'Ouro', 'Rua + Número de Porta exato (Alta Confiança).'],
-            [2, 'Prata', 'Rua + Código Postal 4 dígitos (Confiança Média-Alta).'],
-            [3, 'Bronze', 'Centro do Código Postal 7 dígitos.'],
-            [4, 'Ferro', 'Centro do Código Postal 4 dígitos (Área alargada).'],
-            [5, 'Pedra', 'Centro da Localidade/Cidade (Risco de falha).'],
-            [6, 'Concelho', 'Centro do Concelho (Muito genérico).'],
-            [7, 'Distrito', 'Centro do Distrito (Inutilizável para entrega).'],
-            [8, 'Falha', 'Morada não encontrada em nenhuma base de dados.']
-        ]
-        
-        for i, row in enumerate(legend_data):
-            for j, val in enumerate(row):
-                fmt = header_format if i == 0 else None
-                ws_legend.write(i+2, j, val, fmt)
+            # Write visual manifest
+            row_idx = 0
+            if 'Rota' in routes_df.columns:
+                # Group by Route
+                for route_id, group in routes_df.groupby('Rota', sort=False):
+                    # Route Header
+                    worksheet.merge_range(row_idx, 0, row_idx, 8, f"MANIFESTO DE CARGA - ROTA: {route_id}", title_format)
+                    row_idx += 2
+                    
+                    # Columns to print
+                    cols = ['Ordem', 'Cliente', 'Morada', 'CP', 'Localidade', 'Janela_Horaria', 'Chegada', 'Tempo_Entrega', 'Saida']
+                    # Verify cols exist
+                    cols = [c for c in cols if c in group.columns]
+                    
+                    # Write Table Headers
+                    for col_num, col_name in enumerate(cols):
+                        worksheet.write(row_idx, col_num, col_name, header_format)
+                    row_idx += 1
+                    
+                    # Write Data
+                    for _, row_data in group.iterrows():
+                        for col_num, col_name in enumerate(cols):
+                            val = row_data[col_name]
+                            if pd.isna(val): val = ""
+                            fmt = cell_center if col_name in ['Ordem', 'Chegada', 'Saida', 'Tempo_Entrega'] else cell_format
+                            worksheet.write(row_idx, col_num, val, fmt)
+                        row_idx += 1
+                        
+                    # Add some empty space and page break
+                    worksheet.set_h_pagebreaks([row_idx])
+                    row_idx += 2
                 
-        ws_legend.set_column(0, 0, 10)
-        ws_legend.set_column(1, 1, 15)
-        ws_legend.set_column(2, 2, 60)
-        
-        # Disclaimer
-        ws_legend.write('A14', '⚠️ AVISO DE RESPONSABILIDADE', title_format)
-        disclaimer_text = (
-            "As rotas geradas baseiam-se na informação de morada fornecida. "
-            "Entregas marcadas com 'Risco' (Níveis 5 a 8) indicam que a morada original era insuficiente "
-            "para determinar uma localização exata. A responsabilidade pela precisão dos dados é do cliente. "
-            "Recomenda-se a validação prévia destas moradas para evitar falhas na entrega."
-        )
-        text_wrap = workbook.add_format({'text_wrap': True})
-        ws_legend.merge_range('A15:C20', disclaimer_text, text_wrap)
-
+                # Column widths
+                worksheet.set_column('A:A', 8)
+                worksheet.set_column('B:B', 15)
+                worksheet.set_column('C:C', 45)
+                worksheet.set_column('D:E', 15)
+                worksheet.set_column('F:F', 15)
+                worksheet.set_column('G:I', 10)
+                
+                worksheet.set_landscape()
+                worksheet.set_margins(left=0.5, right=0.5, top=0.5, bottom=0.5)
+        else:
+            pd.DataFrame({'Aviso': ['Sem dados de rotas']}).to_excel(writer, index=False, sheet_name='Rotas_Detalhadas')
+            
+        # 3. Entregas
+        if deliveries_df is not None and not deliveries_df.empty:
+            deliveries_df.to_excel(writer, index=False, sheet_name='Entregas')
+            
+        # 4. Armazens
+        if warehouses_df is not None and not warehouses_df.empty:
+            warehouses_df.to_excel(writer, index=False, sheet_name='Armazens')
+            
+        # 5. Frota
+        if fleet_config is not None:
+            fleet_list = []
+            if isinstance(fleet_config, dict):
+                for k, v in fleet_config.items():
+                    v_dict = {}
+                    # handle custom objects by accessing dict or __dict__
+                    if hasattr(v, 'dict') and callable(getattr(v, 'dict')):
+                        v_dict = v.dict()
+                    elif hasattr(v, '__dict__'):
+                        v_dict = v.__dict__.copy()
+                    elif isinstance(v, dict):
+                        v_dict = v.copy()
+                    else:
+                        v_dict = {'Info': str(v)}
+                    
+                    v_dict['Veiculo'] = k
+                    # filter out internal stuff like __type__
+                    v_dict = {key: val for key, val in v_dict.items() if not key.startswith('__')}
+                    fleet_list.append(v_dict)
+                df_fleet = pd.DataFrame(fleet_list)
+                if 'Veiculo' in df_fleet.columns:
+                    cols = ['Veiculo'] + [c for c in df_fleet.columns if c != 'Veiculo']
+                    df_fleet = df_fleet[cols]
+                df_fleet.to_excel(writer, index=False, sheet_name='Frota')
+            elif isinstance(fleet_config, list):
+                pd.DataFrame(fleet_config).to_excel(writer, index=False, sheet_name='Frota')
+                
+        # 6. Planeamento_Opcoes
+        if optimization_params is not None:
+            if isinstance(optimization_params, dict):
+                opts = [{'Parametro': k, 'Valor': str(v)} for k, v in optimization_params.items()]
+                pd.DataFrame(opts).to_excel(writer, index=False, sheet_name='Planeamento_Opcoes')
+                
     return output.getvalue()
