@@ -1127,6 +1127,7 @@ def main():
     from components.phase1_georeferencing import Phase1Georeferencing
     from components.phase2_fleet_warehouses import Phase2FleetWarehouses
     from components.phase3_planning import Phase3Planning
+    from components.phase5_criar_mapas import render_criar_mapas
     
     # --- 5 SEPARADORES SUPERIORES (DINÂMICOS & PROGRAMÁVEIS) ---
     tab_options = {
@@ -1205,6 +1206,9 @@ def main():
         else:
             st.markdown("## 📥 Exportar Informação Final")
             Phase3Planning.render_export_section()
+
+    elif curr == 6:
+        render_criar_mapas()
     
     # --- SIDEBAR EXTRAS ---
     render_sidebar_extras()

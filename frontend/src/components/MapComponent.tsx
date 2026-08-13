@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -64,63 +64,82 @@ function getRouteColor(routeName: string, vehicleList: string[]) {
   return routeColors[idx % routeColors.length];
 }
 
-// Custom 1. WAREHOUSE HOUSE ICON
-const warehouseHomeIcon = L.divIcon({
-  className: "custom-warehouse-icon",
-  html: `
-    <div style="
-      background-color: #0f172a;
-      color: #38bdf8;
-      width: 38px;
-      height: 38px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 2.5px solid #38bdf8;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.6);
-      cursor: pointer;
-    ">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-        <polyline points="9 22 9 12 15 12 15 22"></polyline>
-      </svg>
-    </div>
-  `,
-  iconSize: [38, 38],
-  iconAnchor: [19, 19],
-  popupAnchor: [0, -22]
-});
+// Custom 1. DYNAMIC WAREHOUSE ICON BASED ON ZOOM
+const getWarehouseIcon = (zoom: number) => {
+  const size = Math.max(20, Math.min(48, 38 + (zoom - 13) * 4));
+  const strokeWidth = size > 30 ? 2.2 : 1.5;
+  const svgSize = Math.max(12, Math.min(28, 22 + (zoom - 13) * 2));
+  
+  return L.divIcon({
+    className: "custom-warehouse-icon",
+    html: `
+      <div style="
+        background-color: #0f172a;
+        color: #38bdf8;
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: ${size * 0.3}px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: ${size * 0.06}px solid #38bdf8;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+        cursor: pointer;
+      ">
+        <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
+  });
+};
 
-// Custom 2. NUMBERED CIRCULAR BADGE FOR CLIENTS
-const createNumberedCircleIcon = (number: number, color: string, isPending: boolean) => {
+// Custom 2. DYNAMIC NUMBERED CIRCULAR BADGE FOR CLIENTS
+const createNumberedCircleIcon = (number: number, color: string, isPending: boolean, zoom: number) => {
   const bg = isPending ? "#6b7280" : color;
+  const size = Math.max(14, Math.min(40, 30 + (zoom - 13) * 3));
+  const fontSize = Math.max(7, Math.min(14, 11 + (zoom - 13) * 0.8));
+  
   return L.divIcon({
     className: "custom-number-badge",
     html: `
       <div style="
         background-color: ${bg};
         color: #ffffff;
-        width: 30px;
-        height: 30px;
+        width: ${size}px;
+        height: ${size}px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: 800;
-        font-size: 13px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        border: 2.5px solid #ffffff;
-        box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+        font-family: sans-serif;
+        font-size: ${fontSize}px;
+        border: ${size * 0.07}px solid #ffffff;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.5);
         cursor: pointer;
+        transition: all 0.2s ease-in-out;
       ">
-        ${isPending ? "!" : number}
+        ${number}
       </div>
     `,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -18]
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   });
+};;
+
+const MapTracker = ({ setZoom }: { setZoom: (z: number) => void }) => {
+  useMapEvents({
+    zoomend(e) {
+      setZoom(e.target.getZoom());
+    }
+  });
+  return null;
 };
 
 export default function MapComponent({
@@ -131,6 +150,7 @@ export default function MapComponent({
   onUpdateClientCoords,
 }: MapComponentProps) {
   const [isMounted, setIsMounted] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(11);
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({});
 
   useEffect(() => {
@@ -189,6 +209,9 @@ export default function MapComponent({
           waypoints.push([originWh.lon, originWh.lat]);
         }
         stops.forEach(s => waypoints.push([s.Longitude, s.Latitude]));
+        if (originWh) {
+          waypoints.push([originWh.lon, originWh.lat]);
+        }
 
         if (waypoints.length < 2) continue;
 
@@ -235,10 +258,11 @@ export default function MapComponent({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MapController coords={center} />
+        <MapTracker setZoom={setZoomLevel} />
 
         {/* 1. Warehouses Markers (House Icons) */}
         {warehouses.map(wh => (
-          <Marker key={wh.name} position={[wh.lat, wh.lon]} icon={warehouseHomeIcon}>
+          <Marker key={wh.name} position={[wh.lat, wh.lon]} icon={getWarehouseIcon(zoomLevel)}>
             <Popup>
               <div className="text-zinc-900 p-1 font-sans">
                 <p className="font-bold text-xs flex items-center space-x-1">
@@ -257,13 +281,13 @@ export default function MapComponent({
           
           const color = getRouteColor(c.Rota, vehicles);
           const isPending = c.Rota.includes("PENDENTE");
-          const icon = createNumberedCircleIcon(c.Ordem, color, isPending);
+          const icon = createNumberedCircleIcon(c.Ordem, color, isPending, zoomLevel);
 
           return (
             <Marker
               key={c.Cliente}
               position={[c.Latitude, c.Longitude]}
-              icon={icon}
+              icon={createNumberedCircleIcon(c.Ordem, color, isPending, zoomLevel)}
               draggable={true}
               eventHandlers={{
                 dragend: (e) => {
@@ -349,6 +373,9 @@ export default function MapComponent({
             fallbackPoints.push([originWh.lat, originWh.lon]);
           }
           clientsInRoute.forEach(c => fallbackPoints.push([c.Latitude, c.Longitude]));
+          if (originWh) {
+            fallbackPoints.push([originWh.lat, originWh.lon]);
+          }
 
           return (
             <Polyline

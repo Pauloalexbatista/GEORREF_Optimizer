@@ -360,7 +360,15 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
                 try:
 
-                    res = geocoder.resolve_address(addr, cp, city)
+                    resolve_res = geocoder.resolve_address(addr, cp, city)
+
+                    if isinstance(resolve_res, tuple):
+
+                        res = resolve_res[0]
+
+                    else:
+
+                        res = resolve_res
 
                 except Exception:
 
@@ -760,7 +768,9 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
 
                     "morada_encontrada": r["morada_encontrada"],
 
-                    "motivo_falha": reason
+                    "motivo_falha": reason,
+
+                    "armazem": r["armazem"] if "armazem" in r.keys() else None
 
                 })
 

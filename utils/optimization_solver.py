@@ -25,7 +25,9 @@ class AdvancedRouteOptimizer:
         time_windows=None,
         optimization_params=None,
         volume_demands=None,
-        vehicle_volume_capacities=None
+        vehicle_volume_capacities=None,
+        client_warehouses=None,
+        vehicle_warehouses=None
     ):
         """
         Solve VRP with strict mathematical constraints. 
@@ -194,6 +196,20 @@ class AdvancedRouteOptimizer:
                         time_window[1]
                     )
         
+        # 5.5 Warehouse routing restriction
+        # If client has a specific warehouse assigned, restrict it to vehicles from that warehouse
+        if client_warehouses and vehicle_warehouses:
+            num_depots = len(depot_indices)
+            for location_idx in range(num_depots, len(distance_matrix)):
+                client_idx_in_list = location_idx - num_depots
+                if client_idx_in_list < len(client_warehouses):
+                    wh_name = client_warehouses[client_idx_in_list]
+                    if wh_name and str(wh_name).strip() and str(wh_name).strip().upper() not in ["", "N/A", "NONE"]:
+                        allowed_vehicles = [v_idx for v_idx, v_wh in enumerate(vehicle_warehouses) if str(v_wh).strip().lower() == str(wh_name).strip().lower()]
+                        if allowed_vehicles:
+                            index = self.manager.NodeToIndex(location_idx)
+                            self.routing.VehicleVar(index).SetValues(allowed_vehicles)
+                            
         # 6. Search parameters
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (

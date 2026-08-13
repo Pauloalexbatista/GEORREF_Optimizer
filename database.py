@@ -96,6 +96,7 @@ def init_database():
                 nivel_qualidade INTEGER,
                 fonte_match TEXT,
                 morada_encontrada TEXT,
+                armazem TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (projeto_id) REFERENCES projetos (id)
             )
@@ -189,6 +190,12 @@ def init_database():
             )
         """)
         
+        # Garantir coluna armazem na tabela entregas para novas instalacoes e upgrades
+        try:
+            cursor.execute("ALTER TABLE entregas ADD COLUMN armazem TEXT")
+        except sqlite3.OperationalError:
+            pass
+            
         conn.commit()
         print("[DB] Base de dados inicializada com sucesso!")
 

@@ -38,7 +38,9 @@ WAREHOUSE_COLUMNS = [
     'Nome_Armazem',
     'Morada',
     'CP',
-    'Localidade'
+    'Localidade',
+    'Latitude',
+    'Longitude'
 ]
 
 # ==================== EMPTY TEMPLATE GENERATION ====================
@@ -389,3 +391,37 @@ def validate_fleet_file(df):
         return False, "Custo/KM não pode ser negativo"
     
     return True, "Ficheiro válido"
+
+
+def create_unified_project_template():
+    """Generate a unified template with 3 sheets: Armazéns, Frota, Entregas."""
+        # Sheet 1: Armazéns
+    df_warehouses = pd.DataFrame(columns=WAREHOUSE_COLUMNS)
+    df_warehouses.loc[0] = ['Armazém Central', 'Avenida Severiano Falcão, 16A', '2685-379', 'Prior Velho', 38.78420, -9.12380]
+    df_warehouses.loc[1] = ['Armazém Norte', 'R. de Manuel Sousa Moreira Cruz 240', '4470-396', 'Maia', 41.22910, -8.66200]
+    
+    # Sheet 2: Frota
+    df_fleet = pd.DataFrame(columns=['Veiculo', 'Armazem', 'Capacidade_KG', 'Cap_Volume_m3', 'Custo_KM', 'Velocidade_Media', 'Horario_Inicio', 'Horario_Fim'])
+    df_fleet.loc[0] = ['Veiculo1', 'Armazém Central', 1500, 20.0, 0.73, 50, '07:00', '19:00']
+    df_fleet.loc[1] = ['Veiculo2', 'Armazém Central', 1500, 20.0, 0.73, 50, '07:00', '19:00']
+    df_fleet.loc[2] = ['Veiculo_Norte_1', 'Armazém Norte', 1200, 15.0, 0.65, 45, '08:00', '18:00']
+    
+    # Sheet 3: Entregas
+    cols = [
+        'Codigo_Cliente', 'Morada', 'Codigo_Postal', 'Concelho', 
+        'Latitude', 'Longitude', 'Peso_KG', 'Volume_m3', 'Prioridade', 
+        'Janela_Inicio', 'Janela_Fim', 'Janela2_Inicio', 'Janela2_Fim', 
+        'Janela3_Inicio', 'Janela3_Fim', 'Observacoes', 'Armazem'
+    ]
+    df_deliveries = pd.DataFrame(columns=cols)
+    df_deliveries.loc[0] = ['CL0001', 'Avenida da República, 100', '1050-191', 'Lisboa', '', '', 115.5, 1.9, 1, '08:00', '13:00', '14:00', '18:00', '', '', 'Fragil', 'Armazém Central']
+    df_deliveries.loc[1] = ['CL0002', 'Avenida dos Aliados, 50', '4000-064', 'Porto', 41.1478, -8.6111, 83.9, 0.51, 1, '10:00', '13:00', '14:00', '18:00', '', '', 'Urgente', 'Armazém Norte']
+    
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_warehouses.to_excel(writer, sheet_name='Armazéns', index=False)
+        df_fleet.to_excel(writer, sheet_name='Frota', index=False)
+        df_deliveries.to_excel(writer, sheet_name='Entregas', index=False)
+        
+    buffer.seek(0)
+    return buffer.getvalue()

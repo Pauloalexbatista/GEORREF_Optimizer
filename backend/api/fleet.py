@@ -246,15 +246,15 @@ def geocode_warehouses(warehouses: List[WarehouseItem], current_user: UserRespon
 
 
 
-        if r_coords and r_coords.get("latitude") and r_coords.get("lon"):
+        if r_coords and r_coords.get("lat") and r_coords.get("lon"):
 
 
 
-            lat = r_coords["latitude"]
+            lat = r_coords["lat"]
 
 
 
-            lon = r_coords["longitude"]
+            lon = r_coords["lon"]
 
 
 
@@ -324,6 +324,19 @@ def geocode_warehouses(warehouses: List[WarehouseItem], current_user: UserRespon
 
 
 
+
+
+@router.get("/template/unified")
+def download_unified_template(current_user: UserResponse = Depends(get_current_user)):
+    from utils.template_manager import create_unified_project_template
+    from fastapi.responses import Response
+    
+    template_data = create_unified_project_template()
+    return Response(
+        content=template_data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Template_Importacao_Completa.xlsx"}
+    )
 
 
 @router.get("/{project_id}")
@@ -714,6 +727,114 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
 
 
 
+        # 4. Check if Entregas sheet exists for unified import
+        sheet_entregas = None
+        for s in xls.sheet_names:
+            if s.lower().strip() in ['entregas', 'clientes', 'encomendas', 'deliveries', 'orders']:
+                sheet_entregas = s
+                break
+                
+        if sheet_entregas:
+            df_entregas_raw = pd.read_excel(xls, sheet_name=sheet_entregas)
+            
+            # Robust column resolution for Deliveries
+            col_e_code = next((c for c in ['Codigo_Cliente', 'Cliente', 'Código Cliente', 'Client_Code', 'Código_Cliente'] if c in df_entregas_raw.columns), None)
+            col_e_addr = next((c for c in ['Morada', 'Address', 'Rua', 'Endereço'] if c in df_entregas_raw.columns), None)
+            col_e_cp = next((c for c in ['Codigo_Postal', 'CP', 'Código Postal', 'Postal_Code'] if c in df_entregas_raw.columns), None)
+            col_e_city = next((c for c in ['Localidade', 'Cidade', 'Concelho', 'Locality'] if c in df_entregas_raw.columns), None)
+            col_e_weight = next((c for c in ['Peso_KG', 'Peso_kg', 'Peso (kg)', 'Weight_KG', 'Peso'] if c in df_entregas_raw.columns), None)
+            col_e_volume = next((c for c in ['Volume_m3', 'Volume (m3)', 'Volume', 'Volume_M3'] if c in df_entregas_raw.columns), None)
+            col_e_start = next((c for c in ['Janela_Inicio', 'Slot1_Inicio', 'Horário Início', 'Start_Time', 'Janela início'] if c in df_entregas_raw.columns), None)
+            col_e_end = next((c for c in ['Janela_Fim', 'Slot1_Fim', 'Horário Fim', 'End_Time', 'Janela fim'] if c in df_entregas_raw.columns), None)
+            col_e_priority = next((c for c in ['Prioridade', 'Priority'] if c in df_entregas_raw.columns), None)
+            col_e_obs = next((c for c in ['Observacoes', 'Observações', 'Remarks', 'Obs'] if c in df_entregas_raw.columns), None)
+            col_e_wh = next((c for c in ['Armazem', 'Armazém', 'Warehouse', 'Nome_Armazem'] if c in df_entregas_raw.columns), None)
+            col_e_lat = next((c for c in ['Latitude', 'Lat', 'lat', 'latitude'] if c in df_entregas_raw.columns), None)
+            col_e_lon = next((c for c in ['Longitude', 'Lon', 'lon', 'longitude', 'lng', 'Lng'] if c in df_entregas_raw.columns), None)
+            
+            if not col_e_addr:
+                raise HTTPException(status_code=400, detail="A folha de Entregas deve conter uma coluna de Morada.")
+                
+            # Clear existing deliveries
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
+                conn.commit()
+                
+            for idx, row in df_entregas_raw.iterrows():
+                code = str(row[col_e_code]).strip() if col_e_code else f"C_{idx+1}"
+                addr = str(row[col_e_addr]).strip()
+                cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
+                city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
+                weight = float(row[col_e_weight]) if col_e_weight and pd.notna(row[col_e_weight]) else 0.0
+                volume = float(row[col_e_volume]) if col_e_volume and pd.notna(row[col_e_volume]) else 0.0
+                priority = int(row[col_e_priority]) if col_e_priority and pd.notna(row[col_e_priority]) else 2
+                start_window = str(row[col_e_start]).strip() if col_e_start and pd.notna(row[col_e_start]) else "08:00"
+                end_window = str(row[col_e_end]).strip() if col_e_end and pd.notna(row[col_e_end]) else "18:00"
+                obs = str(row[col_e_obs]).strip() if col_e_obs and pd.notna(row[col_e_obs]) else ""
+                wh_val = str(row[col_e_wh]).strip() if col_e_wh and pd.notna(row[col_e_wh]) else ""
+                
+                # Check for coordinates in file
+                has_coords = False
+                lat_val = 0.0
+                lon_val = 0.0
+                if col_e_lat and col_e_lon:
+                    try:
+                        e_lat = row[col_e_lat]
+                        e_lon = row[col_e_lon]
+                        if pd.notna(e_lat) and pd.notna(e_lon):
+                            lat_val = float(e_lat)
+                            lon_val = float(e_lon)
+                            if lat_val != 0 and -90 <= lat_val <= 90:
+                                has_coords = True
+                    except Exception:
+                        has_coords = False
+                        
+                if has_coords:
+                    res = {
+                        "lat": lat_val,
+                        "lon": lon_val,
+                        "quality_level": 0,
+                        "source": "FICHEIRO",
+                        "morada_encontrada": addr
+                    }
+                else:
+                    try:
+                        res_tuple = geocoder.resolve_address(addr, cp, city)
+                        res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    except Exception:
+                        res = None
+                        
+                if res and res.get('lat') and res.get('lon'):
+                    lat = res['lat']
+                    lon = res['lon']
+                    quality = res.get('quality_level', 1)
+                    source = res.get('source', 'NOMINATIM')
+                    morada_encontrada = res.get('morada_encontrada', addr)
+                else:
+                    lat = 0.0
+                    lon = 0.0
+                    quality = 99
+                    source = "FALHA"
+                    morada_encontrada = ""
+                    
+                with get_db() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO entregas (
+                            projeto_id, codigo_cliente, morada, codigo_postal, _concelho,
+                            peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
+                            latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        project_id, code, addr, cp, city,
+                        weight, volume, priority, start_window, end_window,
+                        lat, lon, quality, source, morada_encontrada, wh_val
+                    ))
+                    conn.commit()
+            
+            state_dict["phase_1_complete"] = True
+
         state_dict["warehouses_geocoded"] = df_wh
 
 
@@ -931,6 +1052,8 @@ async def import_fleet_warehouses(
         # Robust column resolution for Warehouses
 
         col_wh_name = next((c for c in ['Nome_Armazem', 'Nome', 'Nome do Armazém', 'Nome_Armazém', 'Warehouse'] if c in df_wh_raw.columns), None)
+        col_wh_lat = next((c for c in ['Latitude', 'Lat', 'lat', 'latitude'] if c in df_wh_raw.columns), None)
+        col_wh_lon = next((c for c in ['Longitude', 'Lon', 'lon', 'longitude', 'lng', 'Lng'] if c in df_wh_raw.columns), None)
 
         col_wh_addr = next((c for c in ['Morada', 'Endereço', 'Address', 'Rua'] if c in df_wh_raw.columns), None)
 
@@ -988,23 +1111,36 @@ async def import_fleet_warehouses(
 
             
 
-            try:
-
-                g_res = geocoder.geocode(addr, cp, locality)
-
-                lat = g_res.get('latitude', 39.5)
-
-                lon = g_res.get('longitude', -8.0)
-
-                quality = g_res.get('quality_level', 99)
-
-            except Exception:
-
-                lat = 39.5
-
-                lon = -8.0
-
-                quality = 99
+            has_coords = False
+            lat_val = 0.0
+            lon_val = 0.0
+            if col_wh_lat and col_wh_lon:
+                try:
+                    w_lat = row[col_wh_lat]
+                    w_lon = row[col_wh_lon]
+                    if pd.notna(w_lat) and pd.notna(w_lon):
+                        lat_val = float(w_lat)
+                        lon_val = float(w_lon)
+                        if lat_val != 0 and -90 <= lat_val <= 90:
+                            has_coords = True
+                except Exception:
+                    has_coords = False
+                    
+            if has_coords:
+                lat = lat_val
+                lon = lon_val
+                quality = 0
+            else:
+                try:
+                    res_tuple = geocoder.resolve_address(addr, cp, locality)
+                    g_res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    lat = g_res.get('lat', 39.5) if g_res else 39.5
+                    lon = g_res.get('lon', -8.0) if g_res else -8.0
+                    quality = g_res.get('quality_level', 99) if g_res else 99
+                except Exception:
+                    lat = 39.5
+                    lon = -8.0
+                    quality = 99
 
                 
 
@@ -1183,6 +1319,114 @@ async def import_fleet_warehouses(
                 state_dict = {}
 
                 
+
+        # 4. Check if Entregas sheet exists for unified import
+        sheet_entregas = None
+        for s in xls.sheet_names:
+            if s.lower().strip() in ['entregas', 'clientes', 'encomendas', 'deliveries', 'orders']:
+                sheet_entregas = s
+                break
+                
+        if sheet_entregas:
+            df_entregas_raw = pd.read_excel(xls, sheet_name=sheet_entregas)
+            
+            # Robust column resolution for Deliveries
+            col_e_code = next((c for c in ['Codigo_Cliente', 'Cliente', 'Código Cliente', 'Client_Code', 'Código_Cliente'] if c in df_entregas_raw.columns), None)
+            col_e_addr = next((c for c in ['Morada', 'Address', 'Rua', 'Endereço'] if c in df_entregas_raw.columns), None)
+            col_e_cp = next((c for c in ['Codigo_Postal', 'CP', 'Código Postal', 'Postal_Code'] if c in df_entregas_raw.columns), None)
+            col_e_city = next((c for c in ['Localidade', 'Cidade', 'Concelho', 'Locality'] if c in df_entregas_raw.columns), None)
+            col_e_weight = next((c for c in ['Peso_KG', 'Peso_kg', 'Peso (kg)', 'Weight_KG', 'Peso'] if c in df_entregas_raw.columns), None)
+            col_e_volume = next((c for c in ['Volume_m3', 'Volume (m3)', 'Volume', 'Volume_M3'] if c in df_entregas_raw.columns), None)
+            col_e_start = next((c for c in ['Janela_Inicio', 'Slot1_Inicio', 'Horário Início', 'Start_Time', 'Janela início'] if c in df_entregas_raw.columns), None)
+            col_e_end = next((c for c in ['Janela_Fim', 'Slot1_Fim', 'Horário Fim', 'End_Time', 'Janela fim'] if c in df_entregas_raw.columns), None)
+            col_e_priority = next((c for c in ['Prioridade', 'Priority'] if c in df_entregas_raw.columns), None)
+            col_e_obs = next((c for c in ['Observacoes', 'Observações', 'Remarks', 'Obs'] if c in df_entregas_raw.columns), None)
+            col_e_wh = next((c for c in ['Armazem', 'Armazém', 'Warehouse', 'Nome_Armazem'] if c in df_entregas_raw.columns), None)
+            col_e_lat = next((c for c in ['Latitude', 'Lat', 'lat', 'latitude'] if c in df_entregas_raw.columns), None)
+            col_e_lon = next((c for c in ['Longitude', 'Lon', 'lon', 'longitude', 'lng', 'Lng'] if c in df_entregas_raw.columns), None)
+            
+            if not col_e_addr:
+                raise HTTPException(status_code=400, detail="A folha de Entregas deve conter uma coluna de Morada.")
+                
+            # Clear existing deliveries
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
+                conn.commit()
+                
+            for idx, row in df_entregas_raw.iterrows():
+                code = str(row[col_e_code]).strip() if col_e_code else f"C_{idx+1}"
+                addr = str(row[col_e_addr]).strip()
+                cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
+                city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
+                weight = float(row[col_e_weight]) if col_e_weight and pd.notna(row[col_e_weight]) else 0.0
+                volume = float(row[col_e_volume]) if col_e_volume and pd.notna(row[col_e_volume]) else 0.0
+                priority = int(row[col_e_priority]) if col_e_priority and pd.notna(row[col_e_priority]) else 2
+                start_window = str(row[col_e_start]).strip() if col_e_start and pd.notna(row[col_e_start]) else "08:00"
+                end_window = str(row[col_e_end]).strip() if col_e_end and pd.notna(row[col_e_end]) else "18:00"
+                obs = str(row[col_e_obs]).strip() if col_e_obs and pd.notna(row[col_e_obs]) else ""
+                wh_val = str(row[col_e_wh]).strip() if col_e_wh and pd.notna(row[col_e_wh]) else ""
+                
+                # Check for coordinates in file
+                has_coords = False
+                lat_val = 0.0
+                lon_val = 0.0
+                if col_e_lat and col_e_lon:
+                    try:
+                        e_lat = row[col_e_lat]
+                        e_lon = row[col_e_lon]
+                        if pd.notna(e_lat) and pd.notna(e_lon):
+                            lat_val = float(e_lat)
+                            lon_val = float(e_lon)
+                            if lat_val != 0 and -90 <= lat_val <= 90:
+                                has_coords = True
+                    except Exception:
+                        has_coords = False
+                        
+                if has_coords:
+                    res = {
+                        "lat": lat_val,
+                        "lon": lon_val,
+                        "quality_level": 0,
+                        "source": "FICHEIRO",
+                        "morada_encontrada": addr
+                    }
+                else:
+                    try:
+                        res_tuple = geocoder.resolve_address(addr, cp, city)
+                        res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    except Exception:
+                        res = None
+                        
+                if res and res.get('lat') and res.get('lon'):
+                    lat = res['lat']
+                    lon = res['lon']
+                    quality = res.get('quality_level', 1)
+                    source = res.get('source', 'NOMINATIM')
+                    morada_encontrada = res.get('morada_encontrada', addr)
+                else:
+                    lat = 0.0
+                    lon = 0.0
+                    quality = 99
+                    source = "FALHA"
+                    morada_encontrada = ""
+                    
+                with get_db() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO entregas (
+                            projeto_id, codigo_cliente, morada, codigo_postal, _concelho,
+                            peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
+                            latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        project_id, code, addr, cp, city,
+                        weight, volume, priority, start_window, end_window,
+                        lat, lon, quality, source, morada_encontrada, wh_val
+                    ))
+                    conn.commit()
+            
+            state_dict["phase_1_complete"] = True
 
         state_dict["warehouses_geocoded"] = df_wh
 

@@ -227,6 +227,29 @@ export default function TacticalDashboardPage() {
 
 
   const [maxDur, setMaxDur] = useState(480);
+  const [limitRouteDuration, setLimitRouteDuration] = useState(true);
+  const [maxDurHours, setMaxDurHours] = useState(8);
+  const [maxDurMinutes, setMaxDurMinutes] = useState(0);
+
+  // Sync hours and minutes with maxDur when it's set initially from project load
+  useEffect(() => {
+    if (maxDur && maxDur < 1440 && maxDurHours === 8 && maxDurMinutes === 0) {
+      setMaxDurHours(Math.floor(maxDur / 60));
+      setMaxDurMinutes(maxDur % 60);
+      setLimitRouteDuration(true);
+    } else if (maxDur === 1440) {
+      setLimitRouteDuration(false);
+    }
+  }, [maxDur]);
+
+  // Update maxDur automatically based on hours/minutes selection
+  useEffect(() => {
+    if (limitRouteDuration) {
+      setMaxDur(maxDurHours * 60 + maxDurMinutes);
+    } else {
+      setMaxDur(1440); // 24 hours (unlimited route)
+    }
+  }, [limitRouteDuration, maxDurHours, maxDurMinutes]);
 
   const mappedClients = React.useMemo(() => {
     return routes.map(r => ({
@@ -1430,12 +1453,20 @@ const handleMoveClientRoute = async (clientName: string, newRoute: string) => {
 
               {routes.length > 0 && (
 
-
-
-                <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20">Otimizado</span>
-
-
-
+                <>
+                  <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20">Otimizado</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadFile(`/api/solver/export-full/${selectedProject?.id}`, `GeoRoute_Completo_${selectedProject?.id}.xlsx`)}
+                    className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg px-3 py-1.5 text-[10px] font-semibold shadow-md shadow-emerald-500/10 transition-all flex items-center space-x-1.5"
+                    title="Exportar Excel Completo"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Exportar Excel</span>
+                  </button>
+                </>
               )}
 
 
@@ -1896,190 +1927,84 @@ const handleMoveClientRoute = async (clientName: string, newRoute: string) => {
 
 
 
-            <div className="space-y-3">
-
-
-
+                        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
               <div>
-
-
-
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">Tempo Limite de Cálculo (s)</label>
-
-
-
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Tempo Limite do Algoritmo (Segundos)</label>
                 <input
-
-
-
                   type="number"
-
-
-
                   min="5"
-
-
-
                   max="300"
-
-
-
                   value={timeLimit}
-
-
-
                   onChange={e => setTimeLimit(parseInt(e.target.value) || 15)}
-
-
-
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-
-
-
                 />
-
-
-
+                <p className="text-[9px] text-zinc-500 mt-1">Tempo máximo que o computador passa a procurar uma solução melhor. 15s a 30s é o ideal.</p>
               </div>
 
-
-
-
-
-
-
               <div>
-
-
-
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">Peso da Distância</label>
-
-
-
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Importância da Distância (Redução de KM)</label>
                 <input
-
-
-
                   type="number"
-
-
-
                   min="0"
-
-
-
                   value={distWeight}
-
-
-
                   onChange={e => setDistWeight(parseInt(e.target.value) || 100)}
-
-
-
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-
-
-
                 />
-
-
-
+                <p className="text-[9px] text-zinc-500 mt-1">Prioridade dada à redução da quilometragem total da frota para poupança de combustível.</p>
               </div>
 
-
-
-
-
-
-
               <div>
-
-
-
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">Peso do Balanceamento (%)</label>
-
-
-
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Equilíbrio de Trabalho entre Viaturas (%)</label>
                 <input
-
-
-
                   type="number"
-
-
-
                   min="0"
-
-
-
                   max="100"
-
-
-
                   value={balWeight}
-
-
-
                   onChange={e => setBalWeight(parseInt(e.target.value) || 30)}
-
-
-
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-
-
-
                 />
-
-
-
+                <p className="text-[9px] text-zinc-500 mt-1">Prioridade para equilibrar o número de paragens ou tempo de serviço entre os vários motoristas.</p>
               </div>
 
-
-
-
-
-
-
-              <div>
-
-
-
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">Duração Máxima da Rota (minutos)</label>
-
-
-
-                <input
-
-
-
-                  type="number"
-
-
-
-                  min="60"
-
-
-
-                  value={maxDur}
-
-
-
-                  onChange={e => setMaxDur(parseInt(e.target.value) || 480)}
-
-
-
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-
-
-
-                />
-
-
-
+              <div className="pt-2 border-t border-zinc-800/60">
+                <label className="flex items-center space-x-2 cursor-pointer mb-2">
+                  <input
+                    type="checkbox"
+                    checked={limitRouteDuration}
+                    onChange={e => setLimitRouteDuration(e.target.checked)}
+                    className="rounded border-zinc-800 bg-zinc-950 text-indigo-500 focus:ring-0"
+                  />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Limitar tempo máximo por rota</span>
+                </label>
+                
+                {limitRouteDuration && (
+                  <div className="flex items-center space-x-2 mt-1">
+                    <div className="flex items-center space-x-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="24"
+                        value={maxDurHours}
+                        onChange={e => setMaxDurHours(Math.max(0, Math.min(24, parseInt(e.target.value) || 0)))}
+                        className="w-12 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200 text-center outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-[10px] text-zinc-400">h</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={maxDurMinutes}
+                        onChange={e => setMaxDurMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                        className="w-12 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200 text-center outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-[10px] text-zinc-400">min</span>
+                    </div>
+                  </div>
+                )}
+                <p className="text-[9px] text-zinc-500 mt-1">Limite máximo de condução/trabalho contínuo por motorista (ex: 6h30min, 8h00min).</p>
               </div>
-
-
-
             </div>
 
 

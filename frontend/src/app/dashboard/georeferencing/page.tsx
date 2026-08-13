@@ -196,6 +196,54 @@ export default function GeoreferencingPage() {
     formData.append("file", file);
 
     try {
+      // 1. Tentar importação unificada se for ficheiro Excel
+      const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
+      if (isExcel && selectedProject) {
+        try {
+          const token = localStorage.getItem("georoute_token");
+          const headers = new Headers();
+          if (token) {
+            headers.set("Authorization", `Bearer ${token}`);
+          }
+          const response = await fetch(`http://localhost:8000/api/fleet/import/${selectedProject.id}`, {
+            method: "POST",
+            headers,
+            body: formData
+          });
+          
+          if (response.ok) {
+            alert("Importação unificada realizada com sucesso! Armazéns, viaturas e entregas foram atualizados e georreferenciados.");
+            // Recarregar entregas e mostrar resultados diretamente
+            const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+            setDeliveries(data);
+            setStep("results");
+            setLoading(false);
+            return;
+          }
+          
+          const errorData = await response.json();
+          // Se o erro for devido a falta de folhas, fazemos fallback. Caso contrário, reportamos.
+          if (errorData.detail && (
+            errorData.detail.includes("Deve conter a folha") ||
+            errorData.detail.includes("folha") ||
+            errorData.detail.includes("sheet") ||
+            errorData.detail.includes("Sheet")
+          )) {
+            console.log("Ficheiro não contém folhas de importação unificada. Fazendo fallback para entregas simples...");
+          } else {
+            throw new Error(errorData.detail || "Erro ao processar importação unificada.");
+          }
+        } catch (unifiedErr: any) {
+          console.warn("Importação unificada falhou, tentando upload simples...", unifiedErr);
+          if (unifiedErr.message && !unifiedErr.message.includes("folha") && !unifiedErr.message.includes("sheet")) {
+            alert(unifiedErr.message);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      // 2. Fallback para upload padrão de georreferenciação simples
       const res = await apiRequest("/api/geocoding/upload", {
         method: "POST",
         body: formData,
@@ -370,7 +418,7 @@ export default function GeoreferencingPage() {
                 Arraste ou carregue um ficheiro Excel (.xlsx, .xls) ou CSV contendo os dados dos clientes e entregas.
               </p>
             </div>
-            <div className="pt-4">
+            <div className="pt-4 space-y-4">
               <label className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 text-white rounded-xl px-6 py-3 text-sm font-semibold shadow-lg shadow-indigo-500/25 hover:from-indigo-600 hover:to-violet-600 transition-all inline-flex items-center space-x-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -384,6 +432,15 @@ export default function GeoreferencingPage() {
                   disabled={loading}
                 />
               </label>
+              <div className="pt-4 border-t border-zinc-800/60 max-w-xs mx-auto">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFile('/api/fleet/template/unified', 'Template_Importacao_Completa.xlsx')}
+                  className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold underline transition-colors cursor-pointer"
+                >
+                  📥 Descarregar Modelo Excel Geral (3 Folhas)
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -542,6 +599,23 @@ export default function GeoreferencingPage() {
                 
                 {deliveries.length > 0 && (
                   <div className="flex items-center space-x-3">
+                    <button
+                      onClick={async () => {
+                        if (!selectedProject) return;
+                        try {
+                          await apiRequest(`/api/geocoding/save/${selectedProject.id}`, { method: "POST" });
+                          alert("Georreferenciação guardada com sucesso!");
+                        } catch {
+                          alert("Erro ao guardar georreferenciação.");
+                        }
+                      }}
+                      className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-xl px-4 py-2 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all flex items-center space-x-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                      </svg>
+                      <span>Guardar Georreferenciação</span>
+                    </button>
                     <button
                       onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}?type=success`, `clientes_georreferenciados_${selectedProject?.id}.xlsx`)}
                       className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-emerald-400 hover:text-emerald-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors flex items-center space-x-2"

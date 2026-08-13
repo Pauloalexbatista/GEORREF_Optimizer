@@ -52,7 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             continue;
           }
           
-          console.error("Session restoration failed:", e);
+          // Silence expected unauthorized errors during initial session restoration
+          const isAuthErr = e.message?.includes("Token inválido") || e.message?.includes("Token malformado") || e.message?.includes("Utilizador não encontrado");
+          if (!isAuthErr) {
+            console.error("Session restoration failed:", e);
+          }
           if (!isNetworkErr) {
             localStorage.removeItem("georoute_token");
           }
@@ -75,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = await apiRequest("/api/auth/me");
       setUser(userData);
       router.push("/dashboard");
+      setLoading(false);
     } catch (error) {
       setLoading(false);
       throw error;

@@ -26,7 +26,7 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING 2^
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING 2^>nul') do (
     taskkill /F /PID %%a 2>nul
 )
-start /b python -m uvicorn backend.main:app --port 8000
+start /b python -m uvicorn backend.main:app --port 8000 --reload
 cd frontend
 start /b npm run dev
 ping -n 4 127.0.0.1 >nul

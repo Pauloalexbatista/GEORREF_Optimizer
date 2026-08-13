@@ -24,3 +24,56 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Print styles for cleaner PDFs */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body, html, main {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Reset grid layout for printing */
+  .grid {
+    display: block !important;
+  }
+
+  /* Print Map Card styles: Page 1, large height */
+  .print-map-card {
+    height: 88vh !important;
+    width: 100% !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    border: none !important;
+    background: #ffffff !important;
+  }
+
+  /* Print Table Card styles: Page 2 onwards, auto height to prevent scrolls */
+  .print-table-card {
+    height: auto !important;
+    max-height: none !important;
+    page-break-before: always !important;
+    break-before: page !important;
+    border: none !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  /* Remove scrollbars in printing */
+  .overflow-auto {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Make text black on white background for high contrast print */
+  input, td, th, span, div, h2, p {
+    color: #000000 !important;
+    text-shadow: none !important;
+  }
+}

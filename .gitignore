@@ -65,3 +65,6 @@ georoute.pid
 georoute.log
 mining_bot.log
 harvested_data.db
+
+# Local cache for Spanish CP boundaries
+cache_geoapi/
