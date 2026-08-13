@@ -7,6 +7,13 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from backend.api import auth, projects, geocoding, fleet, solver, maps
+from database import init_database
+
+# Initialize database
+try:
+    init_database()
+except Exception as e:
+    print(f"Error initializing database: {e}")
 
 app = FastAPI(
     title='GeoRoute Pro API',
@@ -34,3 +41,4 @@ app.include_router(maps.router)
 @app.get('/')
 def read_root():
     return {'message': 'Welcome to GeoRoute Pro API'}
+
