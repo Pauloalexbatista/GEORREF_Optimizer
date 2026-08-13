@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements and install
 COPY backend/requirements.txt .
+COPY geocoding.zip .
+RUN unzip geocoding.zip && rm geocoding.zip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the backend application
@@ -21,3 +23,4 @@ EXPOSE 8000
 
 # Run FastAPI server via Uvicorn
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
