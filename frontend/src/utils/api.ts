@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 
 export async function apiRequest(endpoint: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("georoute_token") : null;
@@ -11,7 +11,7 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const response = await fetch(`${endpoint}`, {
     ...options,
     headers,
   });
@@ -33,3 +33,4 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
 
   return response.json();
 }
+

@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE = "";
 
 type Mapeamento = { cp: string; zona: string; cor: string; concelho?: string; distrito?: string; freguesia?: string };
 
@@ -96,3 +96,4 @@ export default function CustomMap({ mapeamentos }: { mapeamentos: Mapeamento[] }
     </MapContainer>
   );
 }
+
