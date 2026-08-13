@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+    build-essential unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
@@ -23,4 +23,5 @@ EXPOSE 8000
 
 # Run FastAPI server via Uvicorn
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
 
