@@ -38,7 +38,7 @@ function CP4Layer({ mapeamentos }: { mapeamentos: Mapeamento[] }) {
       if (!cp || cp.length < 4) return;
 
       try {
-        const res = await fetch(`${API_BASE}/api/maps/cp4-polygon/${cp}`);
+        const res = await fetch(`/api/maps/cp4-polygon/${cp}`);
         if (!res.ok) return;
         const geojson = await res.json();
 
@@ -96,4 +96,5 @@ export default function CustomMap({ mapeamentos }: { mapeamentos: Mapeamento[] }
     </MapContainer>
   );
 }
+
 
