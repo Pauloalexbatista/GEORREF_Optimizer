@@ -21,7 +21,7 @@ class ProjectResponse(BaseModel):
     descricao: Optional[str] = ''
     created_at: str
 
-@router.get('/', response_model=List[ProjectResponse])
+@router.get('', response_model=List[ProjectResponse])
 def list_projects(current_user: UserResponse = Depends(get_current_user)):
     try:
         projects = get_projetos(current_user.empresa_id)
@@ -37,7 +37,7 @@ def list_projects(current_user: UserResponse = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post('/', response_model=ProjectResponse)
+@router.post('', response_model=ProjectResponse)
 def create_new_project(req: ProjectCreate, current_user: UserResponse = Depends(get_current_user)):
     if not req.nome.strip():
         raise HTTPException(status_code=400, detail='O nome do projeto não pode ser vazio.')
@@ -77,3 +77,4 @@ def get_project_details(project_id: int, current_user: UserResponse = Depends(ge
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
