@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: backend.Dockerfile
-environment:
+    environment:
       - DB_MULTI_PATH=/app/data/geocoding_multi.db
       - DB_GEO_PATH=geocoding.db
     volumes:
@@ -16,7 +16,7 @@ environment:
     build:
       context: .
       dockerfile: frontend.Dockerfile
-environment:
+    environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
     depends_on:
       - backend
@@ -24,4 +24,3 @@ environment:
 
 volumes:
   sqlite_data:
-
