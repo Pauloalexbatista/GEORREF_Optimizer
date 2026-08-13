@@ -413,8 +413,8 @@ def delete_map(map_id: int, current_user: UserResponse = Depends(get_current_use
             raise HTTPException(status_code=404, detail="Map not found")
         if row[1] != current_user.empresa_id:
             raise HTTPException(status_code=403, detail="Forbidden")
-        c.execute("DELETE FROM custom_maps WHERE id = ?", (map_id,))
         c.execute("DELETE FROM custom_map_regions WHERE map_id = ?", (map_id,))
+        c.execute("DELETE FROM custom_maps WHERE id = ?", (map_id,))
         conn.commit()
         return {"status": "success"}
     finally:
@@ -567,4 +567,6 @@ def export_excel(req: ExportExcelRequest):
     output.seek(0)
     headers = {'Content-Disposition': 'attachment; filename="mapeamento_zonas.xlsx"'}
     return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 
