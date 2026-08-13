@@ -257,7 +257,7 @@ export default function MapsPage() {
 
   const handleAddRow = () => {
     const defaultColor = mapeamentos.length > 0 ? mapeamentos[0].cor : PRESET_COLORS[0];
-    setMapeamentos([{ id: \ow_\_\\, zona: "", cp: "", cor: defaultColor }, ...mapeamentos]);
+    setMapeamentos([{ id: `row_${Date.now()}_${Math.random()}`, zona: "", cp: "", cor: defaultColor }, ...mapeamentos]);
   };
 
   const handleSort = (field: SortField) => {
@@ -520,6 +520,7 @@ export default function MapsPage() {
     </DashboardLayout>
   );
 }
+
 
 
 
