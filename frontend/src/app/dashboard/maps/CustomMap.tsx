@@ -34,7 +34,7 @@ function CP4Layer({ mapeamentos }: { mapeamentos: Mapeamento[] }) {
     let firstFit = true;
 
     mapeamentos.forEach(async (item) => {
-      const cp = item.cp?.strip ? item.cp.strip() : String(item.cp).trim();
+      const cp = typeof item.cp === 'string' ? item.cp.trim() : String(item.cp || '').trim();
       if (!cp || cp.length < 4) return;
 
       try {
