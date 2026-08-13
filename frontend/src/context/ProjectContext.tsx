@@ -74,7 +74,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   const createProject = async (nome: string, descricao: string = "") => {
     try {
-      const newProj = await apiRequest("/api/projects"), {
+      const newProj = await apiRequest("/api/projects", {
         method: "POST",
         body: JSON.stringify({ nome, descricao }),
       });
@@ -110,5 +110,6 @@ export function useProjects() {
   }
   return context;
 }
+
 
 
