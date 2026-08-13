@@ -4,8 +4,8 @@ from typing import List, Optional
 import sqlite3
 import math
 import os
-DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", DB_MULTI_PATH)
-DB_GEO_PATH = os.getenv("DB_GEO_PATH", DB_GEO_PATH)
+DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", "geocoding_multi.db")
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", "geocoding.db")
 
 
 import json
@@ -567,3 +567,4 @@ def export_excel(req: ExportExcelRequest):
     output.seek(0)
     headers = {'Content-Disposition': 'attachment; filename="mapeamento_zonas.xlsx"'}
     return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+

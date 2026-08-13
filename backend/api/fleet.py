@@ -15,8 +15,8 @@ from typing import List, Dict, Any, Optional
 
 
 import os
-DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", DB_MULTI_PATH)
-DB_GEO_PATH = os.getenv("DB_GEO_PATH", DB_GEO_PATH)
+DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", "geocoding_multi.db")
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", "geocoding.db")
 
 
 
@@ -1469,4 +1469,5 @@ async def import_fleet_warehouses(
     except Exception as e:
 
         raise HTTPException(status_code=500, detail=f"Erro ao importar Excel de frota: {str(e)}")
+
 
