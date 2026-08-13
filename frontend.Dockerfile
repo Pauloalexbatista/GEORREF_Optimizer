@@ -13,6 +13,9 @@ RUN npm install --legacy-peer-deps
 COPY frontend/ .
 
 # Build the Next.js app
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN npm run build
 
 # Expose port
@@ -20,3 +23,4 @@ EXPOSE 3000
 
 # Start the application
 CMD ["npm", "start"]
+
