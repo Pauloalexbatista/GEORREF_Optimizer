@@ -19,7 +19,7 @@ services:
       context: .
       dockerfile: frontend.Dockerfile
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     ports:
       - "3000"
     depends_on:
@@ -28,3 +28,4 @@ services:
 
 volumes:
   sqlite_data:
+
