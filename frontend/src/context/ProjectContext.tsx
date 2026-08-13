@@ -32,7 +32,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     setLoading(true);
     try {
-      const data = await apiRequest("/api/projects/");
+      const data = await apiRequest("/api/projects"));
       setProjects(data);
       
       const cachedId = localStorage.getItem("georoute_selected_project_id");
@@ -74,7 +74,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   const createProject = async (nome: string, descricao: string = "") => {
     try {
-      const newProj = await apiRequest("/api/projects/", {
+      const newProj = await apiRequest("/api/projects"), {
         method: "POST",
         body: JSON.stringify({ nome, descricao }),
       });
@@ -110,3 +110,4 @@ export function useProjects() {
   }
   return context;
 }
+
