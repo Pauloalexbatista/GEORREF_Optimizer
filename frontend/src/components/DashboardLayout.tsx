@@ -34,7 +34,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       setNewProjDesc("");
       setShowCreateProj(false);
     } catch (e) {
-      alert("Erro ao criar projeto.");
+      alert("Erro ao criar projeto: " + (e.message || JSON.stringify(e)));
     }
   };
 
@@ -275,3 +275,4 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 }
+
