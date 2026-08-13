@@ -8,6 +8,8 @@ services:
     environment:
       - DB_MULTI_PATH=/app/data/geocoding_multi.db
       - DB_GEO_PATH=geocoding.db
+    ports:
+      - "8000"
     volumes:
       - sqlite_data:/app/data
     restart: unless-stopped
@@ -18,6 +20,8 @@ services:
       dockerfile: frontend.Dockerfile
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
+    ports:
+      - "3000"
     depends_on:
       - backend
     restart: unless-stopped
