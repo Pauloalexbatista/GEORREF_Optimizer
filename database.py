@@ -5,10 +5,14 @@ Suporta multi-tenant (múltiplas empresas)
 import sqlite3
 import hashlib
 import os
+DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", DB_MULTI_PATH)
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", DB_GEO_PATH)
+
+
 from datetime import datetime
 from contextlib import contextmanager
 
-DB_FILE = 'geocoding_multi.db'
+DB_FILE = DB_MULTI_PATH
 
 
 def get_db_connection():

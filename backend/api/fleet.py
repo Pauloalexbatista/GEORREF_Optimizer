@@ -15,6 +15,10 @@ from typing import List, Dict, Any, Optional
 
 
 import os
+DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", DB_MULTI_PATH)
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", DB_GEO_PATH)
+
+
 
 
 
@@ -214,7 +218,7 @@ def geocode_warehouses(warehouses: List[WarehouseItem], current_user: UserRespon
 
 
 
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "geocoding_multi.db")
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), DB_MULTI_PATH)
 
 
 
@@ -1091,7 +1095,7 @@ async def import_fleet_warehouses(
 
             
 
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "geocoding.db")
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), DB_GEO_PATH)
 
         geocoder = WaterfallGeocoder(db_path, google_api_key=google_api_key)
 

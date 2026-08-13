@@ -4,6 +4,10 @@ from typing import List, Optional
 import sqlite3
 import math
 import os
+DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", DB_MULTI_PATH)
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", DB_GEO_PATH)
+
+
 import json
 import urllib.request
 import urllib.parse
@@ -15,8 +19,8 @@ from backend.api.auth import get_current_user, UserResponse
 
 router = APIRouter()
 
-DB_GEO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'geocoding.db')
-DB_MULTI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'geocoding_multi.db')
+DB_GEO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', DB_GEO_PATH)
+DB_MULTI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', DB_MULTI_PATH)
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'cache_geoapi')
 
 os.makedirs(CACHE_DIR, exist_ok=True)
