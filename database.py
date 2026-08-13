@@ -5,8 +5,8 @@ Suporta multi-tenant (múltiplas empresas)
 import sqlite3
 import hashlib
 import os
-DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", DB_MULTI_PATH)
-DB_GEO_PATH = os.getenv("DB_GEO_PATH", DB_GEO_PATH)
+DB_MULTI_PATH = os.getenv("DB_MULTI_PATH", "geocoding_multi.db")
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", "geocoding.db")
 
 
 from datetime import datetime
@@ -671,3 +671,4 @@ if __name__ == "__main__":
         create_demo_account()
     else:
         print("[DEMO] Conta demo já existe")
+
