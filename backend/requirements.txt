@@ -8,3 +8,5 @@ pandas>=2.0.0
 numpy>=1.24.0
 ortools>=9.6.0
 python-dotenv>=1.0.0
+
+email-validator>=2.0.0
