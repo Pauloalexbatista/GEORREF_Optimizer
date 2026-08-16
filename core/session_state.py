@@ -4,7 +4,10 @@ Defines the canonical structure of st.session_state to eliminate magic strings
 and provide type safety across phases.
 """
 
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 
 from dataclasses import dataclass, field
 from typing import Optional, Dict
