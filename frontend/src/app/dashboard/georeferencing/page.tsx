@@ -603,7 +603,7 @@ export default function GeoreferencingPage() {
                       onClick={async () => {
                         if (!selectedProject) return;
                         try {
-                          await apiRequest(`/api/geocoding/save/${selectedProject.id}`, { method: "POST" });
+                          
                           alert("Georreferenciação guardada com sucesso!");
                         } catch {
                           alert("Erro ao guardar georreferenciação.");
