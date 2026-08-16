@@ -1003,7 +1003,7 @@ const handleMoveClientRoute = async (clientName: string, newRoute: string) => {
 
       }
 
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${endpoint}`, {
 
         headers
 

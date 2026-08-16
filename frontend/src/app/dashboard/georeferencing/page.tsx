@@ -81,7 +81,7 @@ export default function GeoreferencingPage() {
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
       }
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${endpoint}`, {
         headers
       });
       if (!response.ok) {
@@ -205,7 +205,7 @@ export default function GeoreferencingPage() {
           if (token) {
             headers.set("Authorization", `Bearer ${token}`);
           }
-          const response = await fetch(`http://localhost:8000/api/fleet/import/${selectedProject.id}`, {
+          const response = await fetch(`/api/fleet/import/${selectedProject.id}`, {
             method: "POST",
             headers,
             body: formData

@@ -333,7 +333,7 @@ export default function FleetPage() {
 
       
 
-      const response = await fetch(`http://localhost:8000/api/fleet/import/${selectedProject.id}`, {
+      const response = await fetch(`/api/fleet/import/${selectedProject.id}`, {
 
         method: "POST",
 
