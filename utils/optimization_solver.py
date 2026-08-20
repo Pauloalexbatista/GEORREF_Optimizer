@@ -9,18 +9,6 @@ def _safe_int_scale(arr, factor=100):
         return []
     return [int(round(float(x) * factor)) for x in arr]
 
-def _calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate forward azimuth / bearing in degrees between two coordinates."""
-    lat1_rad = math.radians(lat1)
-    lat2_rad = math.radians(lat2)
-    diff_lon_rad = math.radians(lon2 - lon1)
-    
-    x = math.sin(diff_lon_rad) * math.cos(lat2_rad)
-    y = math.cos(lat1_rad) * math.sin(lat2_rad) - (math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(diff_lon_rad))
-    initial_bearing = math.atan2(x, y)
-    initial_bearing = math.degrees(initial_bearing)
-    return (initial_bearing + 360.0) % 360.0
-
 class AdvancedRouteOptimizer:
     def __init__(self):
         self.manager = None
@@ -44,29 +32,27 @@ class AdvancedRouteOptimizer:
         locations: Optional[List[Tuple[float, float]]] = None
     ) -> Dict[str, Any]:
         """
-        Main optimization entry point with 2x2 Decision Matrix support:
-        - Strategy: 'distance' (Global Minimum KM) vs 'far_first' (Outermost-Seed Sector Clustering)
-        - Load Distribution: 'full' (Max fill to save vehicles) vs 'balanced' (Equilíbrio de carga)
+        Pure Distance-Matrix VRP & Far-First Clustering Optimizer:
+        Uses full (N x N) distance matrix D[i][j] (Depot + Clients).
         """
         params = optimization_params or {}
         strategy = str(params.get("strategy", "distance") or "distance").lower()
         load_mode = str(params.get("load_mode", "full") or "full").lower()
         balance_weight = float(params.get("balance_weight", 0.0) or 0.0)
         
-        # If load_mode is 'balanced', ensure balance_weight is active
         if load_mode in ["balanced", "equilibrado"] and balance_weight <= 0:
             balance_weight = 50.0
 
         if strategy in ["far_first", "zona", "zonas", "radial"]:
-            return self._solve_far_first_clustering(
+            return self._solve_far_first_matrix_clustering(
                 distance_matrix, demands, vehicle_capacities, depot_indices,
                 num_warehouses, volume_demands, vehicle_volume_capacities,
                 client_warehouses, vehicle_warehouses,
                 vehicle_start_times, vehicle_end_times, client_time_windows,
-                locations, balance_weight=balance_weight, load_mode=load_mode
+                balance_weight=balance_weight, load_mode=load_mode
             )
         else:
-            return self._solve_ortools_vrp(
+            return self._solve_ortools_vrp_savings(
                 distance_matrix, demands, vehicle_capacities, depot_indices,
                 optimization_params=params,
                 volume_demands=volume_demands,
@@ -80,7 +66,7 @@ class AdvancedRouteOptimizer:
                 balance_weight=balance_weight
             )
 
-    def _solve_ortools_vrp(
+    def _solve_ortools_vrp_savings(
         self,
         distance_matrix: List[List[float]],
         demands: List[float],
@@ -123,7 +109,7 @@ class AdvancedRouteOptimizer:
             self.manager = pywrapcp.RoutingIndexManager(num_locations, num_vehicles, starts, ends)
             self.routing = pywrapcp.RoutingModel(self.manager)
             
-            # 1. Distance callback & cost
+            # 1. Distance callback & cost on Matrix D[i][j]
             def distance_callback(from_index, to_index):
                 try:
                     from_node = self.manager.IndexToNode(from_index)
@@ -137,7 +123,7 @@ class AdvancedRouteOptimizer:
             transit_callback_index = self.routing.RegisterTransitCallback(distance_callback)
             self.routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
             
-            # 2. Weight Capacity
+            # 2. Weight Capacity Dimension
             clean_demands = _safe_int_scale(demands)
             clean_capacities = _safe_int_scale(vehicle_capacities)
             clean_capacities = [max(100, c) for c in clean_capacities]
@@ -164,7 +150,7 @@ class AdvancedRouteOptimizer:
                 cap_dimension = self.routing.GetDimensionOrDie('Capacity')
                 cap_dimension.SetGlobalSpanCostCoefficient(int(balance_weight * 50))
             
-            # 3. Volume Capacity
+            # 3. Volume Dimension
             if volume_demands is not None and vehicle_volume_capacities is not None:
                 clean_v_demands = _safe_int_scale(volume_demands)
                 clean_v_capacities = _safe_int_scale(vehicle_volume_capacities)
@@ -260,9 +246,9 @@ class AdvancedRouteOptimizer:
                                 if node_idx_in_model != -1:
                                     self.routing.VehicleVar(node_idx_in_model).SetValues(allowed_vehicles)
 
-            # 7. Search Parameters
+            # 7. Search Parameters: CLARKE-WRIGHT SAVINGS STRATEGY
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-            search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
+            search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.SAVINGS
             search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
             search_parameters.time_limit.seconds = max(3, min(time_limit, 30))
             
@@ -274,15 +260,17 @@ class AdvancedRouteOptimizer:
                     distance_matrix, demands, volume_demands
                 )
         except Exception as e:
-            print(f"[OR-Tools VRP Error: {e}] Falling back to heuristic solver.")
+            print(f"[OR-Tools Savings Error: {e}] Falling back to matrix clustering.")
             
-        return self._fallback_heuristic_solver(
+        return self._solve_far_first_matrix_clustering(
             distance_matrix, demands, vehicle_capacities, depot_indices,
             num_warehouses, volume_demands, vehicle_volume_capacities,
-            v_starts, v_ends, client_time_windows
+            client_warehouses, vehicle_warehouses,
+            v_starts, v_ends, client_time_windows,
+            balance_weight=balance_weight, load_mode="full"
         )
 
-    def _solve_far_first_clustering(
+    def _solve_far_first_matrix_clustering(
         self,
         distance_matrix: List[List[float]],
         demands: List[float],
@@ -296,10 +284,16 @@ class AdvancedRouteOptimizer:
         vehicle_start_times: Optional[List[int]],
         vehicle_end_times: Optional[List[int]],
         client_time_windows: Optional[List[Tuple[int, int]]],
-        locations: Optional[List[Tuple[float, float]]],
         balance_weight: float = 0.0,
         load_mode: str = "full"
     ) -> Dict[str, Any]:
+        """
+        PURE DISTANCE-MATRIX FAR-FIRST & SAVINGS CLUSTERING:
+        1. Uses D[depot][c] to identify the outermost unassigned client.
+        2. Recruits unassigned clients k that minimize D[c, k] (closest pair in distance matrix).
+        3. Enforces that neighboring nodes in distance matrix are packed into the same vehicle.
+        4. Sequences each vehicle using 2-Opt and window feasibility.
+        """
         num_vehicles = len(vehicle_capacities)
         num_locations = len(distance_matrix)
         
@@ -314,7 +308,8 @@ class AdvancedRouteOptimizer:
         
         unassigned_clients = list(range(num_warehouses, num_locations))
         
-        depot_info = {}
+        # Precompute distance to depot from matrix D
+        depot_dists = {}
         for c in unassigned_clients:
             c_idx = c - num_warehouses
             target_wh = client_warehouses[c_idx] if client_warehouses and c_idx < len(client_warehouses) else None
@@ -325,16 +320,8 @@ class AdvancedRouteOptimizer:
                         depot_node = depot_indices[vi]
                         break
             
-            dist_to_depot = float(distance_matrix[depot_node][c])
-            bearing = 0.0
-            if locations and len(locations) > c and len(locations) > depot_node:
-                d_lat, d_lon = locations[depot_node]
-                c_lat, c_lon = locations[c]
-                bearing = _calculate_bearing(d_lat, d_lon, c_lat, c_lon)
-                
-            depot_info[c] = {
-                "dist": dist_to_depot,
-                "bearing": bearing,
+            depot_dists[c] = {
+                "dist": float(distance_matrix[depot_node][c]),
                 "depot": depot_node,
                 "target_wh": target_wh
             }
@@ -358,12 +345,13 @@ class AdvancedRouteOptimizer:
             
             eligible = [
                 c for c in unassigned_clients
-                if not depot_info[c]["target_wh"] or not v_wh or str(depot_info[c]["target_wh"]).strip().lower() == str(v_wh).strip().lower()
+                if not depot_dists[c]["target_wh"] or not v_wh or str(depot_dists[c]["target_wh"]).strip().lower() == str(v_wh).strip().lower()
             ]
             if not eligible:
                 continue
                 
-            eligible.sort(key=lambda c: depot_info[c]["dist"], reverse=True)
+            # 1. Outermost client from matrix D[depot][c]
+            eligible.sort(key=lambda c: depot_dists[c]["dist"], reverse=True)
             seed = eligible[0]
             
             assigned_to_v = [seed]
@@ -371,18 +359,17 @@ class AdvancedRouteOptimizer:
             cur_kg = float(demands[seed]) if seed < len(demands) else 0.0
             cur_vol = float(volume_demands[seed]) if volume_demands and seed < len(volume_demands) else 0.0
             
-            seed_bearing = depot_info[seed]["bearing"]
-            
+            # 2. Recruit closest unassigned clients based on min distance to any node in current vehicle
             while unassigned_clients:
                 rem_eligible = [
                     c for c in unassigned_clients
-                    if not depot_info[c]["target_wh"] or not v_wh or str(depot_info[c]["target_wh"]).strip().lower() == str(v_wh).strip().lower()
+                    if not depot_dists[c]["target_wh"] or not v_wh or str(depot_dists[c]["target_wh"]).strip().lower() == str(v_wh).strip().lower()
                 ]
                 if not rem_eligible:
                     break
                     
                 best_candidate = None
-                best_score = float('inf')
+                min_edge_dist = float('inf')
                 
                 for c in rem_eligible:
                     c_kg = float(demands[c]) if c < len(demands) else 0.0
@@ -391,16 +378,11 @@ class AdvancedRouteOptimizer:
                     if (cur_kg + c_kg) > effective_cap_kg or (cur_vol + c_vol) > max_vol:
                         continue
                         
-                    min_cluster_dist = min(float(distance_matrix[node][c]) for node in assigned_to_v)
+                    # Min distance in matrix D to any client already in this vehicle
+                    dist_to_cluster = min(float(distance_matrix[node][c]) for node in assigned_to_v)
                     
-                    angle_diff = abs(depot_info[c]["bearing"] - seed_bearing)
-                    if angle_diff > 180:
-                        angle_diff = 360 - angle_diff
-                        
-                    score = min_cluster_dist + (angle_diff * 0.15)
-                    
-                    if score < best_score:
-                        best_score = score
+                    if dist_to_cluster < min_edge_dist:
+                        min_edge_dist = dist_to_cluster
                         best_candidate = c
                         
                 if best_candidate is not None:
@@ -413,6 +395,7 @@ class AdvancedRouteOptimizer:
                     
             vehicle_routes[v] = assigned_to_v
 
+        # 3. Sequencing with 2-Opt & Time Windows
         final_routes = []
         route_distances = []
         route_loads = []
@@ -440,9 +423,10 @@ class AdvancedRouteOptimizer:
                 
             ordered = sorted(cluster, key=lambda n: (get_window_start(n) // 120, distance_matrix[depot][n]))
             
+            # 2-Opt local refinement
             improved = True
             iterations = 0
-            while improved and iterations < 25:
+            while improved and iterations < 30:
                 improved = False
                 iterations += 1
                 for i in range(len(ordered) - 1):
@@ -557,101 +541,6 @@ class AdvancedRouteOptimizer:
             "route_distances": route_distances,
             "route_loads": route_loads,
             "route_volumes": route_volumes,
-            "route_times": route_times,
-            "status": "SUCCESS"
-        }
-
-    def _fallback_heuristic_solver(
-        self, distance_matrix, demands, vehicle_capacities, depot_indices,
-        num_warehouses, volume_demands=None, vehicle_volume_capacities=None,
-        v_starts=None, v_ends=None, client_time_windows=None
-    ) -> Dict[str, Any]:
-        num_vehicles = len(vehicle_capacities)
-        num_locations = len(distance_matrix)
-        
-        routes = [[depot_indices[v], depot_indices[v]] for v in range(num_vehicles)]
-        route_loads = [0.0] * num_vehicles
-        route_vols = [0.0] * num_vehicles
-        route_dists = [0.0] * num_vehicles
-        route_times = [0.0] * num_vehicles
-        
-        unassigned = list(range(num_warehouses, num_locations))
-        
-        for v in range(num_vehicles):
-            depot = depot_indices[v]
-            cap_kg = float(vehicle_capacities[v])
-            cap_vol = float(vehicle_volume_capacities[v]) if vehicle_volume_capacities else 999999.0
-            
-            s_min = v_starts[v] if v_starts else 590
-            e_min = v_ends[v] if v_ends else 1080
-            if e_min <= s_min or cap_kg <= 0:
-                continue
-                
-            curr_node = depot
-            curr_time = s_min
-            v_stops = []
-            
-            while unassigned:
-                best_candidate = None
-                best_score = float('inf')
-                
-                for c in unassigned:
-                    c_kg = float(demands[c]) if c < len(demands) else 0.0
-                    c_vol = float(volume_demands[c]) if volume_demands and c < len(volume_demands) else 0.0
-                    
-                    if (route_loads[v] + c_kg) > cap_kg or (route_vols[v] + c_vol) > cap_vol:
-                        continue
-                        
-                    dist = float(distance_matrix[curr_node][c])
-                    t_arr = curr_time + (dist / 45.0) * 60.0
-                    
-                    win_s, win_e = 0, 1440
-                    c_idx = c - num_warehouses
-                    if client_time_windows and 0 <= c_idx < len(client_time_windows):
-                        win_s, win_e = client_time_windows[c_idx]
-                        
-                    wait_m = max(0.0, win_s - t_arr) if win_s > 0 else 0.0
-                    serv_start = t_arr + wait_m
-                    late_m = max(0.0, serv_start - win_e) if win_e < 1440 else 0.0
-                    
-                    ret_dist = float(distance_matrix[c][depot])
-                    t_finish = serv_start + 15.0 + (ret_dist / 45.0) * 60.0
-                    if t_finish > e_min + 60.0:
-                        continue
-                        
-                    score = dist + (wait_m * 0.4) + (late_m * 3.0)
-                    if score < best_score:
-                        best_score = score
-                        best_candidate = c
-                        
-                if best_candidate is not None:
-                    unassigned.remove(best_candidate)
-                    v_stops.append(best_candidate)
-                    dist = float(distance_matrix[curr_node][best_candidate])
-                    route_dists[v] += dist
-                    route_loads[v] += float(demands[best_candidate]) if best_candidate < len(demands) else 0.0
-                    route_vols[v] += float(volume_demands[best_candidate]) if volume_demands and best_candidate < len(volume_demands) else 0.0
-                    
-                    t_arr = curr_time + (dist / 45.0) * 60.0
-                    win_s = client_time_windows[best_candidate - num_warehouses][0] if client_time_windows else 0
-                    curr_time = max(t_arr, win_s) + 15.0
-                    curr_node = best_candidate
-                else:
-                    break
-                    
-            if v_stops:
-                ret_dist = float(distance_matrix[curr_node][depot])
-                route_dists[v] += ret_dist
-                routes[v] = [depot] + v_stops + [depot]
-                route_times[v] = round(curr_time + (ret_dist / 45.0) * 60.0 - s_min, 1)
-
-        return {
-            "routes": routes,
-            "dropped_nodes": unassigned,
-            "total_distance": round(sum(route_dists), 2),
-            "route_distances": [round(d, 2) for d in route_dists],
-            "route_loads": [round(l, 2) for l in route_loads],
-            "route_volumes": [round(v, 2) for v in route_vols],
             "route_times": route_times,
             "status": "SUCCESS"
         }
