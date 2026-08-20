@@ -10,6 +10,9 @@ interface MapClient {
   Armazem?: string;
   Cliente: string;
   Morada: string;
+  CP?: string;
+  Localidade?: string;
+  Janela_Horaria?: string;
   Latitude: number;
   Longitude: number;
   Rota: string;
@@ -30,6 +33,12 @@ interface MapComponentProps {
   vehicles: string[];
   onMoveClientRoute: (clientName: string, newRoute: string) => void;
   onUpdateClientCoords: (clientName: string, lat: number, lon: number) => void;
+}
+
+function isPendingRoute(routeName: string) {
+  if (!routeName) return true;
+  const s = routeName.toUpperCase();
+  return s.includes("PENDENTE") || s.includes("DISTRIBUIR");
 }
 
 // Helper to center the map when data changes
@@ -55,10 +64,14 @@ const routeColors = [
   "#06b6d4", // Cyan
   "#f97316", // Orange
   "#14b8a6", // Teal
+  "#a855f7", // Purple
+  "#84cc16", // Lime
+  "#0ea5e9", // Sky
+  "#e11d48", // Rose
 ];
 
 function getRouteColor(routeName: string, vehicleList: string[]) {
-  if (routeName.includes("PENDENTE")) return "#6b7280"; // Gray
+  if (isPendingRoute(routeName)) return "#f59e0b"; // Amber for pending
   const idx = vehicleList.indexOf(routeName);
   if (idx === -1) return routeColors[0];
   return routeColors[idx % routeColors.length];
@@ -100,7 +113,7 @@ const getWarehouseIcon = (zoom: number) => {
 
 // Custom 2. DYNAMIC NUMBERED CIRCULAR BADGE FOR CLIENTS
 const createNumberedCircleIcon = (number: number, color: string, isPending: boolean, zoom: number) => {
-  const bg = isPending ? "#6b7280" : color;
+  const bg = isPending ? "#f59e0b" : color;
   const size = Math.max(14, Math.min(40, 30 + (zoom - 13) * 3));
   const fontSize = Math.max(7, Math.min(14, 11 + (zoom - 13) * 0.8));
   
@@ -124,14 +137,14 @@ const createNumberedCircleIcon = (number: number, color: string, isPending: bool
         cursor: pointer;
         transition: all 0.2s ease-in-out;
       ">
-        ${number}
+        ${isPending ? "!" : number}
       </div>
     `,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2]
   });
-};;
+};
 
 const MapTracker = ({ setZoom }: { setZoom: (z: number) => void }) => {
   useMapEvents({
@@ -157,7 +170,6 @@ export default function MapComponent({
     setIsMounted(true);
   }, []);
 
-  // Determine valid center coordinates
   const validWarehouses = warehouses.filter(w => w.lat && w.lon && Math.abs(w.lat - 39.5) > 0.01 && Math.abs(w.lon - (-8.0)) > 0.01);
   const validClients = clients.filter(c => c.Latitude && c.Longitude && Math.abs(c.Latitude - 39.5) > 0.01 && Math.abs(c.Longitude - (-8.0)) > 0.01);
 
@@ -168,23 +180,21 @@ export default function MapComponent({
     center = [validClients[0].Latitude, validClients[0].Longitude];
   }
 
-  // Group clients by route
   const routesMap: { [key: string]: MapClient[] } = {};
   clients.forEach(c => {
     if (c.Latitude !== 0.0 && c.Longitude !== 0.0) {
-      if (!routesMap[c.Rota]) {
-        routesMap[c.Rota] = [];
+      const rKey = isPendingRoute(c.Rota) ? "Por Distribuir" : c.Rota;
+      if (!routesMap[rKey]) {
+        routesMap[rKey] = [];
       }
-      routesMap[c.Rota].push(c);
+      routesMap[rKey].push(c);
     }
   });
 
-  // Sort stops by order inside each route
   Object.keys(routesMap).forEach(r => {
     routesMap[r].sort((a, b) => a.Ordem - b.Ordem);
   });
 
-  // 3. FETCH REAL ROAD GEOMETRY FROM OSRM (OpenStreetMap Routing Machine)
   useEffect(() => {
     if (!isMounted) return;
 
@@ -192,11 +202,10 @@ export default function MapComponent({
       const newGeometries: Record<string, [number, number][]> = {};
 
       for (const rName of Object.keys(routesMap)) {
-        if (rName.includes("PENDENTE")) continue;
+        if (isPendingRoute(rName)) continue;
         const stops = routesMap[rName];
         if (stops.length === 0) continue;
 
-        // Resolve origin warehouse
         const routeWhName = stops[0]?.Armazem;
         const validWhs = warehouses.filter(w => w.lat && w.lon && Math.abs(w.lat - 39.5) > 0.01 && Math.abs(w.lon - (-8.0)) > 0.01);
         let originWh = validWhs.find(w => w.name === routeWhName);
@@ -215,7 +224,6 @@ export default function MapComponent({
 
         if (waypoints.length < 2) continue;
 
-        // OSRM accepts up to ~50 waypoints per request
         const coordString = waypoints.map(w => `${w[0]},${w[1]}`).join(";");
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
 
@@ -224,16 +232,13 @@ export default function MapComponent({
           if (res.ok) {
             const data = await res.json();
             if (data.routes && data.routes[0]?.geometry?.coordinates) {
-              // Convert OSRM [lon, lat] to Leaflet [lat, lon]
               const roadCoords: [number, number][] = data.routes[0].geometry.coordinates.map(
                 (pt: [number, number]) => [pt[1], pt[0]]
               );
               newGeometries[rName] = roadCoords;
             }
           }
-        } catch (e) {
-          // Fallback straight lines handled in render
-        }
+        } catch (e) {}
       }
 
       setRoadGeometries(newGeometries);
@@ -250,6 +255,8 @@ export default function MapComponent({
     );
   }
 
+  const allVehicleOptions = ["Por Distribuir", ...vehicles];
+
   return (
     <div className="w-full h-full rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative z-10">
       <MapContainer key={center.join(",")} center={center} zoom={11} className="w-full h-full">
@@ -260,13 +267,13 @@ export default function MapComponent({
         <MapController coords={center} />
         <MapTracker setZoom={setZoomLevel} />
 
-        {/* 1. Warehouses Markers (House Icons) */}
+        {/* Warehouses */}
         {warehouses.map(wh => (
           <Marker key={wh.name} position={[wh.lat, wh.lon]} icon={getWarehouseIcon(zoomLevel)}>
             <Popup>
               <div className="text-zinc-900 p-1 font-sans">
                 <p className="font-bold text-xs flex items-center space-x-1">
-                  <span>🏠</span> <span>{wh.name}</span>
+                  <span>🏬</span> <span>{wh.name}</span>
                 </p>
                 <p className="text-[10px] text-zinc-600 mt-0.5">Armazém / Centro de Distribuição</p>
                 <p className="text-[9px] text-zinc-500 mt-1 font-mono">{wh.address}</p>
@@ -275,13 +282,12 @@ export default function MapComponent({
           </Marker>
         ))}
 
-        {/* 2. Clients Markers (Numbered Circle Badges 1, 2, 3...) */}
+        {/* Clients */}
         {clients.map(c => {
           if (c.Latitude === 0 || c.Longitude === 0) return null;
           
+          const isPending = isPendingRoute(c.Rota);
           const color = getRouteColor(c.Rota, vehicles);
-          const isPending = c.Rota.includes("PENDENTE");
-          const icon = createNumberedCircleIcon(c.Ordem, color, isPending, zoomLevel);
 
           return (
             <Marker
@@ -298,45 +304,74 @@ export default function MapComponent({
               }}
             >
               <Popup>
-                <div className="text-zinc-900 min-w-[210px] p-1 font-sans">
-                  <div className="flex items-center justify-between border-b pb-1.5 mb-2">
-                    <span className="font-bold text-xs">📦 Cliente {c.Cliente}</span>
+                <div className="text-zinc-900 min-w-[230px] p-1 font-sans">
+                  {/* Header */}
+                  <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5 mb-2">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isPending ? "#f59e0b" : color }} />
+                      <span className="font-bold text-xs text-zinc-900">Cliente {c.Cliente}</span>
+                    </div>
                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                      isPending ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"
+                      isPending ? "bg-amber-100 text-amber-800 border border-amber-300/60 font-semibold" : "bg-indigo-100 text-indigo-800 border border-indigo-300/60"
                     }`}>
-                      {isPending ? "Pendente" : `Paragem #${c.Ordem}`}
+                      {isPending ? "⚠️ Por Distribuir" : `Paragem #${c.Ordem}`}
                     </span>
                   </div>
-                  <p className="text-[10px] text-zinc-600 mb-2"><b>Morada:</b> {c.Morada}</p>
+
+                  {/* Client details */}
+                  <div className="space-y-1 text-[11px] mb-2.5">
+                    <p className="leading-snug">
+                      <span className="font-semibold text-zinc-500 text-[10px] uppercase">Morada:</span>{" "}
+                      <span className="text-zinc-800 font-medium">{c.Morada || "N/A"}</span>
+                    </p>
+                    
+                    <div className="flex items-center justify-between text-[10px] bg-zinc-50 border border-zinc-200 rounded px-2 py-1">
+                      <span>
+                        <b className="text-zinc-500 font-semibold">CP:</b>{" "}
+                        <span className="font-mono font-medium text-zinc-800">{c.CP || "N/A"}</span>
+                      </span>
+                      {c.Localidade && (
+                        <span>
+                          <b className="text-zinc-500 font-semibold">Loc:</b>{" "}
+                          <span className="text-zinc-800 font-medium">{c.Localidade}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-[10px] bg-indigo-50/70 border border-indigo-100 rounded px-2 py-1 flex items-center justify-between">
+                      <span className="text-indigo-900 font-semibold">Janela Horária:</span>
+                      <span className="font-mono font-bold text-indigo-700">
+                        {c.Janela_Horaria || "Qualquer"}
+                      </span>
+                    </div>
+                  </div>
                   
-                  {/* Route assignment selector */}
-                  <div>
-                    <label className="block text-[9px] font-bold uppercase text-zinc-400 mb-1">Reatribuir Rota</label>
+                  {/* Reassign dropdown */}
+                  <div className="pt-1.5 border-t border-zinc-100">
+                    <label className="block text-[9px] font-bold uppercase text-zinc-500 mb-1">
+                      Reatribuir Rota
+                    </label>
                     <select
-                      value={c.Rota.includes("PENDENTE") ? "🚨 PENDENTE" : c.Rota}
-                      onChange={e => {
-                        const val = e.target.value;
-                        onMoveClientRoute(c.Cliente, val === "🚨 PENDENTE" ? "🚨 PENDENTE" : val);
-                      }}
-                      className="w-full bg-white border border-zinc-300 rounded px-2 py-1 text-[10px] text-zinc-800 outline-none focus:border-indigo-500"
+                      value={isPending ? "Por Distribuir" : c.Rota}
+                      onChange={e => onMoveClientRoute(c.Cliente, e.target.value)}
+                      className="w-full bg-white border border-zinc-300 rounded px-2 py-1 text-xs text-zinc-800 font-medium outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
                     >
-                      <option value="🚨 PENDENTE">🚨 PENDENTE</option>
-                      {vehicles.map(v => (
-                        <option key={v} value={v}>{v}</option>
+                      {allVehicleOptions.map(v => (
+                        <option key={v} value={v}>
+                          {isPendingRoute(v) ? "⚠️ Por Distribuir" : v}
+                        </option>
                       ))}
                     </select>
                   </div>
-                  
-                  <p className="text-[8px] text-zinc-400 mt-2 font-mono">Arraste esta bola numerada no mapa para ajustar a localização.</p>
                 </div>
               </Popup>
             </Marker>
           );
         })}
 
-        {/* 3. Real Road Tracks (OSRM Geometry or Straight Line Fallback) */}
+        {/* Real Road Tracks */}
         {Object.keys(routesMap).map(r => {
-          if (r.includes("PENDENTE")) return null;
+          if (isPendingRoute(r)) return null;
           
           const clientsInRoute = routesMap[r];
           if (clientsInRoute.length === 0) return null;
@@ -344,7 +379,6 @@ export default function MapComponent({
           const color = getRouteColor(r, vehicles);
           const roadPoints = roadGeometries[r];
 
-          // If OSRM road geometry is available, draw real road lines!
           if (roadPoints && roadPoints.length > 0) {
             return (
               <Polyline
@@ -360,31 +394,21 @@ export default function MapComponent({
             );
           }
 
-          // Fallback to straight lines if OSRM is loading or offline
           const routeWhName = clientsInRoute[0]?.Armazem;
-          const validWhs = warehouses.filter(w => w.lat && w.lon && Math.abs(w.lat - 39.5) > 0.01 && Math.abs(w.lon - (-8.0)) > 0.01);
-          let originWh = validWhs.find(w => w.name === routeWhName);
-          if (!originWh && validWhs.length > 0) {
-            originWh = validWhs[0];
-          }
-
-          const fallbackPoints: [number, number][] = [];
-          if (originWh) {
-            fallbackPoints.push([originWh.lat, originWh.lon]);
-          }
-          clientsInRoute.forEach(c => fallbackPoints.push([c.Latitude, c.Longitude]));
-          if (originWh) {
-            fallbackPoints.push([originWh.lat, originWh.lon]);
-          }
+          const originWh = warehouses.find(w => w.name === routeWhName) || warehouses[0];
+          const straightPoints: [number, number][] = [];
+          if (originWh) straightPoints.push([originWh.lat, originWh.lon]);
+          clientsInRoute.forEach(c => straightPoints.push([c.Latitude, c.Longitude]));
+          if (originWh) straightPoints.push([originWh.lat, originWh.lon]);
 
           return (
             <Polyline
-              key={`fallback-${r}`}
-              positions={fallbackPoints}
+              key={`line-${r}`}
+              positions={straightPoints}
               pathOptions={{
                 color: color,
                 weight: 4,
-                opacity: 0.8,
+                opacity: 0.6,
                 dashArray: "6, 6"
               }}
             />

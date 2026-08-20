@@ -1126,6 +1126,8 @@ async def import_fleet_warehouses(
                         lat_val = float(w_lat)
                         lon_val = float(w_lon)
                         if lat_val != 0 and -90 <= lat_val <= 90:
+                            if (lat_val < 0 and lon_val > 0) or (-10.0 <= lat_val <= -6.0 and 36.0 <= lon_val <= 43.0):
+                                lat_val, lon_val = lon_val, lat_val
                             has_coords = True
                 except Exception:
                     has_coords = False

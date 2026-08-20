@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
@@ -81,9 +81,7 @@ export default function GeoreferencingPage() {
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
       }
-      const response = await fetch(`${endpoint}`, {
-        headers
-      });
+      const response = await fetch(`${endpoint}`, { headers });
       if (!response.ok) {
         throw new Error("Erro ao descarregar ficheiro.");
       }
@@ -101,13 +99,13 @@ export default function GeoreferencingPage() {
     }
   };
 
-  const filteredAndSortedDeliveries = React.useMemo(() => {
+  const filteredAndSortedDeliveries = useMemo(() => {
     let result = [...deliveries];
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(d => 
-        d.codigo_cliente.toLowerCase().includes(term) ||
-        d.morada.toLowerCase().includes(term) ||
+        (d.codigo_cliente || "").toLowerCase().includes(term) ||
+        (d.morada || "").toLowerCase().includes(term) ||
         (d.concelho && d.concelho.toLowerCase().includes(term))
       );
     }
@@ -157,6 +155,8 @@ export default function GeoreferencingPage() {
         setSuggestions(data);
       } catch (err) {
         console.error("Failed to fetch suggestions:", err);
+      } finally {
+        setSuggestionsLoading(false);
       }
     }, 450);
 
@@ -196,54 +196,6 @@ export default function GeoreferencingPage() {
     formData.append("file", file);
 
     try {
-      // 1. Tentar importação unificada se for ficheiro Excel
-      const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
-      if (isExcel && selectedProject) {
-        try {
-          const token = localStorage.getItem("georoute_token");
-          const headers = new Headers();
-          if (token) {
-            headers.set("Authorization", `Bearer ${token}`);
-          }
-          const response = await fetch(`/api/fleet/import/${selectedProject.id}`, {
-            method: "POST",
-            headers,
-            body: formData
-          });
-          
-          if (response.ok) {
-            alert("Importação unificada realizada com sucesso! Armazéns, viaturas e entregas foram atualizados e georreferenciados.");
-            // Recarregar entregas e mostrar resultados diretamente
-            const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
-            setDeliveries(data);
-            setStep("results");
-            setLoading(false);
-            return;
-          }
-          
-          const errorData = await response.json();
-          // Se o erro for devido a falta de folhas, fazemos fallback. Caso contrário, reportamos.
-          if (errorData.detail && (
-            errorData.detail.includes("Deve conter a folha") ||
-            errorData.detail.includes("folha") ||
-            errorData.detail.includes("sheet") ||
-            errorData.detail.includes("Sheet")
-          )) {
-            console.log("Ficheiro não contém folhas de importação unificada. Fazendo fallback para entregas simples...");
-          } else {
-            throw new Error(errorData.detail || "Erro ao processar importação unificada.");
-          }
-        } catch (unifiedErr: any) {
-          console.warn("Importação unificada falhou, tentando upload simples...", unifiedErr);
-          if (unifiedErr.message && !unifiedErr.message.includes("folha") && !unifiedErr.message.includes("sheet")) {
-            alert(unifiedErr.message);
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      // 2. Fallback para upload padrão de georreferenciação simples
       const res = await apiRequest("/api/geocoding/upload", {
         method: "POST",
         body: formData,
@@ -256,20 +208,20 @@ export default function GeoreferencingPage() {
       const cols = res.columns as string[];
       setColCode(cols.find(c => c.toLowerCase().includes("cod") || c.toLowerCase().includes("client")) || cols[0] || "");
       setColName(cols.find(c => c.toLowerCase().includes("nome") || c.toLowerCase().includes("design")) || cols[0] || "");
-      setColAddr(cols.find(c => c.toLowerCase().includes("morada") || c.toLowerCase().includes("rua") || c.toLowerCase().includes("address")) || cols[0] || "");
-      setColCp(cols.find(c => c.toLowerCase().includes("postal") || c.toLowerCase().includes("cp")) || cols[0] || "");
+      setColAddr(cols.find(c => c.toLowerCase().includes("morada") || c.toLowerCase().includes("rua") || c.toLowerCase().includes("address") || c.toLowerCase().includes("ender")) || cols[0] || "");
+      setColCp(cols.find(c => c.toLowerCase().includes("postal") || c.toLowerCase().includes("cp") || c.toLowerCase().includes("código postal")) || cols[0] || "");
       setColCity(cols.find(c => c.toLowerCase().includes("concelho") || c.toLowerCase().includes("cidade") || c.toLowerCase().includes("local")) || cols[0] || "");
-      setColWeight(cols.find(c => c.toLowerCase().includes("peso") || c.toLowerCase().includes("kg")) || cols[0] || "");
-      setColVolume(cols.find(c => c.toLowerCase().includes("vol") || c.toLowerCase().includes("m3")) || cols[0] || "");
+      setColWeight(cols.find(c => c.toLowerCase().includes("peso") || c.toLowerCase().includes("kg") || c.toLowerCase().includes("weight")) || cols[0] || "");
+      setColVolume(cols.find(c => c.toLowerCase().includes("vol") || c.toLowerCase().includes("m3") || c.toLowerCase().includes("m³")) || cols[0] || "");
       setColPriority(cols.find(c => c.toLowerCase().includes("prior")) || "");
-      setColStartWindow(cols.find(c => c.toLowerCase().includes("inicio") || c.toLowerCase().includes("start")) || "");
+      setColStartWindow(cols.find(c => c.toLowerCase().includes("inicio") || c.toLowerCase().includes("start") || c.toLowerCase().includes("início")) || "");
       setColEndWindow(cols.find(c => c.toLowerCase().includes("fim") || c.toLowerCase().includes("end")) || "");
       setColLat(cols.find(c => c.toLowerCase().includes("lat")) || "");
-      setColLon(cols.find(c => c.toLowerCase().includes("lon")) || "");
+      setColLon(cols.find(c => c.toLowerCase().includes("lon") || c.toLowerCase().includes("lng")) || "");
 
       setStep("mapping");
     } catch (err: any) {
-      alert(err.message || "Erro no upload.");
+      alert(err.message || "Erro no upload do ficheiro.");
     } finally {
       setLoading(false);
     }
@@ -308,7 +260,7 @@ export default function GeoreferencingPage() {
       setDeliveries(data);
       setStep("results");
     } catch (err: any) {
-      alert(err.message || "Erro no processamento.");
+      alert(err.message || "Erro no processamento da georreferenciação.");
       setStep("mapping");
     } finally {
       setLoading(false);
@@ -345,189 +297,206 @@ export default function GeoreferencingPage() {
       const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
       setDeliveries(data);
 
-      // Find index of corrected delivery in currently visible list
       const currentIndex = filteredAndSortedDeliveries.findIndex(d => d.id === editingDelivery.id);
-      
-      // Find the next failed delivery in sequence
-      let nextFailed = filteredAndSortedDeliveries.slice(currentIndex + 1).find(d => 
-        d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99
+      const remainingFailed = filteredAndSortedDeliveries.filter(
+        (d, idx) => idx > currentIndex && (d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99)
       );
-      
-      // Wrap around to start if not found in remainder of list
-      if (!nextFailed) {
-        nextFailed = filteredAndSortedDeliveries.slice(0, currentIndex).find(d => 
-          d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99
-        );
-      }
 
-      if (nextFailed) {
-        // Automatically load next failed client
-        setEditingDelivery(nextFailed);
-        setCorrAddr(nextFailed.morada);
-        setCorrCp(nextFailed.codigo_postal);
-        setCorrCity(nextFailed.concelho);
-        setCorrLat(nextFailed.latitude);
-        setCorrLon(nextFailed.longitude);
-        setSuggestions([]);
+      if (remainingFailed.length > 0) {
+        openCorrection(remainingFailed[0]);
       } else {
-        // No more failed clients remaining
         setEditingDelivery(null);
-        alert("Todos os clientes em falha foram corrigidos com sucesso!");
       }
     } catch (err: any) {
-      alert(err.message || "Erro ao salvar correcao.");
+      alert(err.message || "Erro ao guardar correção.");
     } finally {
       setLoading(false);
     }
   };
 
-  const totalClients = deliveries.length;
-  const successClients = deliveries.filter(d => d.latitude !== 0.0 && d.longitude !== 0.0 && d.nivel_qualidade < 99).length;
-  const failedClients = totalClients - successClients;
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header and Step Indicators */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Clientes & Georreferenciação</h1>
-            <p className="text-zinc-400 text-xs mt-1">Carregue, mapeie e valide as coordenadas de entrega dos seus clientes.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Georreferenciação</h1>
+            <p className="text-zinc-400 text-xs mt-1">Valide e atribua coordenadas precisas às encomendas dos seus clientes.</p>
           </div>
           {step === "results" && (
-            <button
-              onClick={() => setStep("upload")}
-              className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 px-4 py-2 rounded-xl text-xs font-semibold text-zinc-300 cursor-pointer"
-            >
-              Novo Ficheiro
-            </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setStep("upload")}
+                className="cursor-pointer bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors"
+              >
+                Carregar Novo Ficheiro
+              </button>
+              <button
+                onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}`, `Clientes_Georreferenciados_${selectedProject?.id}.xlsx`)}
+                className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-4 py-2 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Exportar Excel</span>
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Step 1: Upload */}
         {step === "upload" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center max-w-2xl mx-auto space-y-6">
-            <div className="mx-auto w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center bg-zinc-900/30 flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
+            <div className="w-12 h-12 rounded-xl bg-zinc-800/80 flex items-center justify-center text-zinc-400">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
             </div>
-            <div className="space-y-2">
-              <h3 className="text-lg font-bold text-zinc-150">Carregar Ficheiro de Encomendas</h3>
-              <p className="text-zinc-450 text-xs max-w-sm mx-auto">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-200">Carregar Ficheiro de Encomendas</h3>
+              <p className="text-xs text-zinc-500 mt-1 max-w-sm">
                 Arraste ou carregue um ficheiro Excel (.xlsx, .xls) ou CSV contendo os dados dos clientes e entregas.
               </p>
             </div>
-            <div className="pt-4 space-y-4">
-              <label className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 text-white rounded-xl px-6 py-3 text-sm font-semibold shadow-lg shadow-indigo-500/25 hover:from-indigo-600 hover:to-violet-600 transition-all inline-flex items-center space-x-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span>Selecionar Ficheiro</span>
+            <div>
+              <label className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-xl px-5 py-2.5 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all inline-block">
+                <span>{loading ? "A carregar..." : "+ Selecionar Ficheiro"}</span>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
-                  className="hidden"
                   onChange={handleFileUpload}
                   disabled={loading}
+                  className="hidden"
                 />
               </label>
-              <div className="pt-4 border-t border-zinc-800/60 max-w-xs mx-auto">
-                <button
-                  type="button"
-                  onClick={() => handleDownloadFile('/api/fleet/template/unified', 'Template_Importacao_Completa.xlsx')}
-                  className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold underline transition-colors cursor-pointer"
-                >
-                  📥 Descarregar Modelo Excel Geral (3 Folhas)
-                </button>
-              </div>
+            </div>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => handleDownloadFile("/api/fleet/template/unified", "Template_Importacao_Completa.xlsx")}
+                className="text-[11px] text-zinc-400 hover:text-indigo-400 transition-colors flex items-center space-x-1.5 cursor-pointer"
+              >
+                <span>📥</span>
+                <span className="underline">Descarregar Modelo Excel Geral (3 Folhas)</span>
+              </button>
             </div>
           </div>
         )}
 
-        {/* Step 2: Mapping */}
         {step === "mapping" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-3xl mx-auto">
-            <h3 className="text-lg font-bold text-zinc-100 mb-2">Mapear Colunas do Ficheiro</h3>
-            <p className="text-zinc-450 text-xs mb-6">Mapeie as colunas do ficheiro carregado ({filename}) para os campos correspondentes na base de dados.</p>
-            
-            <form onSubmit={handleStartGeocoding} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 p-6 max-w-2xl mx-auto space-y-6">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-200">Mapeamento de Colunas</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">Ficheiro: <span className="text-zinc-400 font-mono">{filename}</span></p>
+            </div>
+
+            <form onSubmit={handleStartGeocoding} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Código do Cliente</label>
-                  <select value={colCode} onChange={e => setColCode(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Código do Cliente *</label>
+                  <select
+                    value={colCode}
+                    onChange={(e) => setColCode(e.target.value)}
+                    required
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Nome do Cliente</label>
-                  <select value={colName} onChange={e => setColName(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Nome / Designação *</label>
+                  <select
+                    value={colName}
+                    onChange={(e) => setColName(e.target.value)}
+                    required
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Morada de Entrega *</label>
+                <select
+                  value={colAddr}
+                  onChange={(e) => setColAddr(e.target.value)}
+                  required
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                >
+                  {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Código Postal *</label>
+                  <select
+                    value={colCp}
+                    onChange={(e) => setColCp(e.target.value)}
+                    required
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Morada</label>
-                  <select value={colAddr} onChange={e => setColAddr(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Localidade / Concelho *</label>
+                  <select
+                    value={colCity}
+                    onChange={(e) => setColCity(e.target.value)}
+                    required
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Peso (KG) *</label>
+                  <select
+                    value={colWeight}
+                    onChange={(e) => setColWeight(e.target.value)}
+                    required
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Código Postal</label>
-                  <select value={colCp} onChange={e => setColCp(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Volume (m³) *</label>
+                  <select
+                    value={colVolume}
+                    onChange={(e) => setColVolume(e.target.value)}
+                    required
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Latitude (Opcional)</label>
+                  <select
+                    value={colLat}
+                    onChange={(e) => setColLat(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    <option value="">-- Não Mapear --</option>
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Concelho / Cidade</label>
-                  <select value={colCity} onChange={e => setColCity(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Peso (kg)</label>
-                  <select value={colWeight} onChange={e => setColWeight(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Volume (m³)</label>
-                  <select value={colVolume} onChange={e => setColVolume(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Prioridade (Opcional)</label>
-                  <select value={colPriority} onChange={e => setColPriority(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    <option value="">-- Não Mapear (Padrão 2) --</option>
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Slot Horário Início (Opcional)</label>
-                  <select value={colStartWindow} onChange={e => setColStartWindow(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    <option value="">-- Não Mapear (Padrão 08:00) --</option>
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Slot Horário Fim (Opcional)</label>
-                  <select value={colEndWindow} onChange={e => setColEndWindow(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    <option value="">-- Não Mapear (Padrão 18:00) --</option>
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Latitude Existente (Opcional)</label>
-                  <select value={colLat} onChange={e => setColLat(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    <option value="">-- Ignorar (Usar motor Geocodificador) --</option>
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-2">Longitude Existente (Opcional)</label>
-                  <select value={colLon} onChange={e => setColLon(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 outline-none">
-                    <option value="">-- Ignorar (Usar motor Geocodificador) --</option>
-                    {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Longitude (Opcional)</label>
+                  <select
+                    value={colLon}
+                    onChange={(e) => setColLon(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                  >
+                    <option value="">-- Não Mapear --</option>
+                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
@@ -536,409 +505,237 @@ export default function GeoreferencingPage() {
                 <button
                   type="button"
                   onClick={() => setStep("upload")}
-                  className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
                 >
-                  Voltar
+                  Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-indigo-500/10 cursor-pointer"
+                  disabled={loading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/10 cursor-pointer transition-colors"
                 >
-                  Iniciar Georreferenciação
+                  Iniciar Georreferenciação →
                 </button>
               </div>
             </form>
           </div>
         )}
 
-        {/* Step 3: Geocoding Loader */}
         {step === "geocoding" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center max-w-md mx-auto space-y-6">
-            <div className="w-16 h-16 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin mx-auto" />
-            <div className="space-y-2">
-              <h3 className="text-lg font-bold text-zinc-150">A Georreferenciar Encomendas...</h3>
-              <p className="text-zinc-450 text-xs leading-relaxed max-w-xs mx-auto">
-                O motor está a processar o ficheiro. As moradas estão a ser comparadas e validadas em cascata. Isto poderá demorar alguns segundos.
-              </p>
+          <div className="border border-zinc-800 rounded-2xl p-12 text-center bg-zinc-900/30 flex flex-col items-center justify-center space-y-4 max-w-md mx-auto mt-8">
+            <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-200">A Georreferenciar Encomendas...</h3>
+              <p className="text-xs text-zinc-500 mt-1">A cruzar moradas com a base de dados de códigos postais e coordenadas GPS.</p>
             </div>
           </div>
         )}
 
-        {/* Step 4: Results and Correction Table */}
         {step === "results" && (
-          <div className="space-y-6">
-            {/* Stats section */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total Encomendas</p>
-                <p className="text-2xl font-black text-zinc-250 mt-1">{totalClients}</p>
+          <div className="space-y-4">
+            {/* Filters Bar */}
+            <div className="flex items-center justify-between bg-zinc-900/40 p-4 border border-zinc-800 rounded-2xl gap-4">
+              <div className="flex items-center space-x-2 flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Pesquisar por cliente, morada ou concelho..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500"
+                />
               </div>
-              <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-550">Geocodificadas com Sucesso</p>
-                <div className="flex items-baseline space-x-2 mt-1">
-                  <p className="text-2xl font-black text-emerald-400">{successClients}</p>
-                  <p className="text-xs text-zinc-500">({totalClients > 0 ? Math.round(successClients/totalClients*100) : 0}%)</p>
-                </div>
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-550">Falhas / Corrigir</p>
-                <div className="flex items-baseline space-x-2 mt-1">
-                  <p className="text-2xl font-black text-red-400">{failedClients}</p>
-                  <p className="text-xs text-zinc-500">({totalClients > 0 ? Math.round(failedClients/totalClients*100) : 0}%)</p>
-                </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setStatusFilter("all")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                    statusFilter === "all" ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Todos ({deliveries.length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter("success")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                    statusFilter === "success" ? "bg-emerald-950 text-emerald-300 border border-emerald-800/60" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Válidos ({deliveries.filter(d => d.latitude !== 0.0 && d.longitude !== 0.0 && d.nivel_qualidade !== 99).length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter("failed")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                    statusFilter === "failed" ? "bg-amber-950 text-amber-300 border border-amber-800/60" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Pendentes de Ajuste ({deliveries.filter(d => d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99).length})
+                </button>
               </div>
             </div>
 
-            {/* Deliveries Table */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-6 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-bold text-zinc-150">Lista de Entregas</h3>
-                  <span className="text-xs text-zinc-500">{deliveries.length} clientes carregados</span>
-                </div>
-                
-                {deliveries.length > 0 && (
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={async () => {
-                        if (!selectedProject) return;
-                        try {
-                          
-                          alert("Georreferenciação guardada com sucesso!");
-                        } catch {
-                          alert("Erro ao guardar georreferenciação.");
-                        }
-                      }}
-                      className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-xl px-4 py-2 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all flex items-center space-x-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                      </svg>
-                      <span>Guardar Georreferenciação</span>
-                    </button>
-                    <button
-                      onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}?type=success`, `clientes_georreferenciados_${selectedProject?.id}.xlsx`)}
-                      className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-emerald-400 hover:text-emerald-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors flex items-center space-x-2"
-                    >
-                      <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      <span>Exportar Sucessos</span>
-                    </button>
-                    
-                    {deliveries.some(d => d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99) && (
-                      <button
-                        onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}?type=failed`, `falhas_georreferenciacao_${selectedProject?.id}.xlsx`)}
-                        className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-red-400 hover:text-red-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors flex items-center space-x-2"
-                      >
-                        <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        <span>Exportar Falhas</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Filter and Search controls */}
-              {deliveries.length > 0 && (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 bg-zinc-950/20 border-b border-zinc-800">
-                  {/* Search */}
-                  <div className="relative flex-1 max-w-xs">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-zinc-550">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Pesquisar cliente ou morada..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-9 pr-4 py-2 text-xs text-zinc-200 outline-none transition-all"
-                    />
-                  </div>
-
-                  {/* Status Filters */}
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <button
-                      onClick={() => setStatusFilter("all")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                        statusFilter === "all"
-                          ? "bg-zinc-800 border-zinc-700 text-zinc-150"
-                          : "bg-zinc-900/40 border-zinc-850 text-zinc-450 hover:text-zinc-300"
-                      }`}
-                    >
-                      Todos
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter("success")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                        statusFilter === "success"
-                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                          : "bg-zinc-900/40 border-zinc-850 text-zinc-450 hover:text-zinc-300"
-                      }`}
-                    >
-                      Sucessos
-                    </button>
-                    <button
-                      onClick={() => setStatusFilter("failed")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                        statusFilter === "failed"
-                          ? "bg-red-500/10 border-red-500/20 text-red-400"
-                          : "bg-zinc-900/40 border-zinc-850 text-zinc-450 hover:text-zinc-300"
-                      }`}
-                    >
-                      Falhas
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-zinc-950/40 border-b border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-zinc-450">
-                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("codigo_cliente")}>
-                        Codigo {sortField === "codigo_cliente" && (sortDirection === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("morada")}>
-                        Morada {sortField === "morada" && (sortDirection === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("codigo_postal")}>
-                        C. Postal {sortField === "codigo_postal" && (sortDirection === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("concelho")}>
-                        Concelho {sortField === "concelho" && (sortDirection === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th className="px-6 py-3.5 text-center">Peso / Vol</th>
-                      <th className="px-6 py-3.5 cursor-pointer hover:text-zinc-300 transition-colors" onClick={() => handleSort("status")}>
-                        Qualidade / Fonte {sortField === "status" && (sortDirection === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th className="px-6 py-3.5 text-right">Acao</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800/60 text-xs">
-                    {filteredAndSortedDeliveries.map((del) => {
-                      const isFailed = del.latitude === 0.0 || del.longitude === 0.0 || del.nivel_qualidade === 99;
-                      return (
-                        <tr key={del.id} className="hover:bg-zinc-850/20 transition-colors">
-                          <td className="px-6 py-4 font-bold text-zinc-300">{del.codigo_cliente}</td>
-                          <td className="px-6 py-4 text-zinc-400 max-w-xs truncate" title={del.morada}>{del.morada}</td>
-                          <td className="px-6 py-4 text-zinc-400 font-mono">{del.codigo_postal}</td>
-                          <td className="px-6 py-4 text-zinc-400">{del.concelho}</td>
-                          <td className="px-6 py-4 text-zinc-400 text-center font-mono">{del.peso_kg}kg / {del.volume_m3}m³</td>
-                          <td className="px-6 py-4">
-                            {isFailed ? (
-                              <div className="flex flex-col space-y-1">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 border border-red-500/20 text-red-400 w-fit">
-                                  Falha
-                                </span>
-                                {del.motivo_falha && (
-                                  <span className="text-[10px] text-red-400/80 italic font-medium max-w-[150px] truncate" title={del.motivo_falha}>
-                                    {del.motivo_falha}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="flex items-center space-x-2">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                  del.nivel_qualidade <= 1 
-                                    ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-                                    : "bg-amber-500/10 border border-amber-500/20 text-amber-400"
-                                }`}>
-                                  Nível {del.nivel_qualidade}
-                                </span>
-                                <span className="text-[10px] text-zinc-500 font-mono uppercase">{del.fonte_match}</span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => openCorrection(del)}
-                              className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-250 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-colors"
-                            >
-                              Corrigir
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {/* Table */}
+            <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 overflow-hidden shadow-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-zinc-950 border-b border-zinc-800 text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                    <th onClick={() => handleSort("status")} className="py-3 px-4 cursor-pointer">Estado</th>
+                    <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-4 cursor-pointer">Código</th>
+                    <th onClick={() => handleSort("morada")} className="py-3 px-4 cursor-pointer">Morada Original</th>
+                    <th className="py-3 px-4">CP</th>
+                    <th className="py-3 px-4">Concelho</th>
+                    <th className="py-3 px-4">Coordenadas</th>
+                    <th className="py-3 px-4 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAndSortedDeliveries.map((del) => {
+                    const isValid = del.latitude !== 0.0 && del.longitude !== 0.0 && del.nivel_qualidade !== 99;
+                    return (
+                      <tr key={del.id} className="border-b border-zinc-800/40 hover:bg-zinc-800/30 transition-colors">
+                        <td className="py-2.5 px-4">
+                          {isValid ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-950 text-emerald-400 border border-emerald-800/60">
+                              Nível {del.nivel_qualidade}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-950 text-amber-400 border border-amber-800/60">
+                              Pendente
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-zinc-200">{del.codigo_cliente}</td>
+                        <td className="py-2.5 px-4 text-zinc-300 truncate max-w-xs">{del.morada}</td>
+                        <td className="py-2.5 px-4 text-zinc-400 font-mono">{del.codigo_postal || "N/A"}</td>
+                        <td className="py-2.5 px-4 text-zinc-400">{del.concelho || "N/A"}</td>
+                        <td className="py-2.5 px-4 font-mono text-zinc-300">
+                          {isValid ? `${del.latitude.toFixed(5)}, ${del.longitude.toFixed(5)}` : "--, --"}
+                        </td>
+                        <td className="py-2.5 px-4 text-center">
+                          <button
+                            onClick={() => openCorrection(del)}
+                            className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors"
+                          >
+                            Corrigir
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
         {/* Correction Modal */}
         {editingDelivery && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-5xl rounded-2xl p-6 shadow-2xl space-y-4">
-            <div>
-              <h3 className="text-lg font-bold text-zinc-150">Corrigir Georreferenciacao</h3>
-              <p className="text-zinc-450 text-xs mt-0.5">Corrija a morada e defina as coordenadas geograficas para o cliente: <b>{editingDelivery.codigo_cliente}</b></p>
-            </div>
-
-            {/* Failure Reason Alert */}
-            {(editingDelivery.latitude === 0.0 || editingDelivery.longitude === 0.0 || editingDelivery.nivel_qualidade === 99) && editingDelivery.motivo_falha && (
-              <div className="bg-red-950/20 border border-red-900/30 text-red-300 text-xs rounded-xl p-3 flex items-start space-x-2">
-                <svg className="w-4.5 h-4.5 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <div>
-                  <span className="font-semibold block text-red-400">Motivo da Falha:</span>
-                  <span>{editingDelivery.motivo_falha}</span>
-                </div>
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 className="text-sm font-bold text-zinc-100">Ajustar Coordenadas do Cliente {editingDelivery.codigo_cliente}</h3>
+                <button onClick={() => setEditingDelivery(null)} className="text-zinc-400 hover:text-zinc-200 text-xs">✕</button>
               </div>
-            )}
 
-            {/* Two-column layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Left Column: Input fields (7 cols) */}
-              <div className="lg:col-span-7 space-y-4">
-                {/* Morada Correta */}
+              <form onSubmit={submitCorrection} className="space-y-3 text-xs">
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Morada Correta</label>
+                  <label className="block text-zinc-400 mb-1">Morada</label>
                   <input
                     type="text"
-                    required
-                    autoComplete="chrome-off-addr"
                     value={corrAddr}
-                    onChange={e => setCorrAddr(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none"
+                    onChange={(e) => setCorrAddr(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
                   />
                 </div>
 
-                {/* CP & Concelho Grid */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Codigo Postal</label>
+                    <label className="block text-zinc-400 mb-1">Código Postal</label>
                     <input
                       type="text"
-                      required
-                      autoComplete="chrome-off-cp"
                       value={corrCp}
-                      onChange={e => setCorrCp(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none"
+                      onChange={(e) => setCorrCp(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Concelho / Cidade</label>
+                    <label className="block text-zinc-400 mb-1">Concelho</label>
                     <input
                       type="text"
-                      required
-                      autoComplete="chrome-off-city"
                       value={corrCity}
-                      onChange={e => setCorrCity(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none"
+                      onChange={(e) => setCorrCity(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
 
-                {/* Lat & Lon Grid */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Latitude</label>
+                    <label className="block text-zinc-400 mb-1">Latitude</label>
                     <input
                       type="number"
                       step="any"
-                      required
-                      autoComplete="chrome-off-lat"
-                      value={corrLat || ""}
-                      onChange={e => setCorrLat(parseFloat(e.target.value) || 0.0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none font-mono"
+                      value={corrLat}
+                      onChange={(e) => setCorrLat(Number(e.target.value))}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Longitude</label>
+                    <label className="block text-zinc-400 mb-1">Longitude</label>
                     <input
                       type="number"
                       step="any"
-                      required
-                      autoComplete="chrome-off-lon"
-                      value={corrLon || ""}
-                      onChange={e => setCorrLon(parseFloat(e.target.value) || 0.0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-4 py-2.5 text-xs text-zinc-100 outline-none font-mono"
+                      value={corrLon}
+                      onChange={(e) => setCorrLon(Number(e.target.value))}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Right Column: Database Suggestions (5 cols) */}
-              <div className="lg:col-span-5 flex flex-col h-full min-h-[220px]">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-455 mb-1.5 flex items-center justify-between">
-                  <span>📌 Sugestoes (Fuzzy Match)</span>
-                  {suggestionsLoading && <span className="text-indigo-400 animate-pulse text-[9px] lowercase">a pesquisar...</span>}
-                </label>
-                
-                <div className="flex-1 bg-zinc-950/60 border border-zinc-800 rounded-xl p-3.5 flex flex-col justify-between">
-                  <div className="space-y-1.5 overflow-y-auto max-h-[190px] pr-1 flex-1">
-                    {suggestions.length > 0 ? (
-                      suggestions.map((s, idx) => (
-                        <button
+                {/* Suggestions List */}
+                {suggestions.length > 0 && (
+                  <div className="space-y-1.5 pt-2">
+                    <span className="text-[10px] font-bold uppercase text-zinc-500">Sugestões de Morada Encontradas:</span>
+                    <div className="max-h-32 overflow-y-auto space-y-1 bg-zinc-950 p-2 border border-zinc-800 rounded-xl">
+                      {suggestions.map((s, idx) => (
+                        <div
                           key={idx}
-                          type="button"
                           onClick={() => {
-                            setCorrAddr(s.morada);
-                            setCorrCp(s.cp);
-                            setCorrCity(s.concelho.trim());
-                            setCorrLat(s.lat);
-                            setCorrLon(s.lon);
+                            setCorrAddr(s.morada || corrAddr);
+                            setCorrCp(s.cp || corrCp);
+                            setCorrCity(s.concelho || corrCity);
+                            setCorrLat(s.lat || corrLat);
+                            setCorrLon(s.lon || corrLon);
                           }}
-                          className="w-full text-left bg-zinc-900 hover:bg-zinc-850 border border-zinc-800/80 hover:border-zinc-700/80 rounded-lg p-2 text-[10px] text-zinc-350 transition-all flex items-center justify-between cursor-pointer"
+                          className="p-1.5 hover:bg-zinc-900 rounded cursor-pointer text-[11px] text-zinc-300 flex justify-between"
                         >
-                          <span className="truncate pr-2">{s.display}</span>
-                          <span className="text-[9px] text-indigo-400 font-semibold shrink-0">{s.score}% Match</span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="h-full flex items-center justify-center text-center p-4">
-                        <p className="text-[10px] text-zinc-550 italic">
-                          Escreva na morada ou codigo postal para pesquisar na base de dados de Portugal.
-                        </p>
-                      </div>
-                    )}
+                          <span className="truncate">{s.morada || s.address}</span>
+                          <span className="font-mono text-zinc-500 ml-2">{s.cp}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  {suggestions.length > 0 && (
-                    <p className="text-[9px] text-zinc-500 italic mt-2 border-t border-zinc-800/60 pt-2 shrink-0">
-                      Clique numa sugestao para preencher automaticamente os campos e coordenadas.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex justify-end space-x-3 pt-4 border-t border-zinc-800/80">
-              <button
-                type="button"
-                onClick={() => setEditingDelivery(null)}
-                className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => submitCorrection()}
-                disabled={loading}
-                className="bg-indigo-500 hover:bg-indigo-650 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer"
-              >
-                {loading && (
-                  <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
                 )}
-                <span>{loading ? "A gravar..." : "Gravar & Proximo"}</span>
-              </button>
-            </div>
 
+                <div className="flex justify-end space-x-2 pt-3 border-t border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingDelivery(null)}
+                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Guardar Coordenadas
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
     </DashboardLayout>
   );

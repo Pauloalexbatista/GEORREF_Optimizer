@@ -29,14 +29,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function restoreSession() {
-      const token = localStorage.getItem("georoute_token");
+      const token = typeof window !== "undefined" ? localStorage.getItem("georoute_token") : null;
       if (!token) {
         setLoading(false);
         return;
       }
 
       let attempts = 0;
-      const maxAttempts = 5;
+      const maxAttempts = 3;
 
       while (attempts < maxAttempts) {
         try {
@@ -46,20 +46,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         } catch (e: any) {
           attempts++;
-          const isNetworkErr = e.message?.includes("Failed to fetch") || e.name === "TypeError";
+          const isNetworkErr = e.message?.includes("Failed to fetch") || e.name === "TypeError" || e.status === 502 || e.status === 503;
           if (isNetworkErr && attempts < maxAttempts) {
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1000));
             continue;
           }
           
-          // Silence expected unauthorized errors during initial session restoration
-          const isAuthErr = e.message?.includes("Token inválido") || e.message?.includes("Token malformado") || e.message?.includes("Utilizador não encontrado");
-          if (!isAuthErr) {
-            console.error("Session restoration failed:", e);
-          }
-          if (!isNetworkErr) {
-            localStorage.removeItem("georoute_token");
-          }
+          // Session expired or invalid - silently clear and reset without noisy console errors
+          localStorage.removeItem("georoute_token");
+          setUser(null);
           break;
         }
       }
@@ -125,4 +120,3 @@ export function useAuth() {
   }
   return context;
 }
-

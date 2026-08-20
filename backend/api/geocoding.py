@@ -58,7 +58,7 @@ class ColumnMapping(BaseModel):
 
     col_code: str
 
-    col_name: str
+    col_name: Optional[str] = None
 
     col_addr: str
 
@@ -220,7 +220,7 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
         # Validate that mapped columns exist in df
 
-        required_cols = [mapping.col_code, mapping.col_name, mapping.col_addr, mapping.col_cp, mapping.col_city, mapping.col_weight, mapping.col_volume]
+        required_cols = [mapping.col_code, mapping.col_addr, mapping.col_cp, mapping.col_city, mapping.col_weight, mapping.col_volume]
 
         for col in required_cols:
 
@@ -270,7 +270,7 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
             code = str(row[mapping.col_code])
 
-            name = str(row[mapping.col_name])
+            name = str(row[mapping.col_name]) if (mapping.col_name and mapping.col_name in df.columns) else code if (mapping.col_name and mapping.col_name in df.columns) else code
 
             addr = str(row[mapping.col_addr])
 

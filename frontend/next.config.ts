@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 import path from "path";
 
+const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname, ".."),
@@ -9,9 +11,9 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://backend:8000/api/:path*', // Proxy to Backend
+        destination: `${backendUrl}/api/:path*`, // Proxy to Backend
       },
-    ]
+    ];
   },
 };
 

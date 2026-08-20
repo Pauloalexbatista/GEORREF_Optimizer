@@ -116,4 +116,3 @@ def register(req: RegisterRequest):
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: UserResponse = Depends(get_current_user)):
     return current_user
-

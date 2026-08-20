@@ -68,3 +68,5 @@ harvested_data.db
 
 # Local cache for Spanish CP boundaries
 cache_geoapi/
+
+backend/temp_uploads/
