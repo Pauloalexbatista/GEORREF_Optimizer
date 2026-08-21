@@ -51,7 +51,7 @@ export default function DeliveryMapPicker({
   lon,
   onCoordsChange,
   searchAddress = "",
-}: DeliveryMapPickerProps ) {
+}: DeliveryMapPickerProps) {
   const hasCoords = lat !== 0 && lon !== 0 && !isNaN(lat) && !isNaN(lon);
   const currentCenter: [number, number] = hasCoords ? [lat, lon] : [38.57, -7.91];
   
@@ -74,7 +74,6 @@ export default function DeliveryMapPicker({
     setSearchError("");
     setSearchResults([]);
 
-    // Try multiple search variations
     const attempts = [
       cleanTerm + ", Portugal",
       cleanTerm.replace(/\b\d{4}(-\d{3})?\b/g, "").trim() + ", Portugal",
@@ -132,18 +131,18 @@ export default function DeliveryMapPicker({
     <div className="flex flex-col h-full space-y-2">
       {/* Search Bar */}
       <div className="bg-zinc-950/95 p-2.5 rounded-xl border border-zinc-800 space-y-2">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            executeSearch(query);
-          }}
-          className="flex items-center gap-2"
-        >
+        <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  executeSearch(query);
+                }
+              }}
               placeholder="Pesquisar nome do local (ex: Convento do Espinheiro)"
               className="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             />
@@ -151,7 +150,8 @@ export default function DeliveryMapPicker({
           </div>
 
           <button
-            type="submit"
+            type="button"
+            onClick={() => executeSearch(query)}
             disabled={searching || !query.trim()}
             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1.5 shrink-0 cursor-pointer shadow"
           >
@@ -167,7 +167,7 @@ export default function DeliveryMapPicker({
               <span>Pesquisar</span>
             )}
           </button>
-        </form>
+        </div>
 
         {/* Coordinates Bar */}
         <div className="flex items-center justify-between text-[11px] px-1">

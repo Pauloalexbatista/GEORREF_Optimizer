@@ -712,6 +712,34 @@ export default function GeoreferencingPage() {
                       </div>
                     </div>
 
+                    {/* Google Maps Smart Paste */}
+                    <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-bold text-indigo-300">
+                          📋 Colar Coordenadas (Google Maps)
+                        </label>
+                        <span className="text-[9px] text-zinc-400 font-mono">Ex: 38.600914, -7.888504</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Cole aqui (ex: 38.600914, -7.888504)..."
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          if (!val) return;
+                          const parts = val.split(/[,;\s\t]+/).filter(Boolean);
+                          if (parts.length >= 2) {
+                            const pLat = parseFloat(parts[0].replace(",", "."));
+                            const pLon = parseFloat(parts[1].replace(",", "."));
+                            if (!isNaN(pLat) && !isNaN(pLon) && pLat >= -90 && pLat <= 90 && pLon >= -180 && pLon <= 180) {
+                              setCorrLat(pLat);
+                              setCorrLon(pLon);
+                            }
+                          }
+                        }}
+                        className="w-full bg-zinc-950 border border-indigo-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-400 font-mono outline-none focus:border-indigo-400 placeholder-zinc-600"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Latitude</label>
