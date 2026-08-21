@@ -437,16 +437,35 @@ export default function RoutesMatrixPage() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5">
+          <button
+            onClick={() => {
+              window.open("/dashboard/tactical/detached-map", "GeoRouteMapWindow", "width=1280,height=800,menubar=no,toolbar=no,location=no,status=no");
+            }}
+            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-emerald-400 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1.5"
+            title="Abrir o mapa no 2º Monitor"
+          >
+            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            <span>🖥️ 2º Monitor (Mapa)</span>
+          </button>
+          <a
+            href="/dashboard/tactical"
+            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1.5"
+            title="Voltar ao Dashboard Tático principal"
+          >
+            <span>📊 Dashboard</span>
+          </a>
           <button
             onClick={() => toggleAll(true)}
-            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors"
+            className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors"
           >
             Expandir Tudo
           </button>
           <button
             onClick={() => toggleAll(false)}
-            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors"
+            className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors"
           >
             Recolher Tudo
           </button>

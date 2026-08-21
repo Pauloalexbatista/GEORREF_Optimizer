@@ -543,25 +543,25 @@ export default function TacticalPage() {
 
           <div className="flex items-center space-x-3">
             <button
-              onClick={handleOpenRoutesMatrix}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-indigo-400 border border-zinc-800 rounded-xl px-4 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
-              title="Abrir a Matriz de Gestão de Rotas num 3.º monitor"
-            >
-              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-              </svg>
-              <span>Matriz de Rotas (3º Ecrã)</span>
-            </button>
-
-            <button
               onClick={handleOpenDetachedMap}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-zinc-800 rounded-xl px-4 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-zinc-800 hover:border-emerald-700/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
               title="Abrir o mapa numa janela independente para o 2.º monitor"
             >
               <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
-              <span>2º Monitor</span>
+              <span>🖥️ 2º Monitor (Mapa)</span>
+            </button>
+
+            <button
+              onClick={handleOpenRoutesMatrix}
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-indigo-400 border border-zinc-800 hover:border-indigo-700/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
+              title="Abrir a Matriz de Gestão de Rotas num 3.º monitor"
+            >
+              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              <span>🖥️ 3º Monitor (Rotas)</span>
             </button>
 
             <button

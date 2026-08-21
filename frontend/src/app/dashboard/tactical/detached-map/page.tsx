@@ -67,10 +67,28 @@ export default function DetachedMapPage() {
           </h1>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5">
           <span className="text-[10px] text-zinc-400 font-mono bg-zinc-850 px-2.5 py-1 rounded-full border border-zinc-800">
             {statusMsg}
           </span>
+          <button
+            onClick={() => {
+              window.open("/dashboard/tactical/routes-matrix", "GeoRouteMatrixWindow", "width=1400,height=900,menubar=no,toolbar=no,location=no,status=no");
+            }}
+            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-indigo-400 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1.5"
+            title="Abrir a Matriz de Rotas no 3º Monitor"
+          >
+            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+            </svg>
+            <span>🖥️ 3º Monitor (Rotas)</span>
+          </button>
+          <a
+            href="/dashboard/tactical"
+            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1"
+          >
+            <span>📊 Dashboard</span>
+          </a>
           <button
             onClick={loadLocalData}
             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center space-x-1.5 cursor-pointer"
@@ -79,7 +97,7 @@ export default function DetachedMapPage() {
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            <span>Atualizar Mapa</span>
+            <span>Atualizar</span>
           </button>
         </div>
       </div>
