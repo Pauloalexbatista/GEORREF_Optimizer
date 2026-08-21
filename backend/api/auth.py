@@ -47,7 +47,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token malformado",
         )
-    user = get_utilizador_por_id(int(user_id))
+    user = None
+    try:
+        user = get_utilizador_por_id(int(user_id))
+    except (ValueError, TypeError):
+        pass
+    if not user:
+        user = get_utilizador(str(user_id))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
