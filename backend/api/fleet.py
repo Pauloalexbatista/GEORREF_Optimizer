@@ -743,6 +743,7 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
             
             # Robust column resolution for Deliveries
             col_e_code = next((c for c in ['Codigo_Cliente', 'Cliente', 'Código Cliente', 'Client_Code', 'Código_Cliente'] if c in df_entregas_raw.columns), None)
+            col_e_name = next((c for c in ['Nome_Cliente', 'Nome', 'Nome do Cliente', 'Client_Name', 'Designacao', 'Nome_cliente'] if c in df_entregas_raw.columns), None)
             col_e_addr = next((c for c in ['Morada', 'Address', 'Rua', 'Endereço'] if c in df_entregas_raw.columns), None)
             col_e_cp = next((c for c in ['Codigo_Postal', 'CP', 'Código Postal', 'Postal_Code'] if c in df_entregas_raw.columns), None)
             col_e_city = next((c for c in ['Localidade', 'Cidade', 'Concelho', 'Locality'] if c in df_entregas_raw.columns), None)
@@ -767,6 +768,7 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 
             for idx, row in df_entregas_raw.iterrows():
                 code = str(row[col_e_code]).strip() if col_e_code else f"C_{idx+1}"
+                name_val = str(row[col_e_name]).strip() if (col_e_name and pd.notna(row[col_e_name])) else code
                 addr = str(row[col_e_addr]).strip()
                 cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
                 city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
@@ -826,12 +828,12 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                     cursor = conn.cursor()
                     cursor.execute("""
                         INSERT INTO entregas (
-                            projeto_id, codigo_cliente, morada, codigo_postal, _concelho,
+                            projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
                             peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
                             latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        project_id, code, addr, cp, city,
+                        project_id, code, name_val, addr, cp, city,
                         weight, volume, priority, start_window, end_window,
                         lat, lon, quality, source, morada_encontrada, wh_val
                     ))
@@ -1338,6 +1340,7 @@ async def import_fleet_warehouses(
             
             # Robust column resolution for Deliveries
             col_e_code = next((c for c in ['Codigo_Cliente', 'Cliente', 'Código Cliente', 'Client_Code', 'Código_Cliente'] if c in df_entregas_raw.columns), None)
+            col_e_name = next((c for c in ['Nome_Cliente', 'Nome', 'Nome do Cliente', 'Client_Name', 'Designacao', 'Nome_cliente'] if c in df_entregas_raw.columns), None)
             col_e_addr = next((c for c in ['Morada', 'Address', 'Rua', 'Endereço'] if c in df_entregas_raw.columns), None)
             col_e_cp = next((c for c in ['Codigo_Postal', 'CP', 'Código Postal', 'Postal_Code'] if c in df_entregas_raw.columns), None)
             col_e_city = next((c for c in ['Localidade', 'Cidade', 'Concelho', 'Locality'] if c in df_entregas_raw.columns), None)
@@ -1362,6 +1365,7 @@ async def import_fleet_warehouses(
                 
             for idx, row in df_entregas_raw.iterrows():
                 code = str(row[col_e_code]).strip() if col_e_code else f"C_{idx+1}"
+                name_val = str(row[col_e_name]).strip() if (col_e_name and pd.notna(row[col_e_name])) else code
                 addr = str(row[col_e_addr]).strip()
                 cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
                 city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
@@ -1421,12 +1425,12 @@ async def import_fleet_warehouses(
                     cursor = conn.cursor()
                     cursor.execute("""
                         INSERT INTO entregas (
-                            projeto_id, codigo_cliente, morada, codigo_postal, _concelho,
+                            projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
                             peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
                             latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        project_id, code, addr, cp, city,
+                        project_id, code, name_val, addr, cp, city,
                         weight, volume, priority, start_window, end_window,
                         lat, lon, quality, source, morada_encontrada, wh_val
                     ))

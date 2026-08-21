@@ -14,6 +14,7 @@ interface RouteNode {
   Armazem: string;
   Ordem: number;
   Cliente: string;
+  Nome_Cliente?: string;
   Morada: string;
   CP: string;
   Localidade: string;
@@ -154,6 +155,7 @@ export default function TacticalPage() {
   const broadcastUpdate = (updatedRoutes: RouteNode[], vList: string[], wList: WarehouseData[]) => {
     const mappedClients = updatedRoutes.map((r) => ({
       Cliente: r.Cliente,
+      Nome_Cliente: r.Nome_Cliente || r.Cliente,
       Morada: r.Morada,
       Latitude: r.Latitude,
       Longitude: r.Longitude,
@@ -1003,7 +1005,12 @@ export default function TacticalPage() {
                                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-900 text-amber-300 border border-amber-700/60">
                                               ⏳ Espera
                                             </span>
-                                            <span className="font-bold text-amber-300">{node.Cliente}</span>
+                                            <div>
+                                                    <div className="font-bold text-amber-300">{node.Nome_Cliente || node.Cliente}</div>
+                                                    {node.Nome_Cliente && node.Nome_Cliente !== node.Cliente && (
+                                                      <div className="text-[10px] text-amber-400/60 font-mono">{node.Cliente}</div>
+                                                    )}
+                                                   </div>
                                           </div>
                                           <div className="flex items-center space-x-2 text-[11px]">
                                             <span className="text-zinc-200 font-semibold">Chegada: {node.Chegada}</span>
@@ -1034,7 +1041,12 @@ export default function TacticalPage() {
                                           <span className="font-mono font-bold text-zinc-400">
                                             {isPending ? "⚠️" : `#${node.Ordem}`}
                                           </span>
-                                          <span className="font-bold text-zinc-200">{node.Cliente}</span>
+                                          <div>
+                                                  <div className="font-bold text-zinc-200">{node.Nome_Cliente || node.Cliente}</div>
+                                                  {node.Nome_Cliente && node.Nome_Cliente !== node.Cliente && (
+                                                    <div className="text-[10px] text-zinc-500 font-mono">{node.Cliente}</div>
+                                                  )}
+                                                  </div>
                                         </div>
 
                                         {!isPending && (

@@ -138,7 +138,16 @@ async def upload_file(file: UploadFile = File(...), current_user: UserResponse =
 
         else:
 
-            df = pd.read_excel(temp_path, nrows=2)
+            xls = pd.ExcelFile(temp_path)
+            sheet_to_read = None
+            for s in xls.sheet_names:
+                if s.lower().strip() in ['entregas', 'clientes', 'encomendas', 'deliveries', 'orders']:
+                    sheet_to_read = s
+                    break
+            if sheet_to_read:
+                df = pd.read_excel(xls, sheet_name=sheet_to_read, nrows=2)
+            else:
+                df = pd.read_excel(temp_path, nrows=2)
 
             
 
@@ -418,17 +427,17 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
                     INSERT INTO entregas (
 
-                        projeto_id, codigo_cliente, morada, codigo_postal, _concelho,
+                        projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
 
                         peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
 
                         latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada
 
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
                 """, (
 
-                    mapping.project_id, code, addr, cp, city,
+                    mapping.project_id, code, name, addr, cp, city,
 
                     weight, volume, priority, start_window, end_window,
 
@@ -745,6 +754,7 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
                     "id": r["id"],
 
                     "codigo_cliente": r["codigo_cliente"],
+                    "nome_cliente": r["nome_cliente"] if ("nome_cliente" in r.keys() and r["nome_cliente"]) else r["codigo_cliente"],
 
                     "morada": r["morada"],
 

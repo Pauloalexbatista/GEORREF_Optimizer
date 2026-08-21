@@ -95,6 +95,7 @@ interface RouteStop {
   Armazem: string;
   Ordem: number;
   Cliente: string;
+  Nome_Cliente?: string;
   Morada: string;
   CP: string;
   Localidade: string;
@@ -152,6 +153,7 @@ export default function RoutesMatrixPage() {
   const broadcastUpdate = (updatedRoutes: RouteStop[], vList: string[], wList: WarehouseData[]) => {
     const mappedClients = updatedRoutes.map((r) => ({
       Cliente: r.Cliente,
+      Nome_Cliente: r.Nome_Cliente || r.Cliente,
       Morada: r.Morada,
       Latitude: r.Latitude,
       Longitude: r.Longitude,
@@ -648,7 +650,12 @@ export default function RoutesMatrixPage() {
                                     ⏳ Espera
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-4 font-bold text-amber-300">{stop.Cliente}</td>
+                                <td className="py-2.5 px-4">
+                                  <div className="font-bold text-amber-300">{stop.Nome_Cliente || stop.Cliente}</div>
+                                  {stop.Nome_Cliente && stop.Nome_Cliente !== stop.Cliente && (
+                                    <div className="text-[10px] text-amber-400/60 font-mono">{stop.Cliente}</div>
+                                  )}
+                                </td>
                                 <td className="py-2.5 px-4 truncate max-w-xs text-amber-100/90 italic">
                                   Aguardar Abertura da Janela ({stop.Morada})
                                 </td>
@@ -686,7 +693,12 @@ export default function RoutesMatrixPage() {
                               <td className="py-2.5 px-4 text-center font-mono font-bold text-zinc-400">
                                 {isPending ? "-" : `#${stop.Ordem}`}
                               </td>
-                              <td className="py-2.5 px-4 font-semibold text-zinc-200">{stop.Cliente}</td>
+                              <td className="py-2.5 px-4">
+                              <div className="font-semibold text-zinc-200">{stop.Nome_Cliente || stop.Cliente}</div>
+                              {stop.Nome_Cliente && stop.Nome_Cliente !== stop.Cliente && (
+                                <div className="text-[10px] text-zinc-500 font-mono">{stop.Cliente}</div>
+                              )}
+                            </td>
                               <td className="py-2.5 px-4 text-zinc-300 truncate max-w-xs">{stop.Morada}</td>
                               <td className="py-2.5 px-4 text-zinc-400 font-mono">{stop.CP || "N/A"}</td>
                               <td className={`py-2.5 px-4 text-center font-mono text-[11px] ${

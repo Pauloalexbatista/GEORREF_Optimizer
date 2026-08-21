@@ -8,6 +8,7 @@ import { apiRequest } from "@/utils/api";
 interface Delivery {
   id: number;
   codigo_cliente: string;
+  nome_cliente?: string;
   morada: string;
   codigo_postal: string;
   concelho: string;
@@ -189,11 +190,28 @@ export default function GeoreferencingPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedProject) return;
 
     setLoading(true);
     const formData = new FormData();
     formData.append("file", file);
+
+    const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
+    if (isExcel) {
+      try {
+        const importRes = await apiRequest(`/api/fleet/import/${selectedProject.id}`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+        setDeliveries(data);
+        setStep("results");
+        alert(importRes.message || "Ficheiro unificado importado e georreferenciado com sucesso!");
+        return;
+      } catch (importErr: any) {
+        console.warn("Ficheiro nao e template unificado, avancando para mapeamento manual:", importErr);
+      }
+    }
 
     try {
       const res = await apiRequest("/api/geocoding/upload", {
@@ -603,7 +621,12 @@ export default function GeoreferencingPage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-4 font-semibold text-zinc-200">{del.codigo_cliente}</td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-semibold text-zinc-200">{del.nome_cliente || del.codigo_cliente}</div>
+                          {del.nome_cliente && del.nome_cliente !== del.codigo_cliente && (
+                            <div className="text-[10px] text-zinc-500 font-mono">{del.codigo_cliente}</div>
+                          )}
+                        </td>
                         <td className="py-2.5 px-4 text-zinc-300 truncate max-w-xs">{del.morada}</td>
                         <td className="py-2.5 px-4 text-zinc-400 font-mono">{del.codigo_postal || "N/A"}</td>
                         <td className="py-2.5 px-4 text-zinc-400">{del.concelho || "N/A"}</td>

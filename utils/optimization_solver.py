@@ -359,7 +359,14 @@ class AdvancedRouteOptimizer:
             cur_kg = float(demands[seed]) if seed < len(demands) else 0.0
             cur_vol = float(volume_demands[seed]) if volume_demands and seed < len(volume_demands) else 0.0
             
-            # 2. Recruit closest unassigned clients based on min distance to any node in current vehicle
+            # 2. Recruit closest unassigned clients enforcing CAPACITY AND TIME WINDOWS
+            current_time = v_starts[v]
+            current_node = seed
+            win_s = client_time_windows[seed - num_warehouses][0] if client_time_windows and (seed - num_warehouses) < len(client_time_windows) else 0
+            dist_to_seed = float(distance_matrix[depot][seed])
+            t_arr_seed = current_time + (dist_to_seed / 45.0) * 60.0
+            current_time = max(t_arr_seed, win_s) + 15.0
+            
             while unassigned_clients:
                 rem_eligible = [
                     c for c in unassigned_clients
@@ -369,7 +376,8 @@ class AdvancedRouteOptimizer:
                     break
                     
                 best_candidate = None
-                min_edge_dist = float('inf')
+                best_score = float('inf')
+                best_new_time = current_time
                 
                 for c in rem_eligible:
                     c_kg = float(demands[c]) if c < len(demands) else 0.0
@@ -378,18 +386,44 @@ class AdvancedRouteOptimizer:
                     if (cur_kg + c_kg) > effective_cap_kg or (cur_vol + c_vol) > max_vol:
                         continue
                         
-                    # Min distance in matrix D to any client already in this vehicle
-                    dist_to_cluster = min(float(distance_matrix[node][c]) for node in assigned_to_v)
+                    dist_from_last = float(distance_matrix[current_node][c])
+                    t_arr_c = current_time + (dist_from_last / 45.0) * 60.0
                     
-                    if dist_to_cluster < min_edge_dist:
-                        min_edge_dist = dist_to_cluster
+                    c_win_s, c_win_e = 0, 1440
+                    c_idx = c - num_warehouses
+                    if client_time_windows and 0 <= c_idx < len(client_time_windows):
+                        c_win_s, c_win_e = client_time_windows[c_idx]
+                        
+                    wait_m = max(0.0, c_win_s - t_arr_c) if c_win_s > 0 else 0.0
+                    serv_start = t_arr_c + wait_m
+                    
+                    # Do not assign if it arrives after window end
+                    if serv_start > c_win_e:
+                        continue
+                        
+                    t_serv_end = serv_start + 15.0
+                    ret_dist = float(distance_matrix[c][depot])
+                    t_return = t_serv_end + (ret_dist / 45.0) * 60.0
+                    
+                    # Do not exceed vehicle shift end
+                    if t_return > v_ends[v] + 15.0:
+                        continue
+                        
+                    dist_to_cluster = min(float(distance_matrix[node][c]) for node in assigned_to_v)
+                    score = dist_to_cluster + (wait_m * 0.3)
+                    
+                    if score < best_score:
+                        best_score = score
                         best_candidate = c
+                        best_new_time = t_serv_end
                         
                 if best_candidate is not None:
                     assigned_to_v.append(best_candidate)
                     unassigned_clients.remove(best_candidate)
                     cur_kg += float(demands[best_candidate]) if best_candidate < len(demands) else 0.0
                     cur_vol += float(volume_demands[best_candidate]) if volume_demands and best_candidate < len(volume_demands) else 0.0
+                    current_node = best_candidate
+                    current_time = best_new_time
                 else:
                     break
                     

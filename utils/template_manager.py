@@ -10,6 +10,7 @@ DB_FILE = 'geocoding.db'
 
 DELIVERIES_COLUMNS = [
     'Codigo_Cliente',
+    'Nome_Cliente',
     'Morada',
     'Codigo_Postal',
     'Concelho',
@@ -268,6 +269,7 @@ def generate_random_deliveries(n_deliveries=50, quality_levels=None, db_path=DB_
         
         delivery = {
             'Codigo_Cliente': f"CL{i+1:04d}",
+            'Nome_Cliente': f"Cliente CL{i+1:04d}",
             'Morada': row['full_street'],
             'Codigo_Postal': cp7 if cp7 else cp4,
             'Concelho': row['cc_desig'] if pd.notna(row['cc_desig']) else '',
@@ -408,14 +410,14 @@ def create_unified_project_template():
     
     # Sheet 3: Entregas
     cols = [
-        'Codigo_Cliente', 'Morada', 'Codigo_Postal', 'Concelho', 
+        'Codigo_Cliente', 'Nome_Cliente', 'Morada', 'Codigo_Postal', 'Concelho', 
         'Latitude', 'Longitude', 'Peso_KG', 'Volume_m3', 'Prioridade', 
         'Janela_Inicio', 'Janela_Fim', 'Janela2_Inicio', 'Janela2_Fim', 
         'Janela3_Inicio', 'Janela3_Fim', 'Observacoes', 'Armazem'
     ]
     df_deliveries = pd.DataFrame(columns=cols)
-    df_deliveries.loc[0] = ['CL0001', 'Avenida da República, 100', '1050-191', 'Lisboa', '', '', 115.5, 1.9, 1, '08:00', '13:00', '14:00', '18:00', '', '', 'Fragil', 'Armazém Central']
-    df_deliveries.loc[1] = ['CL0002', 'Avenida dos Aliados, 50', '4000-064', 'Porto', 41.1478, -8.6111, 83.9, 0.51, 1, '10:00', '13:00', '14:00', '18:00', '', '', 'Urgente', 'Armazém Norte']
+    df_deliveries.loc[0] = ['CL0001', 'Cliente Exemplo 1', 'Avenida da República, 100', '1050-191', 'Lisboa', '', '', 115.5, 1.9, 1, '08:00', '13:00', '14:00', '18:00', '', '', 'Fragil', 'Armazém Central']
+    df_deliveries.loc[1] = ['CL0002', 'Cliente Exemplo 2', 'Avenida dos Aliados, 50', '4000-064', 'Porto', 41.1478, -8.6111, 83.9, 0.51, 1, '10:00', '13:00', '14:00', '18:00', '', '', 'Urgente', 'Armazém Norte']
     
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
