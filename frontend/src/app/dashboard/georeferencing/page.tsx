@@ -57,6 +57,7 @@ export default function GeoreferencingPage() {
   const [corrCity, setCorrCity] = useState("");
   const [corrLat, setCorrLat] = useState(0.0);
   const [corrLon, setCorrLon] = useState(0.0);
+  const [googleCoordsInput, setGoogleCoordsInput] = useState("");
 
   // Suggestions state
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -294,6 +295,7 @@ export default function GeoreferencingPage() {
     setCorrCity(del.concelho);
     setCorrLat(del.latitude);
     setCorrLon(del.longitude);
+    setGoogleCoordsInput("");
   };
 
   const submitCorrection = async (e?: React.FormEvent) => {
@@ -722,11 +724,14 @@ export default function GeoreferencingPage() {
                       </div>
                       <input
                         type="text"
+                        value={googleCoordsInput}
                         placeholder="Cole aqui (ex: 38.600914, -7.888504)..."
                         onChange={(e) => {
-                          const val = e.target.value.trim();
-                          if (!val) return;
-                          const parts = val.split(/[,;\s\t]+/).filter(Boolean);
+                          const val = e.target.value;
+                          setGoogleCoordsInput(val);
+                          const clean = val.trim();
+                          if (!clean) return;
+                          const parts = clean.split(/[,;\s\t]+/).filter(Boolean);
                           if (parts.length >= 2) {
                             const pLat = parseFloat(parts[0].replace(",", "."));
                             const pLon = parseFloat(parts[1].replace(",", "."));
