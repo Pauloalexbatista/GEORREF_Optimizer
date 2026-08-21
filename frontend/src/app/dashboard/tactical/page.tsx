@@ -960,19 +960,19 @@ export default function TacticalPage() {
                           </div>
                         </div>
 
-                        {/* Actions container stacked vertically on the right */}
+                        {/* Actions container stacked vertically on the right (compact 1/4 width) */}
                         <div className="flex items-center space-x-1.5 shrink-0">
-                          <div className="flex flex-col items-end gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-col items-end gap-1 w-24 shrink-0" onClick={(e) => e.stopPropagation()}>
                             {!isPending && items.length > 1 && (
                               <button
                                 onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
-                                className="w-full justify-center bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-2 py-0.5 rounded-lg text-[9px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
+                                className="w-full justify-center bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-1.5 py-0.5 rounded-lg text-[9px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm truncate"
                                 title="Ordenar sequência pelo trajeto mais curto"
                               >
-                                <svg className="w-2.5 h-2.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-2.5 h-2.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                 </svg>
-                                <span>⚡ Ordenar Trajeto</span>
+                                <span>Ordenar</span>
                               </button>
                             )}
                             {items.length > 0 && (
@@ -986,22 +986,22 @@ export default function TacticalPage() {
                                     handleTransferEntireRoute(routeName, tgt);
                                     e.target.value = "";
                                   }}
-                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[9px] rounded-lg px-1.5 py-0.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans"
+                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[9px] rounded-lg px-1.5 py-0.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans truncate"
                                   title="Transferir todas as paragens desta rota para outro carro ou para Por Distribuir"
                                 >
                                   <option value="" disabled>
-                                    ⇄ Mover Carga ({items.length})...
+                                    ⇄ Mover ({items.length})
                                   </option>
                                   {!isPending && (
                                     <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
-                                      📦 Esvaziar para &apos;Por Distribuir&apos;
+                                      📦 Esvaziar
                                     </option>
                                   )}
                                   {vehicles
                                     .filter((v) => v !== routeName)
                                     .map((v) => (
                                       <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
-                                        🚚 Mover tudo para {v}
+                                        🚚 {v}
                                       </option>
                                     ))}
                                 </select>

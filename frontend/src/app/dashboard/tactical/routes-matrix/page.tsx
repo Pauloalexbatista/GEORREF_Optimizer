@@ -605,8 +605,8 @@ export default function RoutesMatrixPage() {
                             )}
                           </div>
 
-                          {/* Right: Actions stacked vertically */}
-                          <div className="flex flex-col items-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {/* Right: Actions stacked vertically (compact) */}
+                          <div className="flex flex-col items-end gap-1 w-28 shrink-0" onClick={(e) => e.stopPropagation()}>
                             {!isPending && routeStops.length > 1 && (
                               <button
                                 onClick={(e) => {
@@ -614,10 +614,10 @@ export default function RoutesMatrixPage() {
                                   handleOptimizeSingle(rowName);
                                 }}
                                 disabled={actionLoading === rowName}
-                                className="w-full justify-center px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all shadow-sm flex items-center space-x-1"
+                                className="w-full justify-center px-2 py-0.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all shadow-sm flex items-center space-x-1 truncate"
                                 title="Otimizar sequência do trajeto pelo percurso mais curto respeitando janelas horárias"
                               >
-                                <span>⚡ Ordenar Trajeto</span>
+                                <span>⚡ Ordenar</span>
                               </button>
                             )}
                             {routeStops.length > 0 && (
@@ -631,22 +631,22 @@ export default function RoutesMatrixPage() {
                                     handleTransferEntireRoute(rowName, tgt);
                                     e.target.value = "";
                                   }}
-                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[10px] rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans"
+                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[10px] rounded-lg px-1.5 py-0.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans truncate"
                                   title="Transferir toda a carga desta rota para outro carro ou para Por Distribuir"
                                 >
                                   <option value="" disabled>
-                                    ⇄ Mover Carga ({routeStops.length} paragens)...
+                                    ⇄ Mover ({routeStops.length})
                                   </option>
                                   {!isPending && (
                                     <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
-                                      📦 Esvaziar para &apos;Por Distribuir&apos;
+                                      📦 Esvaziar
                                     </option>
                                   )}
                                   {vehicles
                                     .filter((v) => v !== rowName)
                                     .map((v) => (
                                       <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
-                                        🚚 Mover tudo para {v}
+                                        🚚 {v}
                                       </option>
                                     ))}
                                 </select>
