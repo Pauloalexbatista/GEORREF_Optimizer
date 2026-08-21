@@ -115,7 +115,7 @@ class WaterfallGeocoder:
     def _get_db_connection(self):
         return sqlite3.connect(self.db_path)
 
-    def resolve_address(self, address, cp4=None, concelho=None):
+    def resolve_address(self, address, cp4=None, concelho=None, fast_mode: bool = False):
         """
         Main entry point for geocoding.
         Returns a tuple: (result_dict, learned_data_dict_or_None)
@@ -136,6 +136,10 @@ class WaterfallGeocoder:
         # Initialize best_result with what we have (even if None)
         best_result = result
         current_quality = result['quality_level'] if result else 8 # 8 is worst
+        
+        if fast_mode:
+            final_result = best_result if best_result else {'quality_level': 8, 'source': 'FAILED', 'score': 0, 'lat': None, 'lon': None, 'address': None}
+            return final_result, learned_data
         
         # --- LEVEL 1.5: WEB SCRAPER (CP7) ---
         # Try this if we have a full CP7 (xxxx-xxx) and local failed or is poor quality

@@ -373,7 +373,7 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
                 try:
 
-                    resolve_res = geocoder.resolve_address(addr, cp, city)
+                    resolve_res = geocoder.resolve_address(addr, cp, city, fast_mode=True)
 
                     if isinstance(resolve_res, tuple):
 

@@ -806,7 +806,7 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                     }
                 else:
                     try:
-                        res_tuple = geocoder.resolve_address(addr, cp, city)
+                        res_tuple = geocoder.resolve_address(addr, cp, city, fast_mode=True)
                         res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
                     except Exception:
                         res = None
@@ -1403,7 +1403,7 @@ async def import_fleet_warehouses(
                     }
                 else:
                     try:
-                        res_tuple = geocoder.resolve_address(addr, cp, city)
+                        res_tuple = geocoder.resolve_address(addr, cp, city, fast_mode=True)
                         res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
                     except Exception:
                         res = None
