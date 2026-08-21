@@ -1107,8 +1107,9 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
             state_dict = deserialize_state(row["payload_json"])
             
             routes_df = state_dict.get('routes_solution')
-            warehouses_df = state_dict.get('warehouses_geocoded')
-            fleet_config = state_dict.get('fleet_config')
+            wh_raw = state_dict.get('warehouses_geocoded')
+            warehouses_df = wh_raw if (wh_raw is not None and not (isinstance(wh_raw, pd.DataFrame) and wh_raw.empty)) else state_dict.get('warehouses_used')
+            fleet_config = state_dict.get('fleet_config') or state_dict.get('fleet_config_used')
             optimization_params = state_dict.get("optimization_params")
             
         from utils.export_engine import generate_full_project_excel
