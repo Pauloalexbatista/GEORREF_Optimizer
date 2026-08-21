@@ -10,6 +10,7 @@ const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: f
 
 interface RouteNode {
   id?: number;
+  ID_Original?: number;
   Rota: string;
   Armazem: string;
   Ordem: number;
@@ -351,7 +352,7 @@ export default function TacticalPage() {
     }
   };
 
-  const handleReorderStop = async (routeName: string, clientName: string, currentOrder: number, direction: "up" | "down", e: React.MouseEvent) => {
+  const handleReorderStop = async (routeName: string, clientName: string, currentOrder: number, direction: "up" | "down", e: React.MouseEvent, deliveryId?: number, address?: string) => {
     e.stopPropagation();
     if (!selectedProject) return;
     const newOrder = direction === "up" ? currentOrder - 1 : currentOrder + 1;
@@ -363,6 +364,8 @@ export default function TacticalPage() {
           project_id: selectedProject.id,
           route_name: routeName,
           client_code: clientName,
+          delivery_id: deliveryId,
+          address: address,
           new_order: newOrder,
         }),
       });

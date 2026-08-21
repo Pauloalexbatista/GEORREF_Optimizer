@@ -91,6 +91,7 @@ function calculateDurationString(startStr: string, endStr: string): string {
 
 interface RouteStop {
   id?: number;
+  ID_Original?: number;
   Rota: string;
   Armazem: string;
   Ordem: number;
@@ -230,9 +231,10 @@ export default function RoutesMatrixPage() {
     setExpandedRoutes(allState);
   };
 
-  const handleReassign = async (clientCode: string, newRoute: string) => {
+  const handleReassign = async (clientCode: string, newRoute: string, deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
-    setActionLoading(clientCode);
+    const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
+    setActionLoading(actKey);
     try {
       const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
       const res = await apiRequest("/api/solver/reassign", {
@@ -240,6 +242,8 @@ export default function RoutesMatrixPage() {
         body: JSON.stringify({
           project_id: selectedProject.id,
           client_code: clientCode,
+          delivery_id: deliveryId,
+          address: address,
           new_route: targetRoute,
         }),
       });
@@ -257,10 +261,11 @@ export default function RoutesMatrixPage() {
     }
   };
 
-  const handleReorder = async (routeName: string, clientCode: string, currentOrder: number, direction: "up" | "down") => {
+  const handleReorder = async (routeName: string, clientCode: string, currentOrder: number, direction: "up" | "down", deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
     const newOrder = direction === "up" ? currentOrder - 1 : currentOrder + 1;
-    setActionLoading(clientCode);
+    const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
+    setActionLoading(actKey);
     try {
       const res = await apiRequest("/api/solver/reorder", {
         method: "POST",
@@ -268,6 +273,8 @@ export default function RoutesMatrixPage() {
           project_id: selectedProject.id,
           route_name: routeName,
           client_code: clientCode,
+          delivery_id: deliveryId,
+          address: address,
           new_order: newOrder,
         }),
       });
@@ -631,7 +638,7 @@ export default function RoutesMatrixPage() {
                       routeStops.map((stop, idx) => {
                         const isFirst = idx === 0;
                         const isLast = idx === routeStops.length - 1;
-                        const isActing = actionLoading === stop.Cliente;
+                        const isActing = actionLoading === (stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente) || actionLoading === stop.Cliente;
                         const travelTimeMin = Math.round(((stop.KM_Anterior || 0) / speed) * 60);
                         const hasWait = !isPending && Number(stop.Tempo_Espera || 0) > 0;
                         const serviceStartTime = hasWait
@@ -736,7 +743,7 @@ export default function RoutesMatrixPage() {
                               <td className="py-2.5 px-4 text-center">
                                 <select
                                   value={isPending ? "Por Distribuir" : stop.Rota}
-                                  onChange={(e) => handleReassign(stop.Cliente, e.target.value)}
+                                  onChange={(e) => handleReassign(stop.Cliente, e.target.value, stop.id || stop.ID_Original, stop.Morada)}
                                   disabled={isActing}
                                   className="bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500 cursor-pointer w-36"
                                 >
@@ -752,7 +759,7 @@ export default function RoutesMatrixPage() {
                                 {!isPending && (
                                   <div className="flex items-center justify-center space-x-1">
                                     <button
-                                      onClick={() => handleReorder(stop.Rota, stop.Cliente, stop.Ordem, "up")}
+                                      onClick={() => handleReorder(stop.Rota, stop.Cliente, stop.Ordem, "up", stop.id || stop.ID_Original, stop.Morada)}
                                       disabled={isFirst || isActing}
                                       className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-200 disabled:opacity-20 cursor-pointer"
                                       title="Mover para cima"
@@ -760,7 +767,7 @@ export default function RoutesMatrixPage() {
                                       ▲
                                     </button>
                                     <button
-                                      onClick={() => handleReorder(stop.Rota, stop.Cliente, stop.Ordem, "down")}
+                                      onClick={() => handleReorder(stop.Rota, stop.Cliente, stop.Ordem, "down", stop.id || stop.ID_Original, stop.Morada)}
                                       disabled={isLast || isActing}
                                       className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-200 disabled:opacity-20 cursor-pointer"
                                       title="Mover para baixo"

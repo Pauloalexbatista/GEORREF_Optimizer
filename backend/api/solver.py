@@ -63,15 +63,21 @@ class SolverRequest(BaseModel):
     project_id: int
     params: Dict[str, Any]
 
+from typing import Optional
+
 class ReorderRequest(BaseModel):
     project_id: int
     route_name: str
-    client_code: str
+    client_code: Optional[str] = None
+    delivery_id: Optional[int] = None
+    address: Optional[str] = None
     new_order: int
 
 class ReassignRequest(BaseModel):
     project_id: int
-    client_code: str
+    client_code: Optional[str] = None
+    delivery_id: Optional[int] = None
+    address: Optional[str] = None
     new_route: str
 
 class OptimizeRouteRequest(BaseModel):
@@ -431,11 +437,14 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     win_e = str(client_row.get("Slot1_Fim", "") or "").strip()
                     combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
                     
+                    deliv_id = int(client_row.get("id", client_idx + 1))
                     raw_stops.append({
+                        "id": deliv_id,
+                        "ID_Original": deliv_id,
                         "Rota": vehicle_name,
                         "Armazem": warehouse_origin,
                         "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
-                    "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
+                        "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
                         "Morada": str(client_row.get("Morada", "N/A")),
                         "CP": str(client_row.get("Codigo_Postal", "N/A")),
                         "Localidade": str(client_row.get("Localidade", "")),
@@ -473,12 +482,15 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             win_e = str(client_row.get("Slot1_Fim", "") or "").strip()
             combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
             
+            deliv_id = int(client_row.get("id", client_idx + 1))
             routes_list.append({
+                "id": deliv_id,
+                "ID_Original": deliv_id,
                 "Rota": "Por Distribuir",
                 "Armazem": "N/A",
                 "Ordem": pending_order,
                 "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
-                    "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
+                "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
                 "Morada": str(client_row.get("Morada", "N/A")),
                 "CP": str(client_row.get("Codigo_Postal", "N/A")),
                 "Localidade": str(client_row.get("Localidade", "")),
@@ -553,7 +565,10 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                         r_name = str(r.get("Rota", "Por Distribuir") if pd.notna(r.get("Rota")) else "Por Distribuir")
                         if "PENDENTE" in r_name.upper():
                             r_name = "Por Distribuir"
+                        d_id = clean_int(r.get("id") or r.get("ID_Original"), idx + 1)
                         routes_list.append({
+                            "id": d_id,
+                            "ID_Original": d_id,
                             "Rota": r_name,
                             "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
                             "Ordem": clean_int(r.get("Ordem"), 1),
@@ -612,16 +627,41 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
         if df_routes.empty:
             raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
             
-        target_code = str(req.client_code).strip().upper()
-        client_idx = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == target_code].index
+        target_idx = None
         
-        if len(client_idx) == 0:
-            client_idx = df_routes[df_routes["Cliente"].astype(str).str.contains(target_code, case=False, na=False)].index
-            
-        if len(client_idx) == 0:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado nas rotas.")
-            
-        target_idx = client_idx[0]
+        # Match by delivery_id / ID_Original if supplied
+        if req.delivery_id is not None:
+            if "id" in df_routes.columns:
+                m_id = df_routes[df_routes["id"] == req.delivery_id].index
+                if len(m_id) > 0:
+                    target_idx = m_id[0]
+            if target_idx is None and "ID_Original" in df_routes.columns:
+                m_id = df_routes[df_routes["ID_Original"] == req.delivery_id].index
+                if len(m_id) > 0:
+                    target_idx = m_id[0]
+                    
+        # Match by client_code AND address if supplied
+        if target_idx is None and req.client_code and req.address:
+            t_code = str(req.client_code).strip().upper()
+            t_addr = str(req.address).strip().upper()
+            m_both = df_routes[
+                (df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) &
+                (df_routes["Morada"].astype(str).str.strip().str.upper() == t_addr)
+            ].index
+            if len(m_both) > 0:
+                target_idx = m_both[0]
+                
+        # Match by client_code
+        if target_idx is None and req.client_code:
+            t_code = str(req.client_code).strip().upper()
+            m_code = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code].index
+            if len(m_code) == 0:
+                m_code = df_routes[df_routes["Cliente"].astype(str).str.contains(t_code, case=False, na=False)].index
+            if len(m_code) > 0:
+                target_idx = m_code[0]
+                
+        if target_idx is None:
+            raise HTTPException(status_code=404, detail="Cliente/Entrega não encontrado nas rotas.")
         
         new_route_clean = req.new_route
         if is_pending_route(new_route_clean):
