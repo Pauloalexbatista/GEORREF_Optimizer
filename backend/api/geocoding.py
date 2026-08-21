@@ -839,6 +839,36 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                 WHERE id = ?
             """, (corr.morada, corr.codigo_postal, corr.concelho, corr.latitude, corr.longitude, delivery_id))
 
+            # Persistir / Enriquecer a Base de Dados Permanente (geocoding.db)
+            if corr.latitude != 0.0 and corr.longitude != 0.0:
+                try:
+                    import sqlite3
+                    from datetime import datetime
+                    with sqlite3.connect(DB_GEO_PATH) as geo_conn:
+                        geo_cur = geo_conn.cursor()
+                        cp_raw = str(corr.codigo_postal or "").strip()
+                        cp4_str = cp_raw.split("-")[0].strip() if cp_raw else ""
+                        cp3_str = cp_raw.split("-")[1].strip() if "-" in cp_raw else ""
+                        
+                        geo_cur.execute("""
+                            INSERT INTO pt_addresses 
+                            (full_street, ART_DESIG, cc_desig, CP4, CP3, CPALF, LATITUDE, LONGITUDE, quality_score, match_type, source, last_validated)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'MANUAL_EXACT', 'CORRECAO_UTILIZADOR', ?)
+                        """, (
+                            corr.morada,
+                            corr.morada,
+                            corr.concelho or "",
+                            cp4_str,
+                            cp3_str,
+                            cp_raw,
+                            corr.latitude,
+                            corr.longitude,
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ))
+                        geo_conn.commit()
+                except Exception as geo_err:
+                    print(f"[AVISO] Não foi possível persistir endereço em geocoding.db: {geo_err}")
+
             cursor.execute("SELECT e.projeto_id, e.codigo_cliente FROM entregas e WHERE e.id = ?", (delivery_id,))
             deliv_info = cursor.fetchone()
             if deliv_info:
