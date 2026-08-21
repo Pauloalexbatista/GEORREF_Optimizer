@@ -19,6 +19,46 @@ from backend.api.auth import get_current_user, UserResponse
 
 router = APIRouter(prefix="/solver", tags=["solver"])
 
+import math
+import numpy as np
+
+def clean_num(val, default=0.0):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return f
+    except Exception:
+        return default
+
+def clean_int(val, default=0):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return int(f)
+    except Exception:
+        return default
+
+def sanitize_json_data(obj):
+    """Recursively replaces NaN, Inf, -Inf with safe values for JSON compliance."""
+    if isinstance(obj, dict):
+        return {k: sanitize_json_data(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_json_data(v) for v in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return 0.0
+        return obj
+    elif pd.isna(obj):
+        return None
+    return obj
+
+
 class SolverRequest(BaseModel):
     project_id: int
     params: Dict[str, Any]
@@ -510,38 +550,39 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                 df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
                 if not df_routes.empty:
                     for idx, r in df_routes.iterrows():
-                        r_name = str(r.get("Rota", "Por Distribuir"))
+                        r_name = str(r.get("Rota", "Por Distribuir") if pd.notna(r.get("Rota")) else "Por Distribuir")
                         if "PENDENTE" in r_name.upper():
                             r_name = "Por Distribuir"
                         routes_list.append({
                             "Rota": r_name,
-                            "Armazem": r.get("Armazem", "N/A"),
-                            "Ordem": int(r.get("Ordem", 1)),
-                            "Cliente": str(r.get("Cliente", "")),
-                            "Nome_Cliente": str(r.get("Nome_Cliente", r.get("Cliente", ""))),
-                            "Morada": str(r.get("Morada", "")),
-                            "CP": str(r.get("CP", "")),
-                            "Localidade": str(r.get("Localidade", "")),
-                            "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer")),
-                            "Latitude": float(r.get("Latitude", 0.0)),
-                            "Longitude": float(r.get("Longitude", 0.0)),
-                            "Chegada": str(r.get("Chegada", "00:00")),
-                            "Tempo_Espera": int(r.get("Tempo_Espera", 0)),
-                            "Tempo_Entrega": int(r.get("Tempo_Entrega", 15)),
-                            "Saida": str(r.get("Saida", "00:00")),
-                            "Nivel_Qualidade": int(r.get("Nivel_Qualidade", 1)),
-                            "KM_Anterior": float(r.get("KM_Anterior", 0.0)),
-                            "Dist_Acum": float(r.get("Dist_Acum", 0.0)),
-                            "Peso_KG": float(r.get("Peso_KG", 50.0)),
-                            "Carga_Acum": float(r.get("Carga_Acum", 0.0)),
-                            "Carga_Vol_Acum": float(r.get("Carga_Vol_Acum", 0.0))
+                            "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
+                            "Ordem": clean_int(r.get("Ordem"), 1),
+                            "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""),
+                            "Nome_Cliente": str(r.get("Nome_Cliente", r.get("Cliente", "")) if pd.notna(r.get("Nome_Cliente")) else str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else "")),
+                            "Morada": str(r.get("Morada", "") if pd.notna(r.get("Morada")) else ""),
+                            "CP": str(r.get("CP", "") if pd.notna(r.get("CP")) else ""),
+                            "Localidade": str(r.get("Localidade", "") if pd.notna(r.get("Localidade")) else ""),
+                            "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
+                            "Latitude": clean_num(r.get("Latitude"), 0.0),
+                            "Longitude": clean_num(r.get("Longitude"), 0.0),
+                            "Chegada": str(r.get("Chegada", "00:00") if pd.notna(r.get("Chegada")) else "00:00"),
+                            "Tempo_Espera": clean_int(r.get("Tempo_Espera"), 0),
+                            "Tempo_Entrega": clean_int(r.get("Tempo_Entrega"), 15),
+                            "Saida": str(r.get("Saida", "00:00") if pd.notna(r.get("Saida")) else "00:00"),
+                            "Nivel_Qualidade": clean_int(r.get("Nivel_Qualidade"), 1),
+                            "KM_Anterior": clean_num(r.get("KM_Anterior"), 0.0),
+                            "Dist_Acum": clean_num(r.get("Dist_Acum"), 0.0),
+                            "Peso_KG": clean_num(r.get("Peso_KG"), 50.0),
+                            "Carga_Acum": clean_num(r.get("Carga_Acum"), 0.0),
+                            "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), 0.0)
                         })
                         
-            return {
+            resp_data = {
                 "status": "success" if routes_list else "none",
                 "routes": routes_list,
-                "quality_metrics": state_dict.get("routes_metrics", {})
+                "quality_metrics": sanitize_json_data(state_dict.get("routes_metrics", {}))
             }
+            return sanitize_json_data(resp_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -639,7 +680,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
             )
             conn.commit()
             
-        return {"status": "success", "routes": df_new_routes.to_dict(orient="records")}
+        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -738,7 +779,7 @@ def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends
             )
             conn.commit()
             
-        return {"status": "success", "routes": df_new_routes.to_dict(orient="records")}
+        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -772,7 +813,7 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
         route_stops = df_routes[route_mask].copy()
         
         if len(route_stops) <= 1:
-            return {"status": "success", "routes": df_routes.to_dict(orient="records")}
+            return sanitize_json_data({"status": "success", "routes": df_routes.to_dict(orient="records")})
             
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
@@ -903,7 +944,7 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
             )
             conn.commit()
             
-        return {"status": "success", "routes": df_new_routes.to_dict(orient="records")}
+        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
