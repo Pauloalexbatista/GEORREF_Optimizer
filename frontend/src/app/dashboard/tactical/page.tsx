@@ -326,7 +326,41 @@ export default function TacticalPage() {
     }
   };
 
-  const handleMoveClientRoute = async (clientName: string, newRoute: string) => {
+  const handleTransferEntireRoute = async (sourceRoute: string, targetRoute: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!selectedProject) return;
+    const tgtDisplay = isPendingRoute(targetRoute) ? "Por Distribuir" : targetRoute;
+    const confirmMsg = isPendingRoute(targetRoute)
+      ? `Tem a certeza que deseja esvaziar a rota "${sourceRoute}" e mover todas as suas paragens para "Por Distribuir"?`
+      : `Deseja transferir TODAS as paragens de "${sourceRoute}" para a viatura "${targetRoute}"?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setLoading(true);
+    try {
+      const res = await apiRequest("/api/solver/reassign-entire-route", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: selectedProject.id,
+          source_route: sourceRoute,
+          target_route: tgtDisplay,
+        }),
+      });
+      const cleaned = (res.routes || []).map((r: any) => ({
+        ...r,
+        Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+      }));
+      setRoutes(cleaned);
+      broadcastUpdate(cleaned, vehicles, warehouses);
+      
+    } catch (err: any) {
+      alert("Erro ao transferir rota: " + (err.message || "Erro"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMoveClientRoute = async (clientName: string, newRoute: string, deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
     setLoading(true);
     try {
@@ -336,6 +370,8 @@ export default function TacticalPage() {
         body: JSON.stringify({
           project_id: selectedProject.id,
           client_code: clientName,
+          delivery_id: deliveryId,
+          address: address,
           new_route: targetRoute,
         }),
       });
@@ -937,6 +973,38 @@ export default function TacticalPage() {
                               <span>⚡ Ordenar</span>
                             </button>
                           )}
+                          {items.length > 0 && (
+                            <div onClick={(e) => e.stopPropagation()} className="inline-flex items-center">
+                              <select
+                                defaultValue=""
+                                disabled={loading}
+                                onChange={(e) => {
+                                  const tgt = e.target.value;
+                                  if (!tgt) return;
+                                  handleTransferEntireRoute(routeName, tgt);
+                                  e.target.value = "";
+                                }}
+                                className="bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[10px] rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans"
+                                title="Transferir toda a carga desta rota para outro carro ou para Por Distribuir"
+                              >
+                                <option value="" disabled>
+                                  ⇄ Mover Carga ({items.length})...
+                                </option>
+                                {!isPending && (
+                                  <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
+                                    📦 Esvaziar para &apos;Por Distribuir&apos;
+                                  </option>
+                                )}
+                                {vehicles
+                                  .filter((v) => v !== routeName)
+                                  .map((v) => (
+                                    <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
+                                      🚚 Mover tudo para {v}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                          )}
                           <button
                             onClick={() => setExpandedRoute(isExpanded ? null : routeName)}
                             className="p-1 text-zinc-400 hover:text-zinc-200 cursor-pointer"
@@ -1079,7 +1147,7 @@ export default function TacticalPage() {
                                     <div className="flex items-center justify-between pt-1.5">
                                       <select
                                         value={isPending ? "Por Distribuir" : node.Rota}
-                                        onChange={(e) => handleMoveClientRoute(node.Cliente, e.target.value)}
+                                        onChange={(e) => handleMoveClientRoute(node.Cliente, e.target.value, node.id || (node as any).ID_Original, node.Morada)}
                                         className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-indigo-500 cursor-pointer"
                                       >
                                         {reassignVehicleOptions.map((v) => (

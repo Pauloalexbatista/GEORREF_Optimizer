@@ -231,6 +231,39 @@ export default function RoutesMatrixPage() {
     setExpandedRoutes(allState);
   };
 
+  const handleTransferEntireRoute = async (sourceRoute: string, targetRoute: string) => {
+    if (!selectedProject) return;
+    const tgtDisplay = isPendingRoute(targetRoute) ? "Por Distribuir" : targetRoute;
+    const confirmMsg = isPendingRoute(targetRoute)
+      ? `Tem a certeza que deseja esvaziar a rota "${sourceRoute}" e mover todas as suas paragens para "Por Distribuir"?`
+      : `Deseja transferir TODAS as paragens de "${sourceRoute}" para a viatura "${targetRoute}"?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setActionLoading(`bulk_${sourceRoute}`);
+    try {
+      const res = await apiRequest("/api/solver/reassign-entire-route", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: selectedProject.id,
+          source_route: sourceRoute,
+          target_route: tgtDisplay,
+        }),
+      });
+      const updated: RouteStop[] = (res.routes || []).map((r: any) => ({
+        ...r,
+        Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+      }));
+      setRoutes(updated);
+      broadcastUpdate(updated, vehicles, warehouses);
+      setStatusMsg(`Carga total da rota "${sourceRoute}" transferida para "${tgtDisplay}" com sucesso.`);
+    } catch (err: any) {
+      alert("Erro ao transferir rota: " + (err.message || "Erro"));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReassign = async (clientCode: string, newRoute: string, deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
     const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
