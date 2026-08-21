@@ -324,6 +324,37 @@ export default function RoutesMatrixPage() {
     }
   };
 
+  const handleDownloadFile = async (endpoint: string, filename: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(endpoint, { headers });
+      if (!res.ok) throw new Error("Erro ao descarregar ficheiro.");
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e: any) {
+      alert(e.message || "Erro ao descarregar");
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (!selectedProject) return;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    const projClean = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
+    const filename = `Distribuicao_${projClean}_${dateStr}.xlsx`;
+    handleDownloadFile(`/api/solver/export-full/${selectedProject.id}`, filename);
+  };
   const handleOptimizeSingle = async (routeName: string) => {
     if (!selectedProject) return;
     setActionLoading(routeName);
@@ -478,6 +509,16 @@ export default function RoutesMatrixPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             <span>Atualizar</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-emerald-500/10 cursor-pointer transition-colors flex items-center space-x-1.5"
+            title="Exportar pasta Excel completa com Rotas e Manifesto de Carga"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Exportar Excel</span>
           </button>
         </div>
       </header>

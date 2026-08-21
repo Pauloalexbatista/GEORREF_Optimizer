@@ -418,6 +418,14 @@ export default function TacticalPage() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (!selectedProject) return;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    const projClean = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
+    const filename = `Distribuicao_${projClean}_${dateStr}.xlsx`;
+    handleDownloadFile(`/api/solver/export-full/${selectedProject.id}`, filename);
+  };
   const handleDownloadFile = async (endpoint: string, filename: string) => {
     try {
       const token = localStorage.getItem("georoute_token");
@@ -845,7 +853,7 @@ export default function TacticalPage() {
               {routes.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => handleDownloadFile(`/api/solver/export-full/${selectedProject?.id}`, `GeoRoute_Completo_${selectedProject?.id}.xlsx`)}
+                  onClick={handleExportExcel}
                   className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg px-3 py-1.5 text-[10px] font-semibold shadow-md shadow-emerald-500/10 transition-all flex items-center space-x-1.5"
                   title="Exportar Excel Completo"
                 >

@@ -1124,9 +1124,12 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
         output = io.BytesIO(excel_data)
         output.seek(0)
         
-        from datetime import date
-        date_str = date.today().strftime('%Y%m%d')
-        filename = f"GeoRoute_Completo_{project_id}_{date_str}.xlsx"
+        import re
+        from datetime import datetime
+        now_str = datetime.now().strftime('%Y%m%d_%H%M')
+        proj_name = proj.get("nome", f"Projeto_{project_id}")
+        safe_proj_name = re.sub(r'[^\w\s-]', '', str(proj_name)).strip().replace(' ', '_')
+        filename = f"Distribuicao_{safe_proj_name}_{now_str}.xlsx"
         return StreamingResponse(
             output,
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
