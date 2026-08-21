@@ -538,8 +538,9 @@ export default function RoutesMatrixPage() {
                       }`}
                     >
                       <td colSpan={12} className="py-3 px-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
+                        <div className="flex items-center justify-between gap-4">
+                          {/* Left: Indicator, Color, Route Name, Warehouse */}
+                          <div className="flex items-center space-x-3 shrink-0">
                             <span className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`}>▶</span>
                             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
                             <span className={`text-sm font-bold ${isPending ? "text-amber-400" : "text-zinc-100"}`}>
@@ -557,11 +558,12 @@ export default function RoutesMatrixPage() {
                             )}
                           </div>
 
-                          <div className="flex items-center space-x-4 text-xs text-zinc-400 font-mono">
+                          {/* Center / Metrics */}
+                          <div className="flex-1 flex items-center justify-center space-x-3 text-xs text-zinc-400 font-mono">
                             {routeStops.length === 0 && !isPending ? (
                               <div className="flex items-center space-x-3 text-xs text-zinc-400 font-mono">
                                 <span className="text-zinc-300">
-                                  🕒 Turno: <b className="text-zinc-100">{startTimeStr}</b> → <b className="text-zinc-100">{endTimeStr}</b>
+                                  🕐 Turno: <b className="text-zinc-100">{startTimeStr}</b> ➔ <b className="text-zinc-100">{endTimeStr}</b>
                                 </span>
                                 <span>•</span>
                                 <span><b>0</b> paragens</span>
@@ -583,7 +585,7 @@ export default function RoutesMatrixPage() {
                                         ? "text-rose-400 bg-rose-950/60 border border-rose-800/80 px-2 py-0.5 rounded shadow-sm"
                                         : "text-emerald-400"
                                     }`}>
-                                      🛫 Saída: <b className="text-zinc-100">{startTimeStr}</b> → 🏁 Regresso: <b className="text-zinc-100">{returnArrivalTimeStr}</b> ({totalDurationStr}{isOvertime ? ` • Excede Fim Turno: ${endTimeStr}` : ""})
+                                      🛫 Saída: <b className="text-zinc-100">{startTimeStr}</b> ➔ 🏁 Regresso: <b className="text-zinc-100">{returnArrivalTimeStr}</b> ({totalDurationStr}{isOvertime ? ` ⚠️ Excede Fim: ${endTimeStr}` : ""})
                                     </span>
                                     <span>•</span>
                                     <span>
@@ -597,22 +599,58 @@ export default function RoutesMatrixPage() {
                                     }`}>
                                       {isOverweight ? "⚠️ " : ""}Carga: <b className={isOverweight ? "text-rose-200" : "text-zinc-200"}>{totalKg.toFixed(0)} kg</b> <span className={isOverweight ? "text-rose-300 font-semibold" : "text-zinc-500 font-normal"}>(Cap: {capKg.toFixed(0)} kg)</span>
                                     </span>
-                                    {routeStops.length > 1 && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOptimizeSingle(rowName);
-                                        }}
-                                        disabled={actionLoading === rowName}
-                                        className="ml-3 px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 rounded text-[11px] font-bold cursor-pointer transition-all shadow-sm flex items-center space-x-1"
-                                        title="Otimizar sequência do trajeto pelo percurso mais curto respeitando janelas horárias"
-                                      >
-                                        <span>⚡ Ordenar Trajeto</span>
-                                      </button>
-                                    )}
                                   </>
                                 )}
                               </>
+                            )}
+                          </div>
+
+                          {/* Right: Actions stacked vertically */}
+                          <div className="flex flex-col items-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {!isPending && routeStops.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOptimizeSingle(rowName);
+                                }}
+                                disabled={actionLoading === rowName}
+                                className="w-full justify-center px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all shadow-sm flex items-center space-x-1"
+                                title="Otimizar sequência do trajeto pelo percurso mais curto respeitando janelas horárias"
+                              >
+                                <span>⚡ Ordenar Trajeto</span>
+                              </button>
+                            )}
+                            {routeStops.length > 0 && (
+                              <div className="w-full">
+                                <select
+                                  defaultValue=""
+                                  disabled={actionLoading !== null}
+                                  onChange={(e) => {
+                                    const tgt = e.target.value;
+                                    if (!tgt) return;
+                                    handleTransferEntireRoute(rowName, tgt);
+                                    e.target.value = "";
+                                  }}
+                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[10px] rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans"
+                                  title="Transferir toda a carga desta rota para outro carro ou para Por Distribuir"
+                                >
+                                  <option value="" disabled>
+                                    ⇄ Mover Carga ({routeStops.length} paragens)...
+                                  </option>
+                                  {!isPending && (
+                                    <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
+                                      📦 Esvaziar para &apos;Por Distribuir&apos;
+                                    </option>
+                                  )}
+                                  {vehicles
+                                    .filter((v) => v !== rowName)
+                                    .map((v) => (
+                                      <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
+                                        🚚 Mover tudo para {v}
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
                             )}
                           </div>
                         </div>

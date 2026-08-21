@@ -919,19 +919,19 @@ export default function TacticalPage() {
                       style={{ borderLeft: `4px solid ${color}` }}
                     >
                       {/* VEHICLE CARD HEADER */}
-                      <div className="w-full px-4 py-3 flex items-center justify-between hover:bg-zinc-850/20 transition-colors">
+                      <div className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2.5 hover:bg-zinc-850/20 transition-colors">
                         <div
                           onClick={() => setExpandedRoute(isExpanded ? null : routeName)}
-                          className="flex-1 cursor-pointer flex items-center space-x-2.5"
+                          className="flex-1 min-w-0 cursor-pointer flex items-center space-x-2.5"
                         >
                           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                          <div>
-                            <div className="flex items-center space-x-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center space-x-1.5 flex-wrap">
                               <p className={`text-xs font-bold ${isPending ? "text-amber-400" : "text-zinc-200"}`}>
                                 {isPending ? "⚠️ Por Distribuir" : routeName}
                               </p>
                               {!isPending && (
-                                <span className="text-[10px] text-zinc-400 font-normal">
+                                <span className="text-[10px] text-zinc-400 font-normal truncate">
                                   ({whData.name})
                                 </span>
                               )}
@@ -950,7 +950,7 @@ export default function TacticalPage() {
                               ) : (
                                 <>
                                   <span className="text-emerald-400 font-semibold">
-                                    🛫 {startTimeStr} → 🏁 {returnArrivalTimeStr} ({totalDurationStr})
+                                    🛫 {startTimeStr} ➔ 🏁 {returnArrivalTimeStr} ({totalDurationStr})
                                   </span>
                                   <br />
                                   <span>{items.length} paragens • {totalRouteKm.toFixed(1)} km • {totalKg.toFixed(0)} kg</span>
@@ -960,51 +960,55 @@ export default function TacticalPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center space-x-2">
-                          {!isPending && items.length > 1 && (
-                            <button
-                              onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
-                              className="bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
-                              title="Ordenar sequência pelo trajeto mais curto"
-                            >
-                              <svg className="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                              </svg>
-                              <span>⚡ Ordenar</span>
-                            </button>
-                          )}
-                          {items.length > 0 && (
-                            <div onClick={(e) => e.stopPropagation()} className="inline-flex items-center">
-                              <select
-                                defaultValue=""
-                                disabled={loading}
-                                onChange={(e) => {
-                                  const tgt = e.target.value;
-                                  if (!tgt) return;
-                                  handleTransferEntireRoute(routeName, tgt);
-                                  e.target.value = "";
-                                }}
-                                className="bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[10px] rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans"
-                                title="Transferir toda a carga desta rota para outro carro ou para Por Distribuir"
+                        {/* Actions container stacked vertically on the right */}
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <div className="flex flex-col items-end gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {!isPending && items.length > 1 && (
+                              <button
+                                onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
+                                className="w-full justify-center bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-2 py-0.5 rounded-lg text-[9px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
+                                title="Ordenar sequência pelo trajeto mais curto"
                               >
-                                <option value="" disabled>
-                                  ⇄ Mover Carga ({items.length})...
-                                </option>
-                                {!isPending && (
-                                  <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
-                                    📦 Esvaziar para &apos;Por Distribuir&apos;
+                                <svg className="w-2.5 h-2.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                <span>⚡ Ordenar Trajeto</span>
+                              </button>
+                            )}
+                            {items.length > 0 && (
+                              <div className="w-full">
+                                <select
+                                  defaultValue=""
+                                  disabled={loading}
+                                  onChange={(e) => {
+                                    const tgt = e.target.value;
+                                    if (!tgt) return;
+                                    handleTransferEntireRoute(routeName, tgt);
+                                    e.target.value = "";
+                                  }}
+                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[9px] rounded-lg px-1.5 py-0.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans"
+                                  title="Transferir todas as paragens desta rota para outro carro ou para Por Distribuir"
+                                >
+                                  <option value="" disabled>
+                                    ⇄ Mover Carga ({items.length})...
                                   </option>
-                                )}
-                                {vehicles
-                                  .filter((v) => v !== routeName)
-                                  .map((v) => (
-                                    <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
-                                      🚚 Mover tudo para {v}
+                                  {!isPending && (
+                                    <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
+                                      📦 Esvaziar para &apos;Por Distribuir&apos;
                                     </option>
-                                  ))}
-                              </select>
-                            </div>
-                          )}
+                                  )}
+                                  {vehicles
+                                    .filter((v) => v !== routeName)
+                                    .map((v) => (
+                                      <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
+                                        🚚 Mover tudo para {v}
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
                           <button
                             onClick={() => setExpandedRoute(isExpanded ? null : routeName)}
                             className="p-1 text-zinc-400 hover:text-zinc-200 cursor-pointer"
