@@ -283,7 +283,7 @@ export default function MapComponent({
         ))}
 
         {/* Clients */}
-        {clients.map(c => {
+        {clients.map((c, idx) => {
           if (c.Latitude === 0 || c.Longitude === 0) return null;
           
           const isPending = isPendingRoute(c.Rota);
@@ -291,7 +291,7 @@ export default function MapComponent({
 
           return (
             <Marker
-              key={c.Cliente}
+              key={"marker-" + String(c.Cliente) + "-" + String(idx)}
               position={[c.Latitude, c.Longitude]}
               icon={createNumberedCircleIcon(c.Ordem, color, isPending, zoomLevel)}
               draggable={true}
