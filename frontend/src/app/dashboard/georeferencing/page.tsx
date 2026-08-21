@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
+const DeliveryMapPicker = dynamic(() => import("@/components/DeliveryMapPicker"), { ssr: false });
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
@@ -652,114 +654,174 @@ export default function GeoreferencingPage() {
 
         {/* Correction Modal */}
         {editingDelivery && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-5xl p-6 space-y-4 shadow-2xl">
               <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                <h3 className="text-sm font-bold text-zinc-100">Ajustar Coordenadas do Cliente {editingDelivery.codigo_cliente}</h3>
-                <button onClick={() => setEditingDelivery(null)} className="text-zinc-400 hover:text-zinc-200 text-xs">✕</button>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
+                    <span>Ajustar Coordenadas do Cliente:</span>
+                    <span className="text-indigo-400 font-mono">{editingDelivery.codigo_cliente}</span>
+                    {editingDelivery.nome_cliente && (
+                      <span className="text-zinc-400 font-normal text-sm">({editingDelivery.nome_cliente})</span>
+                    )}
+                  </h3>
+                  <p className="text-zinc-400 text-xs mt-0.5">
+                    Selecione uma sugestão, pesquise online ou clique diretamente no mapa para posicionar a entrega.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingDelivery(null)}
+                  className="text-zinc-400 hover:text-zinc-200 text-sm p-1.5 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
 
-              <form onSubmit={submitCorrection} className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-zinc-400 mb-1">Morada</label>
-                  <input
-                    type="text"
-                    value={corrAddr}
-                    onChange={(e) => setCorrAddr(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+              <form onSubmit={submitCorrection} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Column: Form & Suggestions (5 cols) */}
+                  <div className="lg:col-span-5 space-y-3">
+                    <div>
+                      <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Morada</label>
+                      <input
+                        type="text"
+                        value={corrAddr}
+                        onChange={(e) => setCorrAddr(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 text-xs"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Código Postal</label>
+                        <input
+                          type="text"
+                          value={corrCp}
+                          onChange={(e) => setCorrCp(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Concelho</label>
+                        <input
+                          type="text"
+                          value={corrCity}
+                          onChange={(e) => setCorrCity(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Latitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={corrLat}
+                          onChange={(e) => setCorrLat(Number(e.target.value))}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Longitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={corrLon}
+                          onChange={(e) => setCorrLon(Number(e.target.value))}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Suggestions Section */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                          Sugestões da Base de Dados CTT:
+                        </span>
+                        {suggestionsLoading && (
+                          <span className="text-[10px] text-indigo-400 animate-pulse">A pesquisar...</span>
+                        )}
+                      </div>
+                      {suggestions.length > 0 ? (
+                        <div className="max-h-44 overflow-y-auto space-y-1.5 bg-zinc-950 p-2 border border-zinc-800 rounded-xl">
+                          {suggestions.map((s, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                setCorrAddr(s.morada || corrAddr);
+                                setCorrCp(s.cp || corrCp);
+                                setCorrCity(s.concelho || corrCity);
+                                setCorrLat(s.lat || corrLat);
+                                setCorrLon(s.lon || corrLon);
+                              }}
+                              className="p-2 hover:bg-zinc-850 bg-zinc-900/60 border border-zinc-800/80 rounded-lg cursor-pointer text-xs text-zinc-300 transition-colors flex items-center justify-between gap-2"
+                            >
+                              <div className="truncate">
+                                <div className="font-semibold text-zinc-200 truncate">{s.morada || s.address}</div>
+                                <div className="text-[10px] text-zinc-400">{s.concelho || s.localidade}</div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="font-mono text-xs text-indigo-400 block">{s.cp}</span>
+                                {s.score !== undefined && (
+                                  <span className="text-[9px] text-emerald-400 font-bold">{Math.round(s.score)}% match</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3 text-[11px] text-zinc-500 bg-zinc-950/50 border border-zinc-800/50 rounded-xl italic text-center">
+                          {suggestionsLoading ? "A procurar sugestões..." : "Sem sugestões exatas na BD. Use o mapa ao lado para pesquisar ou clicar."}
+                        </div>
+                      )}
+                  </div>
+                </div>
+
+                {/* Right Column: Interactive Leaflet Map (7 cols) */}
+                <div className="lg:col-span-7 flex flex-col min-h-[380px]">
+                  <DeliveryMapPicker
+                    lat={corrLat}
+                    lon={corrLon}
+                    onCoordsChange={(newLat, newLon) => {
+                      setCorrLat(newLat);
+                      setCorrLon(newLon);
+                    }}
+                    searchAddress={`${corrAddr} ${corrCp} ${corrCity}`}
                   />
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Código Postal</label>
-                    <input
-                      type="text"
-                      value={corrCp}
-                      onChange={(e) => setCorrCp(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Concelho</label>
-                    <input
-                      type="text"
-                      value={corrCity}
-                      onChange={(e) => setCorrCity(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
+              <div className="flex justify-between items-center pt-3 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingDelivery(null)}
+                  className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Cancelar
+                </button>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Latitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={corrLat}
-                      onChange={(e) => setCorrLat(Number(e.target.value))}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Longitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={corrLon}
-                      onChange={(e) => setCorrLon(Number(e.target.value))}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Suggestions List */}
-                {suggestions.length > 0 && (
-                  <div className="space-y-1.5 pt-2">
-                    <span className="text-[10px] font-bold uppercase text-zinc-500">Sugestões de Morada Encontradas:</span>
-                    <div className="max-h-32 overflow-y-auto space-y-1 bg-zinc-950 p-2 border border-zinc-800 rounded-xl">
-                      {suggestions.map((s, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => {
-                            setCorrAddr(s.morada || corrAddr);
-                            setCorrCp(s.cp || corrCp);
-                            setCorrCity(s.concelho || corrCity);
-                            setCorrLat(s.lat || corrLat);
-                            setCorrLon(s.lon || corrLon);
-                          }}
-                          className="p-1.5 hover:bg-zinc-900 rounded cursor-pointer text-[11px] text-zinc-300 flex justify-between"
-                        >
-                          <span className="truncate">{s.morada || s.address}</span>
-                          <span className="font-mono text-zinc-500 ml-2">{s.cp}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end space-x-2 pt-3 border-t border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => setEditingDelivery(null)}
-                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer"
-                  >
-                    Guardar Coordenadas
-                  </button>
-                </div>
-              </form>
-            </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center space-x-2 shadow-lg shadow-indigo-600/20"
+                >
+                  {loading && (
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  <span>{loading ? "A gravar..." : "Gravar & Próximo"}</span>
+                </button>
+              </div>
+            </form>
           </div>
-        )}
+        </div>
+      )}
       </div>
-    </DashboardLayout>
+  </DashboardLayout>
   );
 }
