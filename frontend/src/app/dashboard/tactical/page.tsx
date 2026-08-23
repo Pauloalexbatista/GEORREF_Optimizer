@@ -301,6 +301,30 @@ export default function TacticalPage() {
     }
   };
 
+    const [reorderingAll, setReorderingAll] = useState(false);
+
+  const handleOptimizeAllSequences = async () => {
+    if (!selectedProject) return;
+    setReorderingAll(true);
+    try {
+      const res = await apiRequest("/api/solver/optimize-all-sequences", {
+        method: "POST",
+        body: JSON.stringify({ project_id: selectedProject.id }),
+      });
+      const cleaned = (res.routes || []).map((r: any) => ({
+        ...r,
+        Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+      }));
+      setRoutes(cleaned);
+      broadcastUpdate(cleaned, vehicles, warehouses);
+      setInfoMsg(res.message || "Sequências de todas as viaturas ordenadas com sucesso!");
+    } catch (err: any) {
+      alert(err.message || "Erro ao ordenar sequências.");
+    } finally {
+      setReorderingAll(false);
+    }
+  };
+
   const handleOptimizeSingleRoute = async (routeName: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!selectedProject) return;
@@ -428,7 +452,7 @@ export default function TacticalPage() {
   };
   const handleDownloadFile = async (endpoint: string, filename: string) => {
     try {
-      const token = localStorage.getItem("georoute_token");
+      const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
       const headers = new Headers();
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
@@ -583,6 +607,14 @@ export default function TacticalPage() {
               <span>Configurações</span>
             </button>
 
+            <button
+              onClick={handleOptimizeAllSequences}
+              disabled={reorderingAll || solving || routes.length === 0}
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-amber-400 border border-amber-500/30 hover:border-amber-500/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2 disabled:opacity-50"
+              title="Ordena a sequência de paragens de cada viatura pelo menor trajeto, sem transferir clientes entre carros."
+            >
+              <span>{reorderingAll ? "A ordenar..." : "⚡ Ordenar Sequências"}</span>
+            </button>
             <button
               onClick={handleSolveRoutes}
               disabled={solving || vehicles.length === 0}

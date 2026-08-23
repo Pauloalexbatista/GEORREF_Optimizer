@@ -11,7 +11,7 @@ import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import dynamic from "next/dynamic";
 
-const WarehouseMapModal = dynamic(() => import("@/components/WarehouseMapModal"), { ssr: false });
+const WarehouseGeoModal = dynamic(() => import("@/components/WarehouseGeoModal"), { ssr: false });
 
 
 
@@ -1188,10 +1188,18 @@ export default function FleetPage() {
 
       </div>
 
-      <WarehouseMapModal
+      <WarehouseGeoModal
         isOpen={isMapModalOpen}
-        initialCoords={whLat && whLon ? { lat: parseFloat(whLat), lon: parseFloat(whLon) } : null}
-        onConfirm={(lat, lon) => {
+        warehouseName={whName || "Novo Armazém"}
+        initialAddress={whAddr || ""}
+        initialCp={whCp || ""}
+        initialLocality={whLocality || ""}
+        initialLat={whLat ? parseFloat(whLat) : 0}
+        initialLon={whLon ? parseFloat(whLon) : 0}
+        onConfirm={(addr, cp, loc, lat, lon) => {
+          setWhAddr(addr);
+          setWhCp(cp);
+          setWhLocality(loc);
           setWhLat(lat.toFixed(6));
           setWhLon(lon.toFixed(6));
           setIsMapModalOpen(false);

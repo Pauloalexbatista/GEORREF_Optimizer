@@ -29,7 +29,7 @@ interface Delivery {
 
 export default function GeoreferencingPage() {
   const { selectedProject } = useProjects();
-  const [step, setStep] = useState<"upload" | "mapping" | "geocoding" | "results">("upload");
+  const [step, setStep] = useState<"upload" | "geocoding" | "results">("upload");
   const [loading, setLoading] = useState(false);
   const [fileId, setFileId] = useState<string | null>(null);
   const [filename, setFilename] = useState("");
@@ -196,53 +196,21 @@ export default function GeoreferencingPage() {
     if (!file || !selectedProject) return;
 
     setLoading(true);
+    setStep("geocoding");
     const formData = new FormData();
     formData.append("file", file);
 
-    const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
-    if (isExcel) {
-      try {
-        const importRes = await apiRequest(`/api/fleet/import/${selectedProject.id}`, {
-          method: "POST",
-          body: formData,
-        });
-        const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
-        setDeliveries(data);
-        setStep("results");
-        alert(importRes.message || "Ficheiro unificado importado e georreferenciado com sucesso!");
-        return;
-      } catch (importErr: any) {
-        console.warn("Ficheiro nao e template unificado, avancando para mapeamento manual:", importErr);
-      }
-    }
-
     try {
-      const res = await apiRequest("/api/geocoding/upload", {
+      const importRes = await apiRequest(`/api/fleet/import/${selectedProject.id}`, {
         method: "POST",
         body: formData,
       });
-      setFileId(res.file_id);
-      setFilename(res.filename);
-      setColumns(res.columns);
-      
-      // Auto-mapping defaults
-      const cols = res.columns as string[];
-      setColCode(cols.find(c => c.toLowerCase().includes("cod") || c.toLowerCase().includes("client")) || cols[0] || "");
-      setColName(cols.find(c => c.toLowerCase().includes("nome") || c.toLowerCase().includes("design")) || cols[0] || "");
-      setColAddr(cols.find(c => c.toLowerCase().includes("morada") || c.toLowerCase().includes("rua") || c.toLowerCase().includes("address") || c.toLowerCase().includes("ender")) || cols[0] || "");
-      setColCp(cols.find(c => c.toLowerCase().includes("postal") || c.toLowerCase().includes("cp") || c.toLowerCase().includes("código postal")) || cols[0] || "");
-      setColCity(cols.find(c => c.toLowerCase().includes("concelho") || c.toLowerCase().includes("cidade") || c.toLowerCase().includes("local")) || cols[0] || "");
-      setColWeight(cols.find(c => c.toLowerCase().includes("peso") || c.toLowerCase().includes("kg") || c.toLowerCase().includes("weight")) || cols[0] || "");
-      setColVolume(cols.find(c => c.toLowerCase().includes("vol") || c.toLowerCase().includes("m3") || c.toLowerCase().includes("m³")) || cols[0] || "");
-      setColPriority(cols.find(c => c.toLowerCase().includes("prior")) || "");
-      setColStartWindow(cols.find(c => c.toLowerCase().includes("inicio") || c.toLowerCase().includes("start") || c.toLowerCase().includes("início")) || "");
-      setColEndWindow(cols.find(c => c.toLowerCase().includes("fim") || c.toLowerCase().includes("end")) || "");
-      setColLat(cols.find(c => c.toLowerCase().includes("lat")) || "");
-      setColLon(cols.find(c => c.toLowerCase().includes("lon") || c.toLowerCase().includes("lng")) || "");
-
-      setStep("mapping");
+      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+      setDeliveries(data);
+      setStep("results");
     } catch (err: any) {
-      alert(err.message || "Erro no upload do ficheiro.");
+      alert(err.message || "Erro ao importar GeoRoutePlan.xlsx. Certifique-se de que utiliza o modelo oficial.");
+      setStep("upload");
     } finally {
       setLoading(false);
     }
@@ -282,7 +250,7 @@ export default function GeoreferencingPage() {
       setStep("results");
     } catch (err: any) {
       alert(err.message || "Erro no processamento da georreferenciação.");
-      setStep("mapping");
+      setStep("upload");
     } finally {
       setLoading(false);
     }
@@ -393,153 +361,13 @@ export default function GeoreferencingPage() {
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => handleDownloadFile("/api/fleet/template/unified", "Template_Importacao_Completa.xlsx")}
+                onClick={() => handleDownloadFile("/api/fleet/template/unified", "GeoRoutePlan.xlsx")}
                 className="text-[11px] text-zinc-400 hover:text-indigo-400 transition-colors flex items-center space-x-1.5 cursor-pointer"
               >
                 <span>📥</span>
-                <span className="underline">Descarregar Modelo Excel Geral (3 Folhas)</span>
+                <span className="underline">Descarregar Modelo Excel</span>
               </button>
             </div>
-          </div>
-        )}
-
-        {step === "mapping" && (
-          <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 p-6 max-w-2xl mx-auto space-y-6">
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-200">Mapeamento de Colunas</h3>
-              <p className="text-xs text-zinc-500 mt-0.5">Ficheiro: <span className="text-zinc-400 font-mono">{filename}</span></p>
-            </div>
-
-            <form onSubmit={handleStartGeocoding} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Código do Cliente *</label>
-                  <select
-                    value={colCode}
-                    onChange={(e) => setColCode(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Nome / Designação *</label>
-                  <select
-                    value={colName}
-                    onChange={(e) => setColName(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1">Morada de Entrega *</label>
-                <select
-                  value={colAddr}
-                  onChange={(e) => setColAddr(e.target.value)}
-                  required
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                >
-                  {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Código Postal *</label>
-                  <select
-                    value={colCp}
-                    onChange={(e) => setColCp(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Localidade / Concelho *</label>
-                  <select
-                    value={colCity}
-                    onChange={(e) => setColCity(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Peso (KG) *</label>
-                  <select
-                    value={colWeight}
-                    onChange={(e) => setColWeight(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Volume (m³) *</label>
-                  <select
-                    value={colVolume}
-                    onChange={(e) => setColVolume(e.target.value)}
-                    required
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Latitude (Opcional)</label>
-                  <select
-                    value={colLat}
-                    onChange={(e) => setColLat(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    <option value="">-- Não Mapear --</option>
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Longitude (Opcional)</label>
-                  <select
-                    value={colLon}
-                    onChange={(e) => setColLon(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  >
-                    <option value="">-- Não Mapear --</option>
-                    {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4 border-t border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setStep("upload")}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/10 cursor-pointer transition-colors"
-                >
-                  Iniciar Georreferenciação →
-                </button>
-              </div>
-            </form>
           </div>
         )}
 

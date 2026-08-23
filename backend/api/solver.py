@@ -134,18 +134,19 @@ def parse_time_window_str(win_str: str) -> tuple:
 
 def extract_fleet_dict(fleet_config, warehouses_df=None):
     fleet_dict = {}
-    default_wh = warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "Armazém Principal"
+    default_wh = warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "Armazém Central"
     
     if isinstance(fleet_config, pd.DataFrame):
         for _, row in fleet_config.iterrows():
             fleet_dict[str(row["Veiculo"])] = {
                 "capacity": float(row.get("Capacidade_KG", 1000.0)),
-                "capacity_volume": float(row.get("Cap_Volume_m3", 5.0)),
+                "capacity_volume": float(row.get("Cap_Volume_m3", row.get("Capacidade_Vol", 5.0))),
                 "cost_per_km": float(row.get("Custo_KM", 0.65)),
                 "speed": float(row.get("Velocidade_Media", 50.0)),
-                "start_time": str(row.get("Horario_Inicio", "09:50")),
-                "end_time": str(row.get("Horario_Fim", "18:00")),
-                "warehouse": str(row.get("Armazem", default_wh))
+                "start_time": str(row.get("Hora_Inicio_Turno", row.get("Horario_Inicio", "08:00:00"))),
+                "end_time": str(row.get("Hora_Fim_Turno", row.get("Horario_Fim", "18:00:00"))),
+                "warehouse": str(row.get("Armazem", default_wh)),
+                "regras": str(row.get("Regras", ""))
             }
     elif isinstance(fleet_config, dict):
         for v_k, v_v in fleet_config.items():
@@ -155,9 +156,10 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                     "capacity_volume": float(v_v.get("capacity_volume", v_v.get("capacidade_vol", 5.0))),
                     "cost_per_km": float(v_v.get("cost_per_km", v_v.get("custo_km", 0.65))),
                     "speed": float(v_v.get("speed", v_v.get("velocidade_media", 50.0))),
-                    "start_time": str(v_v.get("start_time", v_v.get("horario_inicio", "09:50"))),
-                    "end_time": str(v_v.get("end_time", v_v.get("horario_fim", "18:00"))),
-                    "warehouse": str(v_v.get("warehouse", v_v.get("armazem", default_wh)))
+                    "start_time": str(v_v.get("start_time", v_v.get("horario_inicio", "08:00:00"))),
+                    "end_time": str(v_v.get("end_time", v_v.get("horario_fim", "18:00:00"))),
+                    "warehouse": str(v_v.get("warehouse", v_v.get("armazem", default_wh))),
+                    "regras": str(v_v.get("regras", v_v.get("Regras", "")))
                 }
             else:
                 fleet_dict[str(v_k)] = {
@@ -165,9 +167,10 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                     "capacity_volume": float(getattr(v_v, "capacidade_vol", 5.0)),
                     "cost_per_km": float(getattr(v_v, "custo_km", 0.65)),
                     "speed": float(getattr(v_v, "velocidade_media", 50.0)),
-                    "start_time": str(getattr(v_v, "horario_inicio", "09:50")),
-                    "end_time": str(getattr(v_v, "horario_fim", "18:00")),
-                    "warehouse": str(getattr(v_v, "armazem", default_wh))
+                    "start_time": str(getattr(v_v, "horario_inicio", "08:00:00")),
+                    "end_time": str(getattr(v_v, "horario_fim", "18:00:00")),
+                    "warehouse": str(getattr(v_v, "armazem", default_wh)),
+                    "regras": str(getattr(v_v, "regras", getattr(v_v, "Regras", "")))
                 }
     return fleet_dict
 
@@ -400,7 +403,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 except ValueError:
                     pass
             
-        client_warehouses = list(deliveries_df["Armazem"].fillna(""))
+        client_warehouses = list(deliveries_df["Armazem"].fillna("")) if "Armazem" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))]
+        client_rules = list(deliveries_df["Regras"].fillna("")) if "Regras" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))]
+        vehicle_rules = [str(fleet_dict.get(v_name, {}).get("regras", "")) for v_name in vehicle_names]
+        rules_matrix = state_dict.get("rules_matrix", [])
         
         optimizer = AdvancedRouteOptimizer()
         result = optimizer.optimize_routes(
@@ -417,7 +423,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_start_times=vehicle_start_times,
             vehicle_end_times=vehicle_end_times,
             client_time_windows=client_time_windows,
-            locations=locations
+            locations=locations,
+            client_rules=client_rules,
+            vehicle_rules=vehicle_rules,
+            rules_matrix=rules_matrix
         )
         
         # 6. Convert solver output to routes list
@@ -1107,23 +1116,43 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
             state_dict = deserialize_state(row["payload_json"])
             
             routes_df = state_dict.get('routes_solution')
+            if routes_df is None or (isinstance(routes_df, pd.DataFrame) and routes_df.empty):
+                routes_df = state_dict.get('routes_df')
+                
             wh_raw = state_dict.get('warehouses_geocoded')
-            warehouses_df = wh_raw if (wh_raw is not None and not (isinstance(wh_raw, pd.DataFrame) and wh_raw.empty)) else state_dict.get('warehouses_used')
-            fleet_config = state_dict.get('fleet_config') or state_dict.get('fleet_config_used')
+            if wh_raw is None or (isinstance(wh_raw, pd.DataFrame) and wh_raw.empty):
+                wh_raw = state_dict.get('warehouses_used')
+            warehouses_df = wh_raw
+            
+            fleet_raw = state_dict.get('fleet_config')
+            if fleet_raw is None or (isinstance(fleet_raw, pd.DataFrame) and fleet_raw.empty):
+                fleet_raw = state_dict.get('fleet_config_used')
+            fleet_config = fleet_raw
+            
+            deliv_raw = state_dict.get('clients_geocoded')
+            if deliv_raw is None or (isinstance(deliv_raw, pd.DataFrame) and deliv_raw.empty):
+                deliv_raw = state_dict.get('clients_used')
+            if deliv_raw is None or (isinstance(deliv_raw, pd.DataFrame) and deliv_raw.empty):
+                cursor.execute("SELECT * FROM entregas WHERE projeto_id = ?", (project_id,))
+                rows_e = [dict(r) for r in cursor.fetchall()]
+                if rows_e:
+                    deliv_raw = pd.DataFrame(rows_e)
+            deliveries_df = deliv_raw
+            
             optimization_params = state_dict.get("optimization_params")
+            rules_matrix = state_dict.get('rules_matrix', [])
             
         from utils.export_engine import generate_full_project_excel
         excel_data = generate_full_project_excel(
             routes_df=routes_df,
-            deliveries_df=None,
+            deliveries_df=deliveries_df,
             warehouses_df=warehouses_df,
             fleet_config=fleet_config,
-            optimization_params=optimization_params
+            optimization_params=optimization_params,
+            rules_matrix=rules_matrix
         )
         
-        output = io.BytesIO(excel_data)
-        output.seek(0)
-        
+        from fastapi import Response
         import re
         from datetime import datetime
         now_str = datetime.now().strftime('%Y%m%d_%H%M')
@@ -1131,12 +1160,136 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
         proj_name = proj_dict.get("nome", f"Projeto_{project_id}")
         safe_proj_name = re.sub(r'[^\w\s-]', '', str(proj_name)).strip().replace(' ', '_')
         filename = f"Distribuicao_{safe_proj_name}_{now_str}.xlsx"
-        return StreamingResponse(
-            output,
+        return Response(
+            content=excel_data,
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Access-Control-Expose-Headers': 'Content-Disposition'
+            }
         )
     except HTTPException as he:
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao exportar projeto completo: {str(e)}")
+
+
+class OptimizeAllSequencesRequest(BaseModel):
+    project_id: int
+
+@router.post("/optimize-all-sequences")
+def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(req.project_id)
+    if not proj or proj["empresa_id"] != current_user.empresa_id:
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                raise HTTPException(status_code=400, detail="Não existem rotas para otimizar.")
+                
+            state_dict = deserialize_state(row["payload_json"])
+            raw_routes = state_dict.get("routes_solution")
+            
+            if raw_routes is None:
+                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
+                
+            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+            
+        if df_routes.empty:
+            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
+            
+        warehouses_df = state_dict.get("warehouses_geocoded")
+        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
+            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
+        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
+        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
+        
+        unique_routes = [r for r in df_routes["Rota"].dropna().unique() if str(r).strip() and "PENDENTE" not in str(r).upper() and "POR DISTRIBUIR" not in str(r).upper()]
+        
+        for route_name in unique_routes:
+            route_mask = df_routes["Rota"] == route_name
+            route_stops = df_routes[route_mask].copy()
+            
+            if len(route_stops) <= 1:
+                continue
+                
+            v_info = fleet_dict.get(route_name, {})
+            wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
+            depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
+            v_start_min = parse_time_to_minutes(v_info.get("start_time", "08:00:00"), 480)
+            v_speed = float(v_info.get("speed", 50.0))
+            
+            stop_indices = list(route_stops.index)
+            curr_lat, curr_lon = depot_lat, depot_lon
+            curr_time_min = v_start_min
+            cum_dist = 0.0
+            order_counter = 1
+            
+            # Nearest Neighbor Sequence TSP from depot
+            remaining = stop_indices.copy()
+            while remaining:
+                best_idx = None
+                best_dist = float('inf')
+                for s_idx in remaining:
+                    s_lat = float(df_routes.at[s_idx, "Latitude"])
+                    s_lon = float(df_routes.at[s_idx, "Longitude"])
+                    d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon)
+                    if d < best_dist:
+                        best_dist = d
+                        best_idx = s_idx
+                        
+                if best_idx is None:
+                    break
+                    
+                remaining.remove(best_idx)
+                s_lat = float(df_routes.at[best_idx, "Latitude"])
+                s_lon = float(df_routes.at[best_idx, "Longitude"])
+                
+                travel_time_min = (best_dist / v_speed) * 60.0 if v_speed > 0 else 10.0
+                arr_time_min = curr_time_min + travel_time_min
+                
+                # Service duration
+                serv_min = 15.0
+                dep_time_min = arr_time_min + serv_min
+                cum_dist += best_dist
+                
+                df_routes.at[best_idx, "Ordem"] = order_counter
+                df_routes.at[best_idx, "Ordem_Paragem"] = order_counter
+                df_routes.at[best_idx, "Distancia_KM"] = round(best_dist, 2)
+                df_routes.at[best_idx, "Distancia_Acumulada_KM"] = round(cum_dist, 2)
+                df_routes.at[best_idx, "Tempo_Viagem_Min"] = round(travel_time_min, 1)
+                df_routes.at[best_idx, "Hora_Chegada_Prevista"] = minutes_to_time_str(arr_time_min)
+                df_routes.at[best_idx, "Hora_Saida_Prevista"] = minutes_to_time_str(dep_time_min)
+                
+                curr_lat, curr_lon = s_lat, s_lon
+                curr_time_min = dep_time_min
+                order_counter += 1
+
+        # Re-sort DataFrame by Rota and Ordem
+        df_routes.sort_values(by=["Rota", "Ordem"], inplace=True)
+        
+        state_dict["routes_solution"] = df_routes
+        state_dict["routes_df"] = df_routes
+        payload = serialize_state(state_dict)
+        snapshot_name = f"Otimização de Sequências ({datetime.now().strftime('%H:%M:%S')})"
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)", 
+                           (req.project_id, current_user.id, 3, snapshot_name, payload))
+            conn.commit()
+            
+        return sanitize_json_data({
+            "status": "success",
+            "message": f"Sequências de {len(unique_routes)} viaturas ordenadas com sucesso!",
+            "routes": df_routes.to_dict(orient="records")
+        })
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao ordenar sequências de rotas: {str(e)}")

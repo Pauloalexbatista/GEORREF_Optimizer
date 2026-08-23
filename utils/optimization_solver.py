@@ -1,3 +1,4 @@
+from utils.rules_engine import is_vehicle_compatible, extract_tags
 import numpy as np
 import math
 from typing import List, Dict, Any, Tuple, Optional
@@ -29,7 +30,10 @@ class AdvancedRouteOptimizer:
         vehicle_start_times: Optional[List[int]] = None,
         vehicle_end_times: Optional[List[int]] = None,
         client_time_windows: Optional[List[Tuple[int, int]]] = None,
-        locations: Optional[List[Tuple[float, float]]] = None
+        locations: Optional[List[Tuple[float, float]]] = None,
+        client_rules: Optional[List[str]] = None,
+        vehicle_rules: Optional[List[str]] = None,
+        rules_matrix: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Pure Distance-Matrix VRP & Far-First Clustering Optimizer:
@@ -81,7 +85,10 @@ class AdvancedRouteOptimizer:
         vehicle_start_times: Optional[List[int]],
         vehicle_end_times: Optional[List[int]],
         client_time_windows: Optional[List[Tuple[int, int]]],
-        balance_weight: float = 0.0
+        balance_weight: float = 0.0,
+        client_rules: Optional[List[str]] = None,
+        vehicle_rules: Optional[List[str]] = None,
+        rules_matrix: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         num_locations = len(distance_matrix)
         num_vehicles = len(vehicle_capacities)
@@ -230,21 +237,31 @@ class AdvancedRouteOptimizer:
                             time_dimension.CumulVar(model_idx).SetRange(c_start * 100, horizon_scaled)
                             time_dimension.SetCumulVarSoftUpperBound(model_idx, c_end * 100, 200000)
 
-            # 6. Warehouse routing restriction
-            if client_warehouses and vehicle_warehouses:
-                for location_idx in range(num_warehouses, num_locations):
-                    client_idx = location_idx - num_warehouses
-                    if client_idx < len(client_warehouses):
-                        wh_name = client_warehouses[client_idx]
-                        if wh_name and str(wh_name).strip() and str(wh_name).strip().upper() not in ["", "N/A", "NONE"]:
-                            allowed_vehicles = [
-                                v_idx for v_idx, v_wh in enumerate(vehicle_warehouses)
-                                if str(v_wh).strip().lower() == str(wh_name).strip().lower()
-                            ]
-                            if allowed_vehicles:
-                                node_idx_in_model = self.manager.NodeToIndex(location_idx)
-                                if node_idx_in_model != -1:
-                                    self.routing.VehicleVar(node_idx_in_model).SetValues(allowed_vehicles)
+            # 6. Warehouse & Multi-Tag Rule Routing Restrictions
+            for location_idx in range(num_warehouses, num_locations):
+                client_idx = location_idx - num_warehouses
+                allowed_vehicles = []
+                c_wh = str(client_warehouses[client_idx]).strip() if (client_warehouses and client_idx < len(client_warehouses)) else ""
+                c_rule = str(client_rules[client_idx]).strip() if (client_rules and client_idx < len(client_rules)) else ""
+                
+                for v_idx in range(num_vehicles):
+                    # Check warehouse compatibility
+                    if vehicle_warehouses and c_wh and c_wh.upper() not in ["", "N/A", "NONE", "NAN"]:
+                        v_wh = str(vehicle_warehouses[v_idx]).strip()
+                        if v_wh.lower() != c_wh.lower():
+                            continue
+                            
+                    # Check Multi-Tag rule compatibility
+                    v_rule = str(vehicle_rules[v_idx]).strip() if (vehicle_rules and v_idx < len(vehicle_rules)) else ""
+                    if not is_vehicle_compatible(v_rule, c_rule, rules_matrix):
+                        continue
+                        
+                    allowed_vehicles.append(v_idx)
+                    
+                if allowed_vehicles and len(allowed_vehicles) < num_vehicles:
+                    node_idx_in_model = self.manager.NodeToIndex(location_idx)
+                    if node_idx_in_model != -1:
+                        self.routing.VehicleVar(node_idx_in_model).SetValues(allowed_vehicles)
 
             # 7. Search Parameters: CLARKE-WRIGHT SAVINGS STRATEGY
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()

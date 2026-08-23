@@ -326,7 +326,7 @@ export default function RoutesMatrixPage() {
 
   const handleDownloadFile = async (endpoint: string, filename: string) => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
