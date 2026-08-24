@@ -21,7 +21,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [showLangMenu, setShowLangMenu] = useState(false);
 
       const menuItems = [
-    ...(user?.is_admin || (user as any)?.is_superadmin
+    ...((user as any)?.is_superadmin
       ? [
           {
             name: (t.navigation as any).admin || "0. Gestão de Acessos",

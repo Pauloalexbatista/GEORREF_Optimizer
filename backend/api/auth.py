@@ -81,7 +81,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
         email=user_dict["email"],
         empresa_id=user_dict["empresa_id"],
         is_admin=bool(user_dict["is_admin"]),
-        is_superadmin=bool(user_dict.get("is_superadmin", False) or user_dict["is_admin"]),
+        is_superadmin=bool(user_dict.get("is_superadmin", 0) == 1),
         data_validade=val_str,
         programas=user_dict.get("programas", "site,app"),
         dias_restantes=dias
@@ -106,7 +106,7 @@ def login(req: LoginRequest):
         )
 
     # Check license expiration date (if not superadmin)
-    is_super = bool(user.get("is_superadmin", False) or user.get("is_admin", False))
+    is_super = bool(user.get("is_superadmin", 0) == 1)
     valid_date_str = user.get("data_validade")
     if not is_super and valid_date_str:
         try:

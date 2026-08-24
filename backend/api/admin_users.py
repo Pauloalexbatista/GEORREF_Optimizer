@@ -20,7 +20,7 @@ from backend.api.auth import get_current_user, UserResponse
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 def require_admin(current_user: UserResponse = Depends(get_current_user)):
-    if not current_user.is_admin and not getattr(current_user, "is_superadmin", False):
+    if not getattr(current_user, "is_superadmin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso reservado ao Administrador do Sistema."

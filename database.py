@@ -125,6 +125,7 @@ def init_database():
             SET is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
             WHERE email IN ('pauloalexbatista@gmail.com', 'paulo.batista@ttm.pt')
         """)
+        cursor.execute("UPDATE utilizadores SET is_superadmin = 0 WHERE email NOT IN ('pauloalexbatista@gmail.com', 'paulo.batista@ttm.pt')")
         
         conn.commit()
         print("[DB] Base de dados inicializada e auto-migrada com sucesso!")
