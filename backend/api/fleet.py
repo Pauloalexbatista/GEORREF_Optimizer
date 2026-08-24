@@ -911,7 +911,7 @@ async def import_fleet_warehouses(
                 
                 if col_wh_name:
                     for idx, row in df_wh_raw.iterrows():
-                        name = str(row[col_wh_name]).strip()
+                        name = str(row[col_wh_name]).replace("_x000D_", "").strip()
                         addr = str(row[col_wh_addr]).strip() if col_wh_addr and pd.notna(row[col_wh_addr]) else ""
                         cp = str(row[col_wh_cp]).strip() if col_wh_cp and pd.notna(row[col_wh_cp]) else ""
                         locality = str(row[col_wh_loc]).strip() if col_wh_loc and pd.notna(row[col_wh_loc]) else ""
@@ -1072,7 +1072,7 @@ async def import_fleet_warehouses(
 
                 for idx, row in df_entregas_raw.iterrows():
                     code = str(row[col_e_code]).strip() if col_e_code and pd.notna(row[col_e_code]) else f"CLI_{idx+1}"
-                    name_val = str(row[col_e_name]).strip() if col_e_name and pd.notna(row[col_e_name]) else code
+                    name_val = str(row[col_e_name]).replace("_x000D_", "").strip() if col_e_name and pd.notna(row[col_e_name]) else code
                     addr = str(row[col_e_addr]).strip() if col_e_addr and pd.notna(row[col_e_addr]) else ""
                     cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
                     city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
@@ -1233,7 +1233,7 @@ async def import_fleet_warehouses(
                     veh_name = str(r_row[col_rt_veh]).strip() if col_rt_veh and pd.notna(r_row[col_rt_veh]) else "Por Distribuir"
                     ord_val = int(r_row[col_rt_ord]) if col_rt_ord and pd.notna(r_row[col_rt_ord]) else (r_idx + 1)
                     doc_val = str(r_row[col_rt_doc]).strip() if col_rt_doc and pd.notna(r_row[col_rt_doc]) else f"CLI_{r_idx+1}"
-                    cli_val = str(r_row[col_rt_cli]).strip() if col_rt_cli and pd.notna(r_row[col_rt_cli]) else doc_val
+                    cli_val = str(r_row[col_rt_cli]).replace("_x000D_", "").strip() if col_rt_cli and pd.notna(r_row[col_rt_cli]) else doc_val
                     addr_val = str(r_row[col_rt_addr]).strip() if col_rt_addr and pd.notna(r_row[col_rt_addr]) else ""
                     cp_val = str(r_row[col_rt_cp]).strip() if col_rt_cp and pd.notna(r_row[col_rt_cp]) else ""
                     loc_val = str(r_row[col_rt_loc]).strip() if col_rt_loc and pd.notna(r_row[col_rt_loc]) else ""

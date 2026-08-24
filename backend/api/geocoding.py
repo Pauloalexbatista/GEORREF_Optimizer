@@ -1,3 +1,10 @@
+
+def clean_str_val(val):
+    if val is None or pd.isna(val):
+        return ""
+    s = str(val).strip()
+    s = s.replace("_x000D_", "").replace("\r", "").strip()
+    return s
 from fastapi.responses import StreamingResponse
 
 import sqlite3
@@ -228,7 +235,21 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
         else:
 
-            df = pd.read_excel(file_path)
+            xls = pd.ExcelFile(file_path)
+            sheet_to_read = None
+            for s in xls.sheet_names:
+                if s.lower().strip() in ['entregas', 'clientes', 'encomendas', 'deliveries', 'orders']:
+                    sheet_to_read = s
+                    break
+            if not sheet_to_read:
+                for s in xls.sheet_names:
+                    if s.lower().strip() in ['rotas', 'routes', 'planeamento', 'plano_rotas']:
+                        sheet_to_read = s
+                        break
+            if sheet_to_read:
+                df = pd.read_excel(xls, sheet_name=sheet_to_read)
+            else:
+                df = pd.read_excel(file_path)
 
             
 
