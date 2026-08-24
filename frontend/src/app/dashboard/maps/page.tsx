@@ -485,33 +485,54 @@ export default function MapsPage() {
           </div>
 
           {/* Map Container */}
-          <div className={`${mapFullscreen ? 'fixed inset-0 z-[5000] w-screen h-screen p-4 bg-zinc-950/90 backdrop-blur-md' : ''}`}>
+          <div className={`${mapFullscreen ? 'fixed inset-0 z-[5000] w-screen h-screen p-4 bg-zinc-950/95 backdrop-blur-md flex flex-col' : ''}`}>
             <div 
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-1.5 relative z-0 print-map-card" 
-              style={{ height: mapFullscreen ? "100%" : "600px" }}
+              className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1.5 relative z-0 print-map-card shadow-2xl flex-1 flex flex-col" 
+              style={{ height: mapFullscreen ? "100%" : "620px" }}
             >
               {/* Map Title overlay */}
               {nomeMapa && (
-                <div className="absolute top-4 left-4 z-[2000] bg-zinc-900/90 backdrop-blur border border-zinc-750 px-4 py-2 rounded-lg shadow-lg pointer-events-none">
-                  <h2 className="text-zinc-100 font-bold text-base">{nomeMapa}</h2>
-                  <p className="text-zinc-300 text-xs">{mapData.length} zonas mapeadas</p>
+                <div className="absolute top-4 left-4 z-[2000] bg-white/95 dark:bg-zinc-900/95 backdrop-blur border border-zinc-200 dark:border-zinc-750 px-4 py-2 rounded-xl shadow-xl pointer-events-none">
+                  <h2 className="text-zinc-900 dark:text-zinc-100 font-bold text-base">{nomeMapa}</h2>
+                  <p className="text-zinc-500 dark:text-zinc-400 text-xs">{mapData.length} zonas mapeadas</p>
                 </div>
               )}
               
               {/* Map Action Toggle Buttons */}
-              <div className="absolute top-4 right-4 z-[2000] flex space-x-2">
+              <div className="absolute top-4 right-4 z-[2000] flex items-center space-x-2">
+                {/* In-page Fullscreen / Collapse Button */}
+                <button
+                  onClick={() => setMapFullscreen(!mapFullscreen)}
+                  className="bg-white/95 dark:bg-zinc-900/95 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  title={mapFullscreen ? "Voltar ao tamanho normal" : "Aumentar mapa para a totalidade do ecrã"}
+                >
+                  {mapFullscreen ? (
+                    <>
+                      <span>✖ Voltar ao Normal</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>⛶ Ecrã Inteiro</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Open in New Tab Button */}
                 <button
                   onClick={handleOpenFullscreen}
-                  className="bg-zinc-900/95 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="bg-white/95 dark:bg-zinc-900/95 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                  title="Abrir mapa num novo separador"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
                   </svg>
                   Novo Separador
                 </button>
               </div>
 
-              <CustomMap mapeamentos={mapData} />
+              <div className="flex-1 w-full h-full rounded-xl overflow-hidden">
+                <CustomMap mapeamentos={mapData} />
+              </div>
             </div>
           </div>
 

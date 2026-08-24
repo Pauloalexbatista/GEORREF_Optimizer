@@ -2,18 +2,18 @@
 
 import React, { useEffect, useRef } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { useTheme } from "@/context/ThemeContext";
 import "leaflet/dist/leaflet.css";
-
-const API_BASE = "";
 
 type Mapeamento = { cp: string; zona: string; cor: string; concelho?: string; distrito?: string; freguesia?: string };
 
 function MapResizer() {
   const map = useMap();
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       map.invalidateSize();
-    }, 150);
+    }, 200);
+    return () => clearTimeout(timer);
   }, [map]);
   return null;
 }
@@ -80,21 +80,27 @@ function CP4Layer({ mapeamentos }: { mapeamentos: Mapeamento[] }) {
 }
 
 export default function CustomMap({ mapeamentos }: { mapeamentos: Mapeamento[] }) {
+  const { theme } = useTheme();
+
+  // Clean white/light tiles for light mode, dark tiles for dark mode
+  const tileUrl = theme === "light"
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+
   return (
     <MapContainer
+      key={theme}
       center={[39.3999, -8.2245]}
       zoom={6}
-      style={{ height: "100%", width: "100%", borderRadius: "0.5rem" }}
+      style={{ height: "100%", width: "100%", borderRadius: "0.75rem" }}
       zoomControl={true}
     >
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; OSM &copy; CARTO'
+        url={tileUrl}
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
       />
       <MapResizer />
       <CP4Layer mapeamentos={mapeamentos} />
     </MapContainer>
   );
 }
-
-
