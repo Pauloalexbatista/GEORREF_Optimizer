@@ -33,7 +33,7 @@ def get_db():
 
 
 def init_database():
-    """Inicializar schema da base de dados"""
+    """Inicializar schema da base de dados e aplicar auto-migrações seguras."""
     with get_db() as conn:
         cursor = conn.cursor()
         
@@ -47,6 +47,8 @@ def init_database():
                 limite_entregas INTEGER DEFAULT 100,
                 limite_utilizadores INTEGER DEFAULT 1,
                 api_key_google TEXT,
+                data_validade TEXT DEFAULT '2099-12-31',
+                programas TEXT DEFAULT 'site,app',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT 1
             )
@@ -60,14 +62,18 @@ def init_database():
                 nome TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+                password_plain TEXT,
                 is_admin BOOLEAN DEFAULT 0,
+                is_superadmin BOOLEAN DEFAULT 0,
+                data_validade TEXT DEFAULT '2099-12-31',
+                programas TEXT DEFAULT 'site,app',
                 is_active BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (empresa_id) REFERENCES empresas (id)
             )
         """)
         
-        # Tabela de Projetos (cada empresa pode ter vários)
+        # Tabela de Projetos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS projetos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,133 +86,48 @@ def init_database():
             )
         """)
         
-        # Tabela de Entregas (dados geocodificados)
+        # Tabela de Geocoding Cache
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS entregas (
+            CREATE TABLE IF NOT EXISTS geocoding_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                projeto_id INTEGER NOT NULL,
-                codigo_cliente TEXT,
-                nome_cliente TEXT,
-                morada TEXT NOT NULL,
-                codigo_postal TEXT,
-               _concelho TEXT,
-                peso_kg REAL,
-                volume_m3 REAL,
-                prioridade INTEGER DEFAULT 2,
-                janela_inicio TEXT,
-                janela_fim TEXT,
-                observacoes TEXT,
-                latitude REAL,
-                longitude REAL,
-                nivel_qualidade INTEGER,
-                fonte_match TEXT,
-                morada_encontrada TEXT,
-                armazem TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+                morada_normalizada TEXT UNIQUE NOT NULL,
+                morada_original TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                fonte TEXT DEFAULT 'cache',
+                confidence REAL DEFAULT 1.0,
+                dados_extra TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
-        # Tabela de Frota
+        # Auto-Migrações para bases de dados SQLite já existentes no VPS/Produção
+        def add_column_if_missing(table, col, col_type):
+            try:
+                cursor.execute(f"PRAGMA table_info({table})")
+                cols = [info[1] for info in cursor.fetchall()]
+                if col not in cols:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
+        add_column_if_missing("empresas", "data_validade", "TEXT DEFAULT '2099-12-31'")
+        add_column_if_missing("empresas", "programas", "TEXT DEFAULT 'site,app'")
+        
+        add_column_if_missing("utilizadores", "is_superadmin", "BOOLEAN DEFAULT 0")
+        add_column_if_missing("utilizadores", "data_validade", "TEXT DEFAULT '2099-12-31'")
+        add_column_if_missing("utilizadores", "programas", "TEXT DEFAULT 'site,app'")
+        add_column_if_missing("utilizadores", "password_plain", "TEXT")
+        
+        # Garantir privilégios SuperAdmin ao Paulo Batista se existir
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS frota (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                projeto_id INTEGER NOT NULL,
-                veiculo TEXT NOT NULL,
-                capacidade_kg REAL,
-                capacidade_volume REAL,
-                custo_km REAL,
-                velocidade_media REAL,
-                horario_inicio TEXT,
-                horario_fim TEXT,
-                is_active BOOLEAN DEFAULT 1,
-                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
-            )
+            UPDATE utilizadores 
+            SET is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
+            WHERE email IN ('pauloalexbatista@gmail.com', 'paulo.batista@ttm.pt')
         """)
         
-        # Tabela de Rotas Otimizadas
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS rotas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                projeto_id INTEGER NOT NULL,
-                veiculo TEXT NOT NULL,
-                ordem INTEGER NOT NULL,
-                entrega_id INTEGER,
-                distancia_km REAL,
-                tempo_minutos REAL,
-                custo_estimado REAL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (projeto_id) REFERENCES projetos (id),
-                FOREIGN KEY (entrega_id) REFERENCES entregas (id)
-            )
-        """)
-        
-        # Tabela de Logs de Uso
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS usage_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                empresa_id INTEGER NOT NULL,
-                acao TEXT NOT NULL,
-                detalhes TEXT,
-                ip_address TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (empresa_id) REFERENCES empresas (id)
-            )
-        """)
-        
-        # Tabela de Configurações Globais (do sistema)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS config (
-                key TEXT PRIMARY KEY,
-                value TEXT,
-                description TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela de Métricas por Projeto
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS metricas_projeto (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                projeto_id INTEGER NOT NULL,
-                data DATE DEFAULT CURRENT_DATE,
-                total_entregas INTEGER DEFAULT 0,
-                entregas_sucesso INTEGER DEFAULT 0,
-                entregas_falha INTEGER DEFAULT 0,
-                distancia_total_km REAL DEFAULT 0,
-                custo_total REAL DEFAULT 0,
-                tempo_total_minutos REAL DEFAULT 0,
-                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
-            )
-        """)
-        
-        # Tabela de Snapshots de Sessão para Resumo de Planeamento
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                projeto_id INTEGER NOT NULL,
-                utilizador_id INTEGER NOT NULL,
-                fase_atual INTEGER DEFAULT 1,
-                nome_snapshot TEXT,
-                payload_json TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (projeto_id) REFERENCES projetos (id),
-                FOREIGN KEY (utilizador_id) REFERENCES utilizadores (id)
-            )
-        """)
-        
-        # Garantir coluna armazem na tabela entregas para novas instalacoes e upgrades
-        try:
-            cursor.execute("ALTER TABLE entregas ADD COLUMN armazem TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE entregas ADD COLUMN nome_cliente TEXT")
-        except sqlite3.OperationalError:
-            pass
-            
         conn.commit()
-        print("[DB] Base de dados inicializada com sucesso!")
+        print("[DB] Base de dados inicializada e auto-migrada com sucesso!")
 
 
 def hash_password(password):
