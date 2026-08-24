@@ -387,7 +387,44 @@ export default function MapComponent({
             ✨ {t.tactical.allVehiclesFilter} ({clients.length})
           </button>
 
-                                  {/* Individual Vehicle Route Chips */}
+                                  {/* "Por Distribuir" Pending Deliveries Chip */}
+            {(() => {
+              const pendingStops = clients.filter(c => isPendingRoute(c.Rota));
+              const pendingCount = pendingStops.length;
+              if (pendingCount === 0) return null;
+              
+              const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes("Por Distribuir");
+              const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === "Por Distribuir";
+
+              return (
+                <button
+                  key="Por Distribuir"
+                  onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
+                  title="Clique para ver só encomendas Por Distribuir (Ctrl+Clique para seleção múltipla)"
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
+                    isExclusive
+                      ? "border-amber-500 bg-amber-600 text-white ring-2 ring-amber-400/80 shadow-md"
+                      : isSelected
+                      ? "border-amber-500/50 bg-amber-950/40 text-amber-300 hover:border-amber-400 hover:shadow"
+                      : "border-zinc-800 bg-zinc-950/60 text-amber-500/50 opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm bg-amber-500" />
+                  <span className="truncate max-w-[120px] font-bold">⚠️ Por Distribuir</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                      isExclusive
+                        ? "bg-white text-amber-900 border-white/80"
+                        : "bg-amber-500/20 text-amber-200 border-amber-500/40"
+                    }`}
+                  >
+                    {pendingCount}
+                  </span>
+                </button>
+              );
+            })()}
+
+            {/* Individual Vehicle Route Chips */}
             {sortedVehiclesList.map((v, i) => {
               const routeColor = routeColors[i % routeColors.length];
               const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes(v);

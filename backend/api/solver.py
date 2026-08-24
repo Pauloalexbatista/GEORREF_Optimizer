@@ -589,58 +589,142 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+            
+            # 1. Fetch all deliveries from db for this project
+            cursor.execute("SELECT * FROM entregas WHERE projeto_id = ? ORDER BY id ASC", (project_id,))
+            deliv_rows = cursor.fetchall()
+            col_names = [d[0] for d in cursor.description] if cursor.description else []
+            all_deliveries = [dict(zip(col_names, r)) for r in deliv_rows]
+            
+            # Map of valid deliveries (with coords)
+            valid_deliv_by_id = {}
+            valid_deliv_by_code = {}
+            for d in all_deliveries:
+                d_lat = clean_num(d.get("latitude"), 0.0)
+                d_lon = clean_num(d.get("longitude"), 0.0)
+                d_qual = clean_int(d.get("nivel_qualidade"), 0)
+                if d_lat != 0.0 and d_lon != 0.0 and d_qual != 99:
+                    d_id = clean_int(d.get("id"))
+                    d_code = str(d.get("codigo_cliente", "")).strip().upper()
+                    valid_deliv_by_id[d_id] = d
+                    if d_code:
+                        valid_deliv_by_code[d_code] = d
+
+            # 2. Get latest snapshot
+            cursor.execute("SELECT id, payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
             row = cursor.fetchone()
             
-            if not row:
-                return {"status": "none", "routes": []}
-                
-            state_dict = deserialize_state(row["payload_json"])
-            raw_routes = state_dict.get("routes_solution")
-            
             routes_list = []
-            if raw_routes is not None:
-                df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-                if not df_routes.empty:
-                    for idx, r in df_routes.iterrows():
-                        r_name = str(r.get("Rota", "Por Distribuir") if pd.notna(r.get("Rota")) else "Por Distribuir")
-                        if "PENDENTE" in r_name.upper():
-                            r_name = "Por Distribuir"
-                        d_id = clean_int(r.get("id") or r.get("ID_Original"), idx + 1)
-                        chegada_val = str(r.get("Hora_Chegada_Prevista") or r.get("Chegada") or "00:00").strip()
-                        saida_val = str(r.get("Hora_Saida_Prevista") or r.get("Saida") or "00:00").strip()
-                        km_ant = clean_num(r.get("Distancia_KM") if pd.notna(r.get("Distancia_KM")) else r.get("KM_Anterior"), 0.0)
-                        dist_acum = clean_num(r.get("Distancia_Acumulada_KM") if pd.notna(r.get("Distancia_Acumulada_KM")) else r.get("Dist_Acum"), 0.0)
-                        t_esp = clean_int(r.get("Tempo_Espera_Min") if pd.notna(r.get("Tempo_Espera_Min")) else r.get("Tempo_Espera"), 0)
-                        t_ent = clean_int(r.get("Tempo_Viagem_Min") if pd.notna(r.get("Tempo_Viagem_Min")) else r.get("Tempo_Entrega"), 15)
-                        ordem_val = clean_int(r.get("Ordem_Paragem") if pd.notna(r.get("Ordem_Paragem")) else r.get("Ordem"), 1)
-                        
-                        routes_list.append({
-                            "id": d_id,
-                            "ID_Original": d_id,
-                            "Rota": r_name,
-                            "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
-                            "Ordem": ordem_val,
-                            "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""),
-                            "Nome_Cliente": str(r.get("Nome_Cliente", r.get("Cliente", "")) if pd.notna(r.get("Nome_Cliente")) else str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else "")),
-                            "Morada": str(r.get("Morada", "") if pd.notna(r.get("Morada")) else ""),
-                            "CP": str(r.get("CP", "") if pd.notna(r.get("CP")) else ""),
-                            "Localidade": str(r.get("Localidade", "") if pd.notna(r.get("Localidade")) else ""),
-                            "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
-                            "Latitude": clean_num(r.get("Latitude"), 0.0),
-                            "Longitude": clean_num(r.get("Longitude"), 0.0),
-                            "Chegada": chegada_val if chegada_val else "00:00",
-                            "Tempo_Espera": t_esp,
-                            "Tempo_Entrega": t_ent,
-                            "Saida": saida_val if saida_val else "00:00",
-                            "Nivel_Qualidade": clean_int(r.get("Nivel_Qualidade"), 1),
-                            "KM_Anterior": km_ant,
-                            "Dist_Acum": dist_acum,
-                            "Peso_KG": clean_num(r.get("Peso_KG"), 50.0),
-                            "Carga_Acum": clean_num(r.get("Carga_Acum"), 0.0),
-                            "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), 0.0)
-                        })
-                        
+            state_dict = {}
+            seen_deliv_ids = set()
+            seen_deliv_codes = set()
+            
+            if row and row["payload_json"]:
+                state_dict = deserialize_state(row["payload_json"])
+                raw_routes = state_dict.get("routes_solution")
+                
+                if raw_routes is not None:
+                    df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+                    if not df_routes.empty:
+                        for idx, r in df_routes.iterrows():
+                            r_name = str(r.get("Rota", "Por Distribuir") if pd.notna(r.get("Rota")) else "Por Distribuir")
+                            if "PENDENTE" in r_name.upper():
+                                r_name = "Por Distribuir"
+                            d_id = clean_int(r.get("id") or r.get("ID_Original"), idx + 1)
+                            c_code = str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else "").strip().upper()
+                            
+                            # Match with db delivery to get fresh geocoded coordinates & info
+                            match_deliv = valid_deliv_by_id.get(d_id) or valid_deliv_by_code.get(c_code)
+                            
+                            if match_deliv:
+                                seen_deliv_ids.add(clean_int(match_deliv.get("id")))
+                                seen_deliv_codes.add(str(match_deliv.get("codigo_cliente", "")).strip().upper())
+                                lat_val = clean_num(match_deliv.get("latitude"))
+                                lon_val = clean_num(match_deliv.get("longitude"))
+                                morada_val = str(match_deliv.get("morada") or r.get("Morada") or "")
+                                cp_val = str(match_deliv.get("codigo_postal") or r.get("CP") or "")
+                                loc_val = str(match_deliv.get("_concelho") or match_deliv.get("concelho") or r.get("Localidade") or "")
+                                nome_val = str(match_deliv.get("nome_cliente") or r.get("Nome_Cliente") or match_deliv.get("codigo_cliente") or c_code)
+                                qual_val = clean_int(match_deliv.get("nivel_qualidade"), 1)
+                            else:
+                                lat_val = clean_num(r.get("Latitude"), 0.0)
+                                lon_val = clean_num(r.get("Longitude"), 0.0)
+                                morada_val = str(r.get("Morada", "") if pd.notna(r.get("Morada")) else "")
+                                cp_val = str(r.get("CP", "") if pd.notna(r.get("CP")) else "")
+                                loc_val = str(r.get("Localidade", "") if pd.notna(r.get("Localidade")) else "")
+                                nome_val = str(r.get("Nome_Cliente", r.get("Cliente", "")) if pd.notna(r.get("Nome_Cliente")) else str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""))
+                                qual_val = clean_int(r.get("Nivel_Qualidade"), 1)
+
+                            chegada_val = str(r.get("Hora_Chegada_Prevista") or r.get("Chegada") or "00:00").strip()
+                            saida_val = str(r.get("Hora_Saida_Prevista") or r.get("Saida") or "00:00").strip()
+                            km_ant = clean_num(r.get("Distancia_KM") if pd.notna(r.get("Distancia_KM")) else r.get("KM_Anterior"), 0.0)
+                            dist_acum = clean_num(r.get("Distancia_Acumulada_KM") if pd.notna(r.get("Distancia_Acumulada_KM")) else r.get("Dist_Acum"), 0.0)
+                            t_esp = clean_int(r.get("Tempo_Espera_Min") if pd.notna(r.get("Tempo_Espera_Min")) else r.get("Tempo_Espera"), 0)
+                            t_ent = clean_int(r.get("Tempo_Viagem_Min") if pd.notna(r.get("Tempo_Viagem_Min")) else r.get("Tempo_Entrega"), 15)
+                            ordem_val = clean_int(r.get("Ordem_Paragem") if pd.notna(r.get("Ordem_Paragem")) else r.get("Ordem"), 1)
+                            
+                            routes_list.append({
+                                "id": d_id,
+                                "ID_Original": d_id,
+                                "Rota": r_name,
+                                "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
+                                "Ordem": ordem_val,
+                                "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""),
+                                "Nome_Cliente": nome_val,
+                                "Morada": morada_val,
+                                "CP": cp_val,
+                                "Localidade": loc_val,
+                                "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
+                                "Latitude": lat_val,
+                                "Longitude": lon_val,
+                                "Chegada": chegada_val if chegada_val else "00:00",
+                                "Tempo_Espera": t_esp,
+                                "Tempo_Entrega": t_ent,
+                                "Saida": saida_val if saida_val else "00:00",
+                                "Nivel_Qualidade": qual_val,
+                                "KM_Anterior": km_ant,
+                                "Dist_Acum": dist_acum,
+                                "Peso_KG": clean_num(r.get("Peso_KG"), 50.0),
+                                "Carga_Acum": clean_num(r.get("Carga_Acum"), 0.0),
+                                "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), 0.0)
+                            })
+            
+            # 3. Synchronize any valid delivery from entregas that was NOT in routes_list (e.g. newly georeferenced)
+            pending_order = len([r for r in routes_list if is_pending_route(r["Rota"])]) + 1
+            for d_id, d in valid_deliv_by_id.items():
+                d_code = str(d.get("codigo_cliente", "")).strip().upper()
+                if d_id not in seen_deliv_ids and d_code not in seen_deliv_codes:
+                    win_s = str(d.get("janela_inicio", "") or "").strip()
+                    win_e = str(d.get("janela_fim", "") or "").strip()
+                    combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
+                    
+                    routes_list.append({
+                        "id": d_id,
+                        "ID_Original": d_id,
+                        "Rota": "Por Distribuir",
+                        "Armazem": "N/A",
+                        "Ordem": pending_order,
+                        "Cliente": str(d.get("codigo_cliente", f"Cliente_{d_id}")),
+                        "Nome_Cliente": str(d.get("nome_cliente") or d.get("codigo_cliente", f"Cliente_{d_id}")),
+                        "Morada": str(d.get("morada", "N/A")),
+                        "CP": str(d.get("codigo_postal", "N/A")),
+                        "Localidade": str(d.get("_concelho") or d.get("concelho", "")),
+                        "Janela_Horaria": combined_window,
+                        "Latitude": clean_num(d.get("latitude")),
+                        "Longitude": clean_num(d.get("longitude")),
+                        "Chegada": "00:00",
+                        "Tempo_Espera": 0,
+                        "Tempo_Entrega": 0,
+                        "Saida": "00:00",
+                        "Nivel_Qualidade": clean_int(d.get("nivel_qualidade"), 1),
+                        "KM_Anterior": 0.0,
+                        "Dist_Acum": 0.0,
+                        "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
+                        "Carga_Acum": round(clean_num(d.get("peso_kg"), 50.0), 1),
+                        "Carga_Vol_Acum": round(clean_num(d.get("volume_m3"), 0.1), 2)
+                    })
+                    pending_order += 1
+                    
             resp_data = {
                 "status": "success" if routes_list else "none",
                 "routes": routes_list,

@@ -869,7 +869,7 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                 except Exception as geo_err:
                     print(f"[AVISO] Não foi possível persistir endereço em geocoding.db: {geo_err}")
 
-            cursor.execute("SELECT e.projeto_id, e.codigo_cliente FROM entregas e WHERE e.id = ?", (delivery_id,))
+            cursor.execute("SELECT e.projeto_id, e.codigo_cliente, e.nome_cliente, e.peso_kg, e.volume_m3, e.janela_inicio, e.janela_fim FROM entregas e WHERE e.id = ?", (delivery_id,))
             deliv_info = cursor.fetchone()
             if deliv_info:
                 proj_id = deliv_info["projeto_id"]
@@ -884,15 +884,52 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                         if raw_routes is not None:
                             df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
                             if not df_routes.empty:
-                                c_idx = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == str(client_code).strip().upper()].index
+                                c_idx = []
+                                if "id" in df_routes.columns:
+                                    c_idx = df_routes[df_routes["id"] == delivery_id].index
+                                if len(c_idx) == 0 and "ID_Original" in df_routes.columns:
+                                    c_idx = df_routes[df_routes["ID_Original"] == delivery_id].index
+                                if len(c_idx) == 0 and "Cliente" in df_routes.columns:
+                                    c_idx = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == str(client_code).strip().upper()].index
+                                
                                 if len(c_idx) > 0:
                                     df_routes.loc[c_idx, "Latitude"] = corr.latitude
                                     df_routes.loc[c_idx, "Longitude"] = corr.longitude
                                     df_routes.loc[c_idx, "Morada"] = corr.morada
                                     df_routes.loc[c_idx, "Localidade"] = corr.concelho
-                                    state_dict["routes_solution"] = df_routes
-                                    new_payload = serialize_state(state_dict)
-                                    cursor.execute("UPDATE snapshots SET payload_json = ? WHERE id = ?", (new_payload, snap_row["id"]))
+                                    df_routes.loc[c_idx, "CP"] = corr.codigo_postal
+                                else:
+                                    # Append as Por Distribuir
+                                    new_stop = {
+                                        "id": delivery_id,
+                                        "ID_Original": delivery_id,
+                                        "Rota": "Por Distribuir",
+                                        "Armazem": "N/A",
+                                        "Ordem": len(df_routes) + 1,
+                                        "Cliente": str(client_code),
+                                        "Nome_Cliente": str(deliv_info["nome_cliente"] or client_code),
+                                        "Morada": str(corr.morada),
+                                        "CP": str(corr.codigo_postal),
+                                        "Localidade": str(corr.concelho),
+                                        "Janela_Horaria": f"{deliv_info['janela_inicio']} - {deliv_info['janela_fim']}" if (deliv_info.get("janela_inicio") and deliv_info.get("janela_fim")) else "Qualquer",
+                                        "Latitude": corr.latitude,
+                                        "Longitude": corr.longitude,
+                                        "Chegada": "00:00",
+                                        "Tempo_Espera": 0,
+                                        "Tempo_Entrega": 0,
+                                        "Saida": "00:00",
+                                        "Nivel_Qualidade": 1,
+                                        "KM_Anterior": 0.0,
+                                        "Dist_Acum": 0.0,
+                                        "Peso_KG": float(deliv_info.get("peso_kg") or 50.0),
+                                        "Carga_Acum": round(float(deliv_info.get("peso_kg") or 50.0), 1),
+                                        "Carga_Vol_Acum": round(float(deliv_info.get("volume_m3") or 0.1), 2)
+                                    }
+                                    df_routes = pd.concat([df_routes, pd.DataFrame([new_stop])], ignore_index=True)
+                                    
+                                state_dict["routes_solution"] = df_routes
+                                new_payload = serialize_state(state_dict)
+                                cursor.execute("UPDATE snapshots SET payload_json = ? WHERE id = ?", (new_payload, snap_row["id"]))
                     except Exception as snap_e:
                         print(f"Error updating snapshot coords: {snap_e}")
 

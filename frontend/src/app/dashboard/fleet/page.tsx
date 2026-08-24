@@ -90,6 +90,32 @@ export default function FleetPage() {
   
   // Edit states
   const [editingWhIdx, setEditingWhIdx] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const persistFleetAndWarehouses = async (nextFleet: Vehicle[], nextWh: Warehouse[], showAlert = false) => {
+    if (!selectedProject) return;
+    setSaveStatus("saving");
+    try {
+      await apiRequest(`/api/fleet/${selectedProject.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          fleet: nextFleet,
+          warehouses: nextWh,
+        }),
+      });
+      setSaveStatus("saved");
+      if (showAlert) {
+        alert("Configuração da frota e armazéns guardada com sucesso!");
+      }
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch (err: any) {
+      setSaveStatus("error");
+      console.error("Auto-save fleet error:", err);
+      if (showAlert) {
+        alert(err.message || "Erro ao guardar configurações.");
+      }
+    }
+  };
   const [editingVehIdx, setEditingVehIdx] = useState<number | null>(null);
 
 
@@ -213,24 +239,33 @@ export default function FleetPage() {
         quality
       };
 
+      let nextWh: Warehouse[] = [];
+      let nextFleet = fleet;
+
       if (isEditing) {
         const oldName = warehouses[editingWhIdx!].name;
-        setWarehouses(prev => prev.map((w, idx) => idx === editingWhIdx ? updatedWh : w));
+        nextWh = warehouses.map((w, idx) => idx === editingWhIdx ? updatedWh : w);
+        setWarehouses(nextWh);
         
         // Propagate name change to fleet
         if (oldName !== whName) {
-          setFleet(prev => prev.map(v => v.armazem === oldName ? { ...v, armazem: whName } : v));
+          nextFleet = fleet.map(v => v.armazem === oldName ? { ...v, armazem: whName } : v);
+          setFleet(nextFleet);
           if (vWarehouse === oldName) {
             setVWarehouse(whName);
           }
         }
         setEditingWhIdx(null);
       } else {
-        setWarehouses(prev => [...prev, updatedWh]);
+        nextWh = [...warehouses, updatedWh];
+        setWarehouses(nextWh);
         if (!vWarehouse) {
           setVWarehouse(whName);
         }
       }
+
+      // Auto-save warehouse changes
+      persistFleetAndWarehouses(nextFleet, nextWh);
 
       setWhName("");
       setWhAddr("");
@@ -246,15 +281,13 @@ export default function FleetPage() {
   };
 
   const handleDeleteWarehouse = (idx: number) => {
-
     const name = warehouses[idx].name;
+    const nextWh = warehouses.filter((_, i) => i !== idx);
+    const nextFleet = fleet.filter(v => v.armazem !== name);
 
-    setWarehouses(prev => prev.filter((_, i) => i !== idx));
-
-    // Remove vehicles associated with this warehouse or update their warehouse link
-
-    setFleet(prev => prev.filter(v => v.armazem !== name));
-
+    setWarehouses(nextWh);
+    setFleet(nextFleet);
+    persistFleetAndWarehouses(nextFleet, nextWh);
   };
 
 
@@ -281,12 +314,16 @@ export default function FleetPage() {
       horario_fim: vEnd
     };
 
+    const nextFleet = isEditing
+      ? fleet.map((v, idx) => idx === editingVehIdx ? updatedVeh : v)
+      : [...fleet, updatedVeh];
+
+    setFleet(nextFleet);
     if (isEditing) {
-      setFleet(prev => prev.map((v, idx) => idx === editingVehIdx ? updatedVeh : v));
       setEditingVehIdx(null);
-    } else {
-      setFleet(prev => [...prev, updatedVeh]);
     }
+    // Auto-save vehicle changes immediately
+    persistFleetAndWarehouses(nextFleet, warehouses);
 
     setVName("");
     setVCapKg(1000);
@@ -298,9 +335,9 @@ export default function FleetPage() {
   };
 
   const handleDeleteVehicle = (idx: number) => {
-
-    setFleet(prev => prev.filter((_, i) => i !== idx));
-
+    const nextFleet = fleet.filter((_, i) => i !== idx);
+    setFleet(nextFleet);
+    persistFleetAndWarehouses(nextFleet, warehouses);
   };
 
 
@@ -388,57 +425,17 @@ export default function FleetPage() {
 
 
   const handleSaveConfig = async () => {
-
     if (!selectedProject) return;
-
     if (warehouses.length === 0) {
-
       alert("Adicione pelo menos um armazém de origem antes de salvar.");
-
       return;
-
     }
-
     if (fleet.length === 0) {
-
       alert("Adicione pelo menos um veículo à frota antes de salvar.");
-
       return;
-
     }
 
-
-
-    setLoading(true);
-
-    try {
-
-      await apiRequest(`/api/fleet/${selectedProject.id}`, {
-
-        method: "POST",
-
-        body: JSON.stringify({
-
-          fleet,
-
-          warehouses
-
-        })
-
-      });
-
-      alert("Configuração da frota e armazéns guardada com sucesso!");
-
-    } catch (err: any) {
-
-      alert(err.message || "Erro ao guardar configurações.");
-
-    } finally {
-
-      setLoading(false);
-
-    }
-
+    await persistFleetAndWarehouses(fleet, warehouses, true);
   };
 
 
