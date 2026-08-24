@@ -188,3 +188,37 @@ def toggle_status(user_id: int, admin: UserResponse = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/consumptions")
+def get_admin_consumptions(current_user: UserResponse = Depends(require_admin)):
+    try:
+        from database import obter_resumo_consumos_admin
+        from utils.google_routes_engine import USAGE_FILE
+        import json
+        
+        resumo = obter_resumo_consumos_admin()
+        
+        quota_limit = 1000
+        count_json = 0
+        total_all_time = 0
+        current_month = ""
+        if os.path.exists(USAGE_FILE):
+            try:
+                with open(USAGE_FILE, "r", encoding="utf-8") as f:
+                    u_data = json.load(f)
+                    quota_limit = u_data.get("limit", 1000)
+                    count_json = u_data.get("count", 0)
+                    total_all_time = u_data.get("total_all_time", 0)
+                    current_month = u_data.get("current_month", "")
+            except Exception:
+                pass
+                
+        resumo["quota_limit"] = quota_limit
+        resumo["quota_count"] = max(count_json, resumo["total_pedidos_mes"])
+        resumo["total_all_time"] = total_all_time
+        resumo["current_month"] = current_month
+        
+        return resumo
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

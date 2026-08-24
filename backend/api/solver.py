@@ -1,3 +1,4 @@
+from utils.google_routes_engine import calculate_google_traffic_route, get_google_api_key
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
@@ -248,26 +249,45 @@ def get_depot_coords(warehouses_df, wh_name=None):
         print(f"Notice in get_depot_coords: {e}")
     return 38.6593, -9.1758
 
-def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 15) -> list:
+def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 15, empresa_id: int = 1, projeto_id: int = 0) -> list:
+    stops_list = list(stops_iterable)
+    if not stops_list:
+        return []
+
     updated_stops = []
     if avg_speed <= 0:
         avg_speed = 50.0
         
     cur_time_min = parse_time_to_minutes(start_time_str, 590)
+    
+    # Attempt Google Routes with Live Traffic calculation
+    g_legs = None
+    try:
+        stops_coords = [(float(s.get("Latitude", 0)), float(s.get("Longitude", 0))) for s in stops_list if float(s.get("Latitude", 0)) != 0]
+        if stops_coords and len(stops_coords) <= 23:
+            g_res = calculate_google_traffic_route((depot_lat, depot_lon), stops_coords, cur_time_min, empresa_id=empresa_id, projeto_id=projeto_id)
+            if g_res and g_res.get("legs"):
+                g_legs = g_res["legs"]
+    except Exception as ge:
+        print(f"[Traffic Info]: Using fallback travel model ({ge})")
+
     p_lat, p_lon = depot_lat, depot_lon
     cumul_dist = 0.0
     cumul_load = 0.0
     cumul_vol = 0.0
     
     order = 1
-    for stop_dict in stops_iterable:
+    for idx, stop_dict in enumerate(stops_list):
         c_lat = float(stop_dict.get("Latitude", p_lat))
         c_lon = float(stop_dict.get("Longitude", p_lon))
         
-        dist = haversine_distance(p_lat, p_lon, c_lat, c_lon)
+        if g_legs and idx < len(g_legs):
+            dist = float(g_legs[idx]["distance_km"])
+            travel_min = float(g_legs[idx]["duration_min"])
+        else:
+            dist = haversine_distance(p_lat, p_lon, c_lat, c_lon)
+            travel_min = (dist / avg_speed) * 60.0
         cumul_dist += dist
-        
-        travel_min = (dist / avg_speed) * 60.0
         arr_min = cur_time_min + travel_min
         
         win_str = str(stop_dict.get("Janela_Horaria", "Qualquer") or "Qualquer")

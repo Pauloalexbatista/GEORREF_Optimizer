@@ -743,3 +743,75 @@ def toggle_utilizador_status_admin(user_id):
         cursor.execute("UPDATE utilizadores SET is_active = ? WHERE id = ?", (new_status, user_id))
         conn.commit()
         return bool(new_status)
+
+
+def registar_consumo_google(empresa_id, projeto_id, servico="routes_traffic", num_pedidos=1, custo_estimado=0.01):
+    """Registar consumo de API Google por empresa"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO consumos_google (empresa_id, projeto_id, servico, num_pedidos, custo_estimado)
+                VALUES (?, ?, ?, ?, ?)
+            """, (empresa_id, projeto_id, servico, num_pedidos, custo_estimado))
+            conn.commit()
+    except Exception as e:
+        print(f"Erro ao registar consumo Google: {e}")
+
+def obter_resumo_consumos_admin():
+    """Obter resumo global e por empresa de consumos Google"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Consumos do mês corrente
+        cursor.execute("""
+            SELECT 
+                COALESCE(SUM(num_pedidos), 0) as total_pedidos_mes,
+                COALESCE(SUM(custo_estimado), 0.0) as total_custo_mes
+            FROM consumos_google
+            WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
+        """)
+        mes_row = cursor.fetchone()
+        total_pedidos_mes = mes_row['total_pedidos_mes']
+        total_custo_mes = mes_row['total_custo_mes']
+        
+        # Breakdown por Empresa
+        cursor.execute("""
+            SELECT 
+                e.id as empresa_id,
+                e.nome as empresa_nome,
+                e.plano,
+                COALESCE(SUM(cg.num_pedidos), 0) as total_pedidos,
+                COALESCE(SUM(cg.custo_estimado), 0.0) as total_custo,
+                MAX(cg.created_at) as ultimo_consumo
+            FROM empresas e
+            LEFT JOIN consumos_google cg ON e.id = cg.empresa_id
+            GROUP BY e.id, e.nome, e.plano
+            ORDER BY total_pedidos DESC, e.nome ASC
+        """)
+        empresas_breakdown = [dict(r) for r in cursor.fetchall()]
+        
+        # Últimas 20 transações
+        cursor.execute("""
+            SELECT 
+                cg.id,
+                cg.created_at,
+                e.nome as empresa_nome,
+                p.nome as projeto_nome,
+                cg.servico,
+                cg.num_pedidos,
+                cg.custo_estimado
+            FROM consumos_google cg
+            LEFT JOIN empresas e ON cg.empresa_id = e.id
+            LEFT JOIN projetos p ON cg.projeto_id = p.id
+            ORDER BY cg.id DESC
+            LIMIT 20
+        """)
+        ultimas_transacoes = [dict(r) for r in cursor.fetchall()]
+        
+        return {
+            "total_pedidos_mes": total_pedidos_mes,
+            "total_custo_mes": round(total_custo_mes, 2),
+            "empresas": empresas_breakdown,
+            "transacoes": ultimas_transacoes
+        }
