@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
+import { useI18n } from "@/context/I18nContext";
 import dynamic from "next/dynamic";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
@@ -130,6 +131,7 @@ function calculateDurationString(startStr: string, endStr: string): string {
 }
 
 export default function TacticalPage() {
+  const { t } = useI18n();
   const { selectedProject } = useProjects();
   const [routes, setRoutes] = useState<RouteNode[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
@@ -511,6 +513,15 @@ export default function TacticalPage() {
   // 2. Estado de Utilização: Rotas Ativas primeiro, depois Vazias (Nível 2)
   // 3. Horário de Saída
   // 4. Identificador Numérico
+    // Sort routes: 
+  // 1. "Por Distribuir" (se existir)
+  // 2. Rotas ATIVAS COM ENTREGAS primeiro (Nível 1 - Topo Absoluto)
+  // 3. Rotas VAZIAS depois (Nível 2)
+    // Hierarchical sort for tactical sidebar routes:
+  // 1. "Por Distribuir" (se existir)
+  // 2. Armazém (Nível 1 - todos os carros do mesmo armazém juntos: Faro, Maia, Coimbra, etc.)
+  // 3. Estado de Utilização dentro do Armazém: Rotas com entregas primeiro, depois Vazias (Nível 2)
+  // 4. Mais entregas -> Identificador Numérico (Faro_1, Faro_2, Faro_3...)
   const displayRouteKeys = useMemo(() => {
     const nonVehicleKeys = Object.keys(groupedRoutes).filter(
       (k) => k !== "Por Distribuir" && !vehicles.includes(k)
@@ -521,37 +532,42 @@ export default function TacticalPage() {
       const cfgA = vehicleMap[a];
       const cfgB = vehicleMap[b];
 
-      // 1. Armazém
-      const whA = (cfgA?.armazem || "").trim().toLowerCase();
-      const whB = (cfgB?.armazem || "").trim().toLowerCase();
+      // 1. Armazém (todos os veículos do mesmo armazém ficam juntos)
+      const whA = (cfgA?.armazem || (a.includes("_") ? a.split("_")[0] : a) || "").trim().toLowerCase();
+      const whB = (cfgB?.armazem || (b.includes("_") ? b.split("_")[0] : b) || "").trim().toLowerCase();
       if (whA !== whB) {
-        return whA.localeCompare(whB);
+        return whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
       }
 
-      // 2. Estado de Utilização
+      // 2. Estado de Utilização dentro do mesmo armazém
       const stopsA = (groupedRoutes[a] || []).length;
       const stopsB = (groupedRoutes[b] || []).length;
       const isActiveA = stopsA > 0;
       const isActiveB = stopsB > 0;
 
       if (isActiveA !== isActiveB) {
-        return isActiveA ? -1 : 1; // Ativas primeiro
+        return isActiveA ? -1 : 1; // Rotas com entregas primeiro
       }
 
-      // 3. Horário de Saída
+      // 3. Mais entregas primeiro
+      if (stopsA !== stopsB) {
+        return stopsB - stopsA;
+      }
+
+      // 4. Horário de Saída
       const timeA = cfgA?.horario_inicio || "09:50";
       const timeB = cfgB?.horario_inicio || "09:50";
       if (timeA !== timeB) {
         return timeA.localeCompare(timeB);
       }
 
-      // 4. Identificador Numérico
-      const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
-      const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+      // 5. Identificador Numérico (Faro_1 -> Faro_2 -> Faro_3)
+      const numA = parseInt(a.replace(/[^0-9]/g, ""), 10) || 0;
+      const numB = parseInt(b.replace(/[^0-9]/g, ""), 10) || 0;
       if (numA !== numB) {
         return numA - numB;
       }
-      return a.localeCompare(b);
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     });
 
     return [...(hasPending ? ["Por Distribuir"] : []), ...list];
@@ -570,7 +586,7 @@ export default function TacticalPage() {
         <div className="flex items-center justify-between shrink-0">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-zinc-50 font-sans">Dashboard Tático</h1>
-            <p className="text-zinc-400 text-xs mt-1">Calcule trajetos eficientes e acompanhe as rotas de distribuição em tempo real.</p>
+            <p className="text-zinc-400 text-xs mt-1">{t.tactical.subtitle}</p>
           </div>
 
           <div className="flex items-center space-x-3">
@@ -582,7 +598,7 @@ export default function TacticalPage() {
               <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
-              <span>🖥️ 2º Monitor (Mapa)</span>
+              <span>🖥️ {t.tactical.detachedMapBtn}</span>
             </button>
 
             <button
@@ -593,7 +609,7 @@ export default function TacticalPage() {
               <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
               </svg>
-              <span>🖥️ 3º Monitor (Rotas)</span>
+              <span>🖥️ {t.tactical.routesMatrixBtn}</span>
             </button>
 
             <button
@@ -604,7 +620,7 @@ export default function TacticalPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span>Configurações</span>
+              <span>{t.tactical.settingsBtn}</span>
             </button>
 
             <button
@@ -613,7 +629,7 @@ export default function TacticalPage() {
               className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-amber-400 border border-amber-500/30 hover:border-amber-500/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2 disabled:opacity-50"
               title="Ordena a sequência de paragens de cada viatura pelo menor trajeto, sem transferir clientes entre carros."
             >
-              <span>{reorderingAll ? "A ordenar..." : "⚡ Ordenar Sequências"}</span>
+              <span>{reorderingAll ? "A ordenar..." : `⚡ ${t.tactical.optimizeSequencesBtn}`}</span>
             </button>
             <button
               onClick={handleSolveRoutes}
@@ -630,7 +646,7 @@ export default function TacticalPage() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span>Otimizar Rotas</span>
+                  <span>{t.tactical.optimizeRoutesBtn}</span>
                 </>
               )}
             </button>
@@ -668,13 +684,13 @@ export default function TacticalPage() {
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div>
                 <h4 className="font-bold text-sm text-zinc-100 flex items-center space-x-2">
-                  <span>Matriz de Decisão de Otimização (2x2)</span>
+                  <span>{t.tactical.matrixModalTitle}</span>
                   <span className="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-700 font-mono">
                     {strategy === "far_first" ? "🎯 ZONAS" : "⚡ KM"} + {loadMode === "full" ? "📦 CHEIO" : "⚖️ EQUILIBRADO"}
                   </span>
                 </h4>
                 <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Selecione a combinação estratégica entre critério de percurso e gestão de capacidade da frota.
+                  {t.tactical.matrixModalDesc}
                 </p>
               </div>
 
@@ -718,9 +734,9 @@ export default function TacticalPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <span className="text-base">🎯📦</span>
-                    <span className="font-bold text-xs text-zinc-100">Zona + Cheio</span>
+                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optZoneFull}</span>
                     <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-700/60 font-semibold">
-                      Recomendado Tráfego
+                      {t.tactical.optZoneFullTag}
                     </span>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
@@ -762,7 +778,7 @@ export default function TacticalPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <span className="text-base">🎯⚖️</span>
-                    <span className="font-bold text-xs text-zinc-100">Zona + Equilibrado</span>
+                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optZoneBal}</span>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                     strategy === "far_first" && loadMode === "balanced"
@@ -799,7 +815,7 @@ export default function TacticalPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <span className="text-base">⚡📦</span>
-                    <span className="font-bold text-xs text-zinc-100">KM + Cheio</span>
+                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optKmFull}</span>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                     strategy === "distance" && loadMode === "full"
@@ -836,7 +852,7 @@ export default function TacticalPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <span className="text-base">⚡⚖️</span>
-                    <span className="font-bold text-xs text-zinc-100">KM + Equilibrado</span>
+                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optKmBal}</span>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                     strategy === "distance" && loadMode === "balanced"
@@ -877,7 +893,7 @@ export default function TacticalPage() {
             <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/20">
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300">Rotas e Distribuição</h3>
-                <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                <p className="text-[10px] text-zinc-300 font-mono mt-0.5">
                   {vehicles.length} Veículos na Frota • {routes.filter((r) => !isPendingRoute(r.Rota)).length} Paragens Atribuídas
                 </p>
               </div>
@@ -899,7 +915,7 @@ export default function TacticalPage() {
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {displayRouteKeys.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 text-zinc-500">
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 text-zinc-300">
                   <svg className="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -1072,7 +1088,7 @@ export default function TacticalPage() {
                             <div className="p-3 bg-zinc-900/50 border border-zinc-800/80 rounded-lg text-center text-zinc-400 text-xs font-mono space-y-1">
                               <p className="text-zinc-300 font-semibold">Viatura Livre (0 paragens • 0.0 km • 0 kg)</p>
                               <p className="text-[11px] text-emerald-400">Turno: {startTimeStr} às {vConfig?.horario_fim || "18:00"} (Cap: {vConfig?.capacidade_kg || 1000} kg)</p>
-                              <p className="text-[10px] text-zinc-500 mt-1">
+                              <p className="text-[10px] text-zinc-300 mt-1">
                                 Pode reatribuir clientes de outras rotas diretamente para este carro.
                               </p>
                             </div>
@@ -1093,7 +1109,7 @@ export default function TacticalPage() {
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-zinc-400 truncate">{whData.address} • {whData.cp}</p>
-                                  <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono pt-0.5">
+                                  <div className="flex items-center justify-between text-[10px] text-zinc-300 font-mono pt-0.5">
                                     <span>Ponto de Origem</span>
                                     <span>Carga: {totalKg.toFixed(0)} kg</span>
                                   </div>
@@ -1129,7 +1145,7 @@ export default function TacticalPage() {
                                           </div>
                                           <div className="flex items-center space-x-2 text-[11px]">
                                             <span className="text-zinc-200 font-semibold">Chegada: {node.Chegada}</span>
-                                            <span className="text-zinc-500">→</span>
+                                            <span className="text-zinc-300">→</span>
                                             <span className="text-emerald-400 font-semibold">Abertura: {serviceStartTime}</span>
                                           </div>
                                         </div>
@@ -1159,7 +1175,7 @@ export default function TacticalPage() {
                                           <div>
                                                   <div className="font-bold text-zinc-200">{node.Nome_Cliente || node.Cliente}</div>
                                                   {node.Nome_Cliente && node.Nome_Cliente !== node.Cliente && (
-                                                    <div className="text-[10px] text-zinc-500 font-mono">{node.Cliente}</div>
+                                                    <div className="text-[10px] text-zinc-300 font-mono">{node.Cliente}</div>
                                                   )}
                                                   </div>
                                         </div>
@@ -1167,7 +1183,7 @@ export default function TacticalPage() {
                                         {!isPending && (
                                           <div className="flex items-center space-x-2 font-mono text-[11px]">
                                             <span className="text-emerald-400 font-semibold">Início: {serviceStartTime}</span>
-                                            <span className="text-zinc-500">→</span>
+                                            <span className="text-zinc-300">→</span>
                                             <span className="text-zinc-300 font-semibold">Saída: {node.Saida}</span>
                                           </div>
                                         )}
@@ -1181,7 +1197,7 @@ export default function TacticalPage() {
                                       </span>
                                       <span>
                                         Deslocação: <b className="text-zinc-300">{node.KM_Anterior.toFixed(1)} km</b>
-                                        {travelTimeMin > 0 && <span className="text-zinc-500"> (+{travelTimeMin}m)</span>}
+                                        {travelTimeMin > 0 && <span className="text-zinc-300"> (+{travelTimeMin}m)</span>}
                                       </span>
                                       <span>
                                         Carga: <b className="text-zinc-300">{node.Carga_Acum} kg</b>
@@ -1242,7 +1258,7 @@ export default function TacticalPage() {
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-zinc-400 truncate">{whData.address} • {whData.cp}</p>
-                                  <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono pt-0.5">
+                                  <div className="flex items-center justify-between text-[10px] text-zinc-300 font-mono pt-0.5">
                                     <span>
                                       Troço Final: {returnDist.toFixed(1)} km (+{Math.round(returnTravelMin)}m)
                                     </span>

@@ -27,6 +27,7 @@ MANIFEST
 
 # Database
 *.db
+*.sqlite
 *.sqlite3
 
 # Virtual Env

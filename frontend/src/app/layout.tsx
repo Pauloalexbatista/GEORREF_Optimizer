@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { ProjectProvider } from "@/context/ProjectContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { I18nProvider } from "@/context/I18nContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GeoRoute Pro - Otimizador Inteligente de Rotas",
+  title: "GeoRoutePlan - Otimizador Inteligente de Rotas",
   description: "Planeamento tático e otimização de frotas e armazéns com geocodificação em tempo real.",
 };
 
@@ -28,14 +30,18 @@ export default function RootLayout({
     <html
       lang="pt"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
-        <AuthProvider>
-          <ProjectProvider>
-            {children}
-          </ProjectProvider>
-        </AuthProvider>
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-zinc-950 text-zinc-100 transition-colors duration-200">
+        <ThemeProvider>
+          <I18nProvider>
+            <AuthProvider>
+              <ProjectProvider>
+                {children}
+              </ProjectProvider>
+            </AuthProvider>
+          </I18nProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import date, datetime
 import sys
 import os
 
@@ -32,6 +34,10 @@ class UserResponse(BaseModel):
     email: str
     empresa_id: int
     is_admin: bool
+    is_superadmin: bool = False
+    data_validade: Optional[str] = "2099-12-31"
+    programas: Optional[str] = "site,app"
+    dias_restantes: Optional[int] = 9999
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
     payload = decode_access_token(token)
@@ -59,22 +65,62 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Utilizador não encontrado",
         )
+
+    user_dict = dict(user)
+    val_str = user_dict.get("data_validade") or "2099-12-31"
+    dias = 9999
+    try:
+        dt = datetime.strptime(val_str[:10], "%Y-%m-%d").date()
+        dias = (dt - date.today()).days
+    except Exception:
+        pass
+
     return UserResponse(
-        id=user["id"],
-        nome=user["nome"],
-        email=user["email"],
-        empresa_id=user["empresa_id"],
-        is_admin=bool(user["is_admin"])
+        id=user_dict["id"],
+        nome=user_dict["nome"],
+        email=user_dict["email"],
+        empresa_id=user_dict["empresa_id"],
+        is_admin=bool(user_dict["is_admin"]),
+        is_superadmin=bool(user_dict.get("is_superadmin", False) or user_dict["is_admin"]),
+        data_validade=val_str,
+        programas=user_dict.get("programas", "site,app"),
+        dias_restantes=dias
     )
 
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest):
-    user = get_utilizador(req.email)
-    if not user:
+    user_raw = get_utilizador(req.email.strip().lower())
+    if not user_raw:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ou password incorretos"
         )
+    
+    user = dict(user_raw)
+
+    # Check active status
+    if not user.get("is_active", 1):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A sua conta encontra-se desativada pelo Administrador."
+        )
+
+    # Check license expiration date (if not superadmin)
+    is_super = bool(user.get("is_superadmin", False) or user.get("is_admin", False))
+    valid_date_str = user.get("data_validade")
+    if not is_super and valid_date_str:
+        try:
+            dt = datetime.strptime(valid_date_str[:10], "%Y-%m-%d").date()
+            if dt < date.today():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"A sua subscrição expirou em {dt.strftime('%d/%m/%Y')}. Por favor, contacte o Administrador para renovar o seu acesso."
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     # Check password
     if not verify_password(req.password, user["password_hash"]):
         raise HTTPException(
@@ -86,38 +132,12 @@ def login(req: LoginRequest):
     token = create_access_token(data={"sub": str(user["id"]), "email": user["email"]})
     return TokenResponse(access_token=token, token_type="bearer")
 
-@router.post("/register", response_model=UserResponse)
-def register(req: RegisterRequest):
-    if len(req.password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A password deve ter pelo menos 6 caracteres."
-        )
-        
-    # Check if email exists
-    if get_empresa_por_email(req.email) or get_utilizador(req.email):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Este email já está registado."
-        )
-        
-    try:
-        empresa_id = criar_empresa(req.empresa_nome, req.email, plano="starter")
-        # Store password using bcrypt hash
-        hashed_pwd = get_password_hash(req.password)
-        user_id = criar_utilizador(empresa_id, req.utilizador_nome, req.email, hashed_pwd, is_admin=True)
-        return UserResponse(
-            id=user_id,
-            nome=req.utilizador_nome,
-            email=req.email,
-            empresa_id=empresa_id,
-            is_admin=True
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao criar conta: {str(e)}"
-        )
+@router.post("/register")
+def register():
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="O registo público de contas está desativado. O acesso é gerido exclusivamente pelo Administrador."
+    )
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: UserResponse = Depends(get_current_user)):

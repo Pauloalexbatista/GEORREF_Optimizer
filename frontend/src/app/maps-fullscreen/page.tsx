@@ -29,7 +29,7 @@ export default function MapsFullscreen() {
       {nome && (
         <div className="absolute top-4 left-4 z-[2000] bg-zinc-900/90 backdrop-blur border border-zinc-800 px-4 py-2 rounded-lg shadow-lg pointer-events-none font-sans">
           <h2 className="text-zinc-100 font-bold text-base">{nome}</h2>
-          <p className="text-zinc-550 text-xs">{mapeamentos.length} zonas mapeadas</p>
+          <p className="text-zinc-300 text-xs">{mapeamentos.length} zonas mapeadas</p>
         </div>
       )}
       

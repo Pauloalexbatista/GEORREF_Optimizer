@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { apiRequest } from "@/utils/api";
 import { useProjects } from "@/context/ProjectContext";
+import { useI18n } from "@/context/I18nContext";
+import { useTheme } from "@/context/ThemeContext";
 
 const routeColors = [
   "#6366f1", // Indigo
@@ -136,6 +138,8 @@ interface VehicleData {
 }
 
 export default function RoutesMatrixPage() {
+  const { theme, toggleTheme } = useTheme();
+  const { t } = useI18n();
   const { selectedProject } = useProjects();
   const [routes, setRoutes] = useState<RouteStop[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
@@ -406,43 +410,55 @@ export default function RoutesMatrixPage() {
   // 2. Estado de Utilização: Rotas Ativas primeiro, Rotas Vazias no fim (Nível 2)
   // 3. Horário de Saída / Início de Turno (09:50 -> 10:00 -> 12:00 ...)
   // 4. Identificador do Veículo (V1 -> V2 -> V3 ...)
+    // Sort vehicles in 3rd Monitor:
+  // 1. Rotas ATIVAS COM ENTREGAS primeiro (Nível 1 - Topo Absoluto)
+  // 2. Rotas VAZIAS depois (Nível 2)
+    // Sort vehicles in 3rd Monitor:
+  // 1. Armazém (Nível 1 - todos os veículos do mesmo armazém juntos: Faro, Maia, Coimbra, etc.)
+  // 2. Estado de Utilização dentro do Armazém: Rotas com entregas primeiro, depois Vazias (Nível 2)
+  // 3. Mais entregas -> Identificador Numérico (Faro_1, Faro_2, Faro_3...)
   const sortedVehicles = useMemo(() => {
     const list = [...vehicles];
     list.sort((a, b) => {
       const cfgA = vehicleMap[a];
       const cfgB = vehicleMap[b];
 
-      // 1. Armazém
-      const whA = (cfgA?.armazem || "").trim().toLowerCase();
-      const whB = (cfgB?.armazem || "").trim().toLowerCase();
+      // 1. Armazém (todos os veículos do mesmo armazém ficam juntos)
+      const whA = (cfgA?.armazem || (a.includes("_") ? a.split("_")[0] : a) || "").trim().toLowerCase();
+      const whB = (cfgB?.armazem || (b.includes("_") ? b.split("_")[0] : b) || "").trim().toLowerCase();
       if (whA !== whB) {
-        return whA.localeCompare(whB);
+        return whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
       }
 
-      // 2. Estado de Utilização
+      // 2. Estado de Utilização dentro do mesmo armazém
       const stopsA = routes.filter((r) => !isPendingRoute(r.Rota) && r.Rota === a).length;
       const stopsB = routes.filter((r) => !isPendingRoute(r.Rota) && r.Rota === b).length;
       const isActiveA = stopsA > 0;
       const isActiveB = stopsB > 0;
 
       if (isActiveA !== isActiveB) {
-        return isActiveA ? -1 : 1; // Ativas primeiro
+        return isActiveA ? -1 : 1; // Rotas com entregas primeiro
       }
 
-      // 3. Horário de Saída / Início
+      // 3. Mais entregas primeiro
+      if (stopsA !== stopsB) {
+        return stopsB - stopsA;
+      }
+
+      // 4. Horário de Saída / Início
       const timeA = cfgA?.horario_inicio || "09:50";
       const timeB = cfgB?.horario_inicio || "09:50";
       if (timeA !== timeB) {
         return timeA.localeCompare(timeB);
       }
 
-      // 4. Identificador Numérico (V1 -> V2 -> V10)
-      const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
-      const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+      // 5. Identificador Numérico (Faro_1 -> Faro_2 -> Faro_3)
+      const numA = parseInt(a.replace(/[^0-9]/g, ""), 10) || 0;
+      const numB = parseInt(b.replace(/[^0-9]/g, ""), 10) || 0;
       if (numA !== numB) {
         return numA - numB;
       }
-      return a.localeCompare(b);
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     });
     return list;
   }, [vehicles, routes, vehicleMap]);
@@ -461,14 +477,30 @@ export default function RoutesMatrixPage() {
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tight text-zinc-100 flex items-center space-x-2">
-              <span>GeoRoute Pro — Matriz de Gestão Operacional</span>
-              <span className="text-[10px] bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded border border-indigo-800/60 font-semibold">3º Ecrã</span>
+              <span>{t.routesMatrix.title}</span>
+              <span className="text-[10px] bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded border border-indigo-800/60 font-semibold">{t.routesMatrix.screenTag}</span>
             </h1>
             <p className="text-[11px] text-zinc-400">{statusMsg}</p>
           </div>
         </div>
 
         <div className="flex items-center space-x-2.5">
+          {/* Theme Toggle in 3rd Monitor */}
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 cursor-pointer transition-colors flex items-center justify-center"
+            title={theme === "dark" ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
+          >
+            {theme === "dark" ? (
+              <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </button>
           <button
             onClick={() => {
               window.open("/dashboard/tactical/detached-map", "GeoRouteMapWindow", "width=1280,height=800,menubar=no,toolbar=no,location=no,status=no");
@@ -479,26 +511,26 @@ export default function RoutesMatrixPage() {
             <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-            <span>🖥️ 2º Monitor (Mapa)</span>
+            <span>🖥️ {t.navigation.detachedMap}</span>
           </button>
           <a
             href="/dashboard/tactical"
             className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1.5"
-            title="Voltar ao Dashboard Tático principal"
+            title={t.navigation.dashboard}
           >
-            <span>📊 Dashboard</span>
+            <span>📊 {t.navigation.dashboard}</span>
           </a>
           <button
             onClick={() => toggleAll(true)}
             className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors"
           >
-            Expandir Tudo
+            {t.common.expandAll}
           </button>
           <button
             onClick={() => toggleAll(false)}
             className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors"
           >
-            Recolher Tudo
+            {t.common.collapseAll}
           </button>
           <button
             onClick={loadData}
@@ -508,7 +540,7 @@ export default function RoutesMatrixPage() {
             <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            <span>Atualizar</span>
+            <span>{t.common.refresh}</span>
           </button>
           <button
             onClick={handleExportExcel}
@@ -532,7 +564,7 @@ export default function RoutesMatrixPage() {
                 <th className="py-3 px-4 w-16 text-center">Seq</th>
                 <th className="py-3 px-4 w-28">Código</th>
                 <th className="py-3 px-4">Morada & Destino</th>
-                <th className="py-3 px-4 w-24">CP</th>
+                <th className="py-3 px-4 w-24">{t.routesMatrix.cp}</th>
                 <th className="py-3 px-4 w-28 text-center">Janela Horária</th>
                 <th className="py-3 px-4 w-20 text-center">Chegada</th>
                 <th className="py-3 px-4 w-24 text-center">Tempo Serviço</th>
@@ -630,7 +662,7 @@ export default function RoutesMatrixPage() {
                                 <span>•</span>
                                 <span>Distância: <b className="text-zinc-300">0.0 km</b></span>
                                 <span>•</span>
-                                <span>Carga: <b className="text-zinc-300">0 kg</b> <span className="text-zinc-500 font-normal">(Cap: {capKg.toFixed(0)} kg)</span></span>
+                                <span>Carga: <b className="text-zinc-300">0 kg</b> <span className="text-zinc-300 font-normal">(Cap: {capKg.toFixed(0)} kg)</span></span>
                               </div>
                             ) : (
                               <>
@@ -657,7 +689,7 @@ export default function RoutesMatrixPage() {
                                         ? "text-rose-400 font-bold bg-rose-950/60 border border-rose-800/80 px-2 py-0.5 rounded shadow-sm"
                                         : ""
                                     }`}>
-                                      {isOverweight ? "⚠️ " : ""}Carga: <b className={isOverweight ? "text-rose-200" : "text-zinc-200"}>{totalKg.toFixed(0)} kg</b> <span className={isOverweight ? "text-rose-300 font-semibold" : "text-zinc-500 font-normal"}>(Cap: {capKg.toFixed(0)} kg)</span>
+                                      {isOverweight ? "⚠️ " : ""}Carga: <b className={isOverweight ? "text-rose-200" : "text-zinc-200"}>{totalKg.toFixed(0)} kg</b> <span className={isOverweight ? "text-rose-300 font-semibold" : "text-zinc-300 font-normal"}>(Cap: {capKg.toFixed(0)} kg)</span>
                                     </span>
                                   </>
                                 )}
@@ -734,7 +766,7 @@ export default function RoutesMatrixPage() {
                               📦 Capacidade Livre: <b className="text-zinc-200">{capKg.toFixed(0)} kg</b>
                             </span>
                             <span>•</span>
-                            <span className="text-zinc-500 italic">
+                            <span className="text-zinc-300 italic">
                               (Pode reatribuir entregas para esta viatura a partir de outras rotas)
                             </span>
                           </div>
@@ -754,13 +786,13 @@ export default function RoutesMatrixPage() {
                         <td className="py-2.5 px-4 truncate max-w-xs text-zinc-300">{whData.address}</td>
                         <td className="py-2.5 px-4 font-mono text-zinc-400">{whData.cp || "N/A"}</td>
                         <td className="py-2.5 px-4 text-center font-mono text-[11px] text-zinc-400">Início de Turno</td>
-                        <td className="py-2.5 px-4 text-center font-mono text-zinc-500">--:--</td>
+                        <td className="py-2.5 px-4 text-center font-mono text-zinc-300">--:--</td>
                         <td className="py-2.5 px-4 text-center font-mono text-[11px] text-indigo-400">Carregamento</td>
                         <td className="py-2.5 px-4 text-center font-mono font-bold text-emerald-400">{startTimeStr}</td>
                         <td className="py-2.5 px-4 text-right font-mono text-zinc-400">0.0 km</td>
                         <td className="py-2.5 px-4 text-right font-mono font-semibold text-zinc-200">{totalKg.toFixed(0)} kg</td>
-                        <td className="py-2.5 px-4 text-center text-zinc-500 text-[10px]">Origem da Rota</td>
-                        <td className="py-2.5 px-4 text-center text-zinc-500 text-[10px]">Base</td>
+                        <td className="py-2.5 px-4 text-center text-zinc-300 text-[10px]">Origem da Rota</td>
+                        <td className="py-2.5 px-4 text-center text-zinc-300 text-[10px]">Base</td>
                       </tr>
                     )}
 
@@ -798,7 +830,7 @@ export default function RoutesMatrixPage() {
                                   Aguardar Abertura da Janela ({stop.Morada})
                                 </td>
                                 <td className="py-2.5 px-4 font-mono text-zinc-400">{stop.CP || "N/A"}</td>
-                                <td className="py-2.5 px-4 text-center font-mono text-[11px] text-zinc-500">
+                                <td className="py-2.5 px-4 text-center font-mono text-[11px] text-zinc-300">
                                   --
                                 </td>
                                 <td className="py-2.5 px-4 text-center font-mono font-bold text-zinc-200">
@@ -813,12 +845,12 @@ export default function RoutesMatrixPage() {
                                 <td className="py-2.5 px-4 text-right font-mono text-zinc-300">
                                   {stop.KM_Anterior.toFixed(1)} km
                                   {travelTimeMin > 0 && (
-                                    <span className="text-[10px] text-zinc-500 block">(+{travelTimeMin}m)</span>
+                                    <span className="text-[10px] text-zinc-300 block">(+{travelTimeMin}m)</span>
                                   )}
                                 </td>
-                                <td className="py-2.5 px-4 text-right font-mono text-zinc-500">--</td>
+                                <td className="py-2.5 px-4 text-right font-mono text-zinc-300">--</td>
                                 <td className="py-2.5 px-4 text-center text-amber-400 text-[10px] font-medium">Porta do Cliente</td>
-                                <td className="py-2.5 px-4 text-center text-zinc-500 text-[10px]">--</td>
+                                <td className="py-2.5 px-4 text-center text-zinc-300 text-[10px]">--</td>
                               </tr>
                             )}
 
@@ -834,7 +866,7 @@ export default function RoutesMatrixPage() {
                               <td className="py-2.5 px-4">
                               <div className="font-semibold text-zinc-200">{stop.Nome_Cliente || stop.Cliente}</div>
                               {stop.Nome_Cliente && stop.Nome_Cliente !== stop.Cliente && (
-                                <div className="text-[10px] text-zinc-500 font-mono">{stop.Cliente}</div>
+                                <div className="text-[10px] text-zinc-300 font-mono">{stop.Cliente}</div>
                               )}
                             </td>
                               <td className="py-2.5 px-4 text-zinc-300 truncate max-w-xs">{stop.Morada}</td>
@@ -845,7 +877,7 @@ export default function RoutesMatrixPage() {
                                 {stop.Janela_Horaria || "Qualquer"}
                               </td>
                               <td className={`py-2.5 px-4 text-center font-mono font-semibold ${
-                                isPending ? "text-zinc-500" : isLate ? "text-rose-400 bg-rose-950/40 rounded border border-rose-800/50" : "text-emerald-400"
+                                isPending ? "text-zinc-300" : isLate ? "text-rose-400 bg-rose-950/40 rounded border border-rose-800/50" : "text-emerald-400"
                               }`} title={isLate ? "Entrega fora da janela horária acordada!" : ""}>
                                 {isPending ? "--:--" : (
                                   <div>
@@ -863,7 +895,7 @@ export default function RoutesMatrixPage() {
                               <td className="py-2.5 px-4 text-right font-mono text-zinc-300">
                                 {isPending ? "0.0 km" : hasWait ? "0.0 km" : `${stop.KM_Anterior.toFixed(1)} km`}
                                 {!isPending && !hasWait && travelTimeMin > 0 && (
-                                  <span className="text-[10px] text-zinc-500 block">(+{travelTimeMin}m)</span>
+                                  <span className="text-[10px] text-zinc-300 block">(+{travelTimeMin}m)</span>
                                 )}
                               </td>
                               <td className={`py-2.5 px-4 text-right font-mono ${
@@ -934,16 +966,16 @@ export default function RoutesMatrixPage() {
                           )}
                         </td>
                         <td className="py-2.5 px-4 text-center font-mono text-[11px] text-emerald-400">Descarga / Fim</td>
-                        <td className="py-2.5 px-4 text-center font-mono text-zinc-500">--:--</td>
+                        <td className="py-2.5 px-4 text-center font-mono text-zinc-300">--:--</td>
                         <td className="py-2.5 px-4 text-right font-mono text-zinc-300">
                           {returnDist.toFixed(1)} km
                           {returnTravelMin > 0 && (
-                            <span className="text-[10px] text-zinc-500 block">(+{Math.round(returnTravelMin)}m)</span>
+                            <span className="text-[10px] text-zinc-300 block">(+{Math.round(returnTravelMin)}m)</span>
                           )}
                         </td>
                         <td className="py-2.5 px-4 text-right font-mono text-zinc-400">0 kg</td>
-                        <td className="py-2.5 px-4 text-center text-zinc-500 text-[10px]">Destino Final</td>
-                        <td className="py-2.5 px-4 text-center text-zinc-500 text-[10px]">Base</td>
+                        <td className="py-2.5 px-4 text-center text-zinc-300 text-[10px]">Destino Final</td>
+                        <td className="py-2.5 px-4 text-center text-zinc-300 text-[10px]">Base</td>
                       </tr>
                     )}
                   </React.Fragment>

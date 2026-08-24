@@ -55,7 +55,7 @@ export default function WarehouseMapModal({
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
         <div className="flex justify-between items-center">
-          <h3 className="text-sm font-bold text-zinc-150">Selecionar Localização do Armazém</h3>
+          <h3 className="text-sm font-bold text-zinc-100">Selecionar Localização do Armazém</h3>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-200 cursor-pointer">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

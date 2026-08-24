@@ -9,6 +9,11 @@ ALGORITHM = 'HS256'
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours for ease of multi-monitor use
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if not hashed_password:
+        return False
+    # 0. Direct match (if stored plain)
+    if plain_password == hashed_password:
+        return True
     # 1. Try legacy SHA-256 hash
     salt = 'georoute2024'
     legacy_hash = hashlib.sha256((plain_password + salt).encode()).hexdigest()
@@ -18,7 +23,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
-        return False
+        pass
+    return False
 
 def get_password_hash(password: str) -> str:
     # We default to bcrypt for new hashes

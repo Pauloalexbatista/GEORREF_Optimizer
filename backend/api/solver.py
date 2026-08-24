@@ -580,12 +580,20 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                         if "PENDENTE" in r_name.upper():
                             r_name = "Por Distribuir"
                         d_id = clean_int(r.get("id") or r.get("ID_Original"), idx + 1)
+                        chegada_val = str(r.get("Hora_Chegada_Prevista") or r.get("Chegada") or "00:00").strip()
+                        saida_val = str(r.get("Hora_Saida_Prevista") or r.get("Saida") or "00:00").strip()
+                        km_ant = clean_num(r.get("Distancia_KM") if pd.notna(r.get("Distancia_KM")) else r.get("KM_Anterior"), 0.0)
+                        dist_acum = clean_num(r.get("Distancia_Acumulada_KM") if pd.notna(r.get("Distancia_Acumulada_KM")) else r.get("Dist_Acum"), 0.0)
+                        t_esp = clean_int(r.get("Tempo_Espera_Min") if pd.notna(r.get("Tempo_Espera_Min")) else r.get("Tempo_Espera"), 0)
+                        t_ent = clean_int(r.get("Tempo_Viagem_Min") if pd.notna(r.get("Tempo_Viagem_Min")) else r.get("Tempo_Entrega"), 15)
+                        ordem_val = clean_int(r.get("Ordem_Paragem") if pd.notna(r.get("Ordem_Paragem")) else r.get("Ordem"), 1)
+                        
                         routes_list.append({
                             "id": d_id,
                             "ID_Original": d_id,
                             "Rota": r_name,
                             "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
-                            "Ordem": clean_int(r.get("Ordem"), 1),
+                            "Ordem": ordem_val,
                             "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""),
                             "Nome_Cliente": str(r.get("Nome_Cliente", r.get("Cliente", "")) if pd.notna(r.get("Nome_Cliente")) else str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else "")),
                             "Morada": str(r.get("Morada", "") if pd.notna(r.get("Morada")) else ""),
@@ -594,13 +602,13 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
                             "Latitude": clean_num(r.get("Latitude"), 0.0),
                             "Longitude": clean_num(r.get("Longitude"), 0.0),
-                            "Chegada": str(r.get("Chegada", "00:00") if pd.notna(r.get("Chegada")) else "00:00"),
-                            "Tempo_Espera": clean_int(r.get("Tempo_Espera"), 0),
-                            "Tempo_Entrega": clean_int(r.get("Tempo_Entrega"), 15),
-                            "Saida": str(r.get("Saida", "00:00") if pd.notna(r.get("Saida")) else "00:00"),
+                            "Chegada": chegada_val if chegada_val else "00:00",
+                            "Tempo_Espera": t_esp,
+                            "Tempo_Entrega": t_ent,
+                            "Saida": saida_val if saida_val else "00:00",
                             "Nivel_Qualidade": clean_int(r.get("Nivel_Qualidade"), 1),
-                            "KM_Anterior": clean_num(r.get("KM_Anterior"), 0.0),
-                            "Dist_Acum": clean_num(r.get("Dist_Acum"), 0.0),
+                            "KM_Anterior": km_ant,
+                            "Dist_Acum": dist_acum,
                             "Peso_KG": clean_num(r.get("Peso_KG"), 50.0),
                             "Carga_Acum": clean_num(r.get("Carga_Acum"), 0.0),
                             "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), 0.0)

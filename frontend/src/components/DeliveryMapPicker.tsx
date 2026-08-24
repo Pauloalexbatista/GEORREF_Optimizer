@@ -153,7 +153,7 @@ export default function DeliveryMapPicker({
             type="button"
             onClick={() => executeSearch(query)}
             disabled={searching || !query.trim()}
-            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1.5 shrink-0 cursor-pointer shadow"
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-300 text-white rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1.5 shrink-0 cursor-pointer shadow"
           >
             {searching ? (
               <>

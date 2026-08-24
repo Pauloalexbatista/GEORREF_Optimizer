@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { apiRequest } from "@/utils/api";
+import { useI18n } from "@/context/I18nContext";
 
 const DeliveryMapPicker = dynamic(() => import("@/components/DeliveryMapPicker"), { ssr: false });
 
@@ -29,6 +30,7 @@ export default function WarehouseGeoModal({
   onConfirm,
   onClose,
 }: WarehouseGeoModalProps) {
+  const { t } = useI18n();
   const [addr, setAddr] = useState(initialAddress || "");
   const [cp, setCp] = useState(initialCp || "");
   const [locality, setLocality] = useState(initialLocality || "");
@@ -50,230 +52,221 @@ export default function WarehouseGeoModal({
     }
   }, [isOpen, initialAddress, initialCp, initialLocality, initialLat, initialLon]);
 
-  // Load CTT suggestions on change of address/CP/locality
-  useEffect(() => {
-    if (!isOpen) return;
-    if (!addr && !cp && !locality) {
-      setSuggestions([]);
+  const handleCoordsChange = (newLat: number, newLon: number) => {
+    setLat(newLat);
+    setLon(newLon);
+  };
+
+  const handlePasteParse = () => {
+    if (!pastedCoords.trim()) return;
+    const str = pastedCoords.trim();
+
+    // 1. Google Maps URL regex: @lat,lon
+    const urlMatch = str.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (urlMatch) {
+      setLat(parseFloat(urlMatch[1]));
+      setLon(parseFloat(urlMatch[2]));
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setSuggestionsLoading(true);
-      try {
-        const queryParams = new URLSearchParams();
-        if (addr) queryParams.append("address", addr);
-        if (cp) queryParams.append("cp", cp);
-        if (locality) queryParams.append("city", locality);
+    // 2. Direct Lat, Lon pair regex
+    const pairMatch = str.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+    if (pairMatch) {
+      setLat(parseFloat(pairMatch[1]));
+      setLon(parseFloat(pairMatch[2]));
+      return;
+    }
 
-        const data = await apiRequest(`/api/geocoding/suggestions?${queryParams.toString()}`);
-        setSuggestions(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error("Failed to fetch CTT suggestions:", err);
-      } finally {
-        setSuggestionsLoading(false);
+    alert("Formato de coordenadas inválido. Cole valores no formato '40.2033, -8.4103' ou um link do Google Maps.");
+  };
+
+  const handleSearchSuggestions = async () => {
+    if (!addr && !cp) return;
+    setSuggestionsLoading(true);
+    try {
+      const q = `${addr} ${cp} ${locality}`.trim();
+      const res = await apiRequest(`/api/maps/search-ctt?q=${encodeURIComponent(q)}`);
+      if (res && res.suggestions) {
+        setSuggestions(res.suggestions);
       }
-    }, 400);
-
-    return () => clearTimeout(timer);
-  }, [addr, cp, locality, isOpen]);
-
-  if (!isOpen) return null;
-
-  const handlePasteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setPastedCoords(val);
-    const cleaned = val.trim();
-    if (!cleaned) return;
-
-    const parts = cleaned.split(/[,;\s\t]+/).filter(Boolean);
-    if (parts.length >= 2) {
-      const pLat = parseFloat(parts[0].replace(",", "."));
-      const pLon = parseFloat(parts[1].replace(",", "."));
-      if (!isNaN(pLat) && !isNaN(pLon) && pLat >= -90 && pLat <= 90 && pLon >= -180 && pLon <= 180) {
-        setLat(pLat);
-        setLon(pLon);
-      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSuggestionsLoading(false);
     }
   };
 
-  const handleSelectSuggestion = (s: any) => {
-    if (s.morada || s.address) setAddr(s.morada || s.address);
+  const applySuggestion = (s: any) => {
+    if (s.morada) setAddr(s.morada);
     if (s.cp) setCp(s.cp);
-    if (s.concelho || s.localidade) setLocality(s.concelho || s.localidade);
-    if (s.lat) setLat(s.lat);
-    if (s.lon) setLon(s.lon);
+    if (s.localidade) setLocality(s.localidade);
+    if (s.latitude && s.longitude) {
+      setLat(s.latitude);
+      setLon(s.longitude);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onConfirm(addr, cp, locality, lat, lon);
-  };
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-5xl p-6 space-y-4 shadow-2xl">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-zinc-800 w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/40">
           <div>
-            <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-              <span>Georreferenciar Armazém:</span>
-              <span className="text-indigo-400 font-semibold">{warehouseName || "Armazém"}</span>
+            <h3 className="text-sm font-bold text-zinc-100 flex items-center space-x-2">
+              <span>🏢</span>
+              <span>{t.modal.geoPickerTitle}: {warehouseName}</span>
             </h3>
-            <p className="text-zinc-400 text-xs mt-0.5">
-              Selecione uma sugestão CTT, cole coordenadas ou clique diretamente no mapa para posicionar a base logística.
+            <p className="text-[11px] text-zinc-400 mt-0.5">
+              {t.modal.dragPinHint}
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 text-sm p-1.5 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-200 p-1.5 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
           >
-            ✕
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Column: Form & Suggestions */}
-            <div className="lg:col-span-5 space-y-3">
-              <div>
-                <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Morada do Armazém</label>
-                <input
-                  type="text"
-                  value={addr}
-                  onChange={(e) => setAddr(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 text-xs"
-                />
-              </div>
+        {/* Content Body */}
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto">
+          {/* Left: Interactive Map */}
+          <div className="flex flex-col space-y-2">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+              Posição no Mapa (Arrastar Pin)
+            </label>
+            <div className="h-72 w-full rounded-xl overflow-hidden border border-zinc-800 relative shadow-inner">
+              <DeliveryMapPicker
+                lat={lat || 39.5}
+                lon={lon || -8.0}
+                onCoordsChange={handleCoordsChange}
+              />
+            </div>
+            <div className="flex items-center space-x-2 text-[11px] text-zinc-400 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-800">
+              <span>Lat: <strong className="text-indigo-400">{lat ? lat.toFixed(6) : "0.000000"}</strong></span>
+              <span>Lon: <strong className="text-indigo-400">{lon ? lon.toFixed(6) : "0.000000"}</strong></span>
+            </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Código Postal</label>
-                  <input
-                    type="text"
-                    value={cp}
-                    onChange={(e) => setCp(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Localidade / Concelho</label>
-                  <input
-                    type="text"
-                    value={locality}
-                    onChange={(e) => setLocality(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Paste Google Maps Coords Box */}
-              <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-bold text-indigo-300">📋 Colar Coordenadas (Google Maps)</label>
-                  <span className="text-[9px] text-zinc-400 font-mono">Ex: 38.78420, -9.12380</span>
-                </div>
+          {/* Right: Manual Inputs & Paste box */}
+          <div className="flex flex-col space-y-3">
+            {/* Quick Paste from Google Maps */}
+            <div className="bg-indigo-950/20 border border-indigo-500/20 p-3 rounded-xl space-y-1.5">
+              <label className="block text-[11px] font-bold text-indigo-300 uppercase tracking-wider">
+                {t.modal.pasteCoordsLabel}
+              </label>
+              <div className="flex items-center space-x-2">
                 <input
                   type="text"
                   value={pastedCoords}
-                  placeholder="Cole aqui (ex: 38.78420, -9.12380)..."
-                  onChange={handlePasteChange}
-                  className="w-full bg-zinc-950 border border-indigo-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-400 font-mono outline-none focus:border-indigo-400 placeholder-zinc-600"
+                  onChange={(e) => setPastedCoords(e.target.value)}
+                  placeholder={t.modal.pasteCoordsPlaceholder}
+                  className="flex-1 bg-zinc-950 border border-indigo-500/30 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-400"
                 />
-              </div>
-
-              {/* Coordinates Inputs */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Latitude</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={lat}
-                    onChange={(e) => setLat(Number(e.target.value))}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-zinc-400 font-semibold mb-1 text-[11px]">Longitude</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={lon}
-                    onChange={(e) => setLon(Number(e.target.value))}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500 font-mono text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* CTT Database Suggestions List */}
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Sugestões da Base de Dados CTT:</span>
-                  {suggestionsLoading && <span className="text-[10px] text-indigo-400 animate-pulse">A pesquisar...</span>}
-                </div>
-
-                {suggestions.length > 0 ? (
-                  <div className="max-h-44 overflow-y-auto space-y-1.5 bg-zinc-950 p-2 border border-zinc-800 rounded-xl">
-                    {suggestions.map((s, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => handleSelectSuggestion(s)}
-                        className="p-2 hover:bg-zinc-850 bg-zinc-900/60 border border-zinc-800/80 rounded-lg cursor-pointer text-xs text-zinc-300 transition-colors flex items-center justify-between gap-2"
-                      >
-                        <div className="truncate">
-                          <div className="font-semibold text-zinc-200 truncate">{s.morada || s.address}</div>
-                          <div className="text-[10px] text-zinc-400">{s.concelho || s.localidade}</div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="font-mono text-xs text-indigo-400 block">{s.cp}</span>
-                          {s.score !== undefined && (
-                            <span className="text-[9px] text-emerald-400 font-bold">{Math.round(s.score)}% match</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-3 text-[11px] text-zinc-500 bg-zinc-950/50 border border-zinc-800/50 rounded-xl italic text-center">
-                    {suggestionsLoading ? "A procurar sugestões..." : "Sem sugestões exatas na BD. Use o mapa ao lado para pesquisar ou clicar."}
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={handlePasteParse}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer shrink-0"
+                >
+                  {t.modal.applyCoords}
+                </button>
               </div>
             </div>
 
-            {/* Right Column: Interactive Leaflet Map */}
-            <div className="lg:col-span-7 flex flex-col min-h-[380px]">
-              <DeliveryMapPicker
-                lat={lat}
-                lon={lon}
-                onCoordsChange={(nLat, nLon) => {
-                  setLat(nLat);
-                  setLon(nLon);
-                }}
-                searchAddress={`${addr} ${cp} ${locality}`}
+            {/* Address fields */}
+            <div>
+              <label className="block text-[10px] font-semibold text-zinc-400 uppercase mb-1">
+                {t.fleet.whAddressLabel}
+              </label>
+              <input
+                type="text"
+                value={addr}
+                onChange={(e) => setAddr(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 outline-none focus:border-indigo-500"
               />
             </div>
-          </div>
 
-          {/* Footer Actions */}
-          <div className="flex justify-between items-center pt-3 border-t border-zinc-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center space-x-2 shadow-lg shadow-indigo-600/20"
-            >
-              <span>Gravar Coordenadas do Armazém</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 uppercase mb-1">
+                  {t.fleet.whCpLabel}
+                </label>
+                <input
+                  type="text"
+                  value={cp}
+                  onChange={(e) => setCp(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 uppercase mb-1">
+                  {t.fleet.whLocalityLabel}
+                </label>
+                <input
+                  type="text"
+                  value={locality}
+                  onChange={(e) => setLocality(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* CTT suggestions button & list */}
+            <div>
+              <button
+                type="button"
+                onClick={handleSearchSuggestions}
+                disabled={suggestionsLoading}
+                className="w-full bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+              >
+                <span>🔍</span>
+                <span>{suggestionsLoading ? t.common.loading : t.modal.cttSuggestions}</span>
+              </button>
+
+              {suggestions.length > 0 && (
+                <div className="mt-2 max-h-32 overflow-y-auto space-y-1 bg-zinc-950 p-2 rounded-lg border border-zinc-800">
+                  {suggestions.map((s, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => applySuggestion(s)}
+                      className="w-full text-left p-1.5 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-[10px] text-zinc-300 transition-colors cursor-pointer flex items-center justify-between"
+                    >
+                      <span className="truncate">{s.morada || s.cp_completo} - {s.localidade}</span>
+                      <span className="text-emerald-400 font-mono shrink-0 ml-2">Escolher</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </form>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-zinc-800 flex items-center justify-end space-x-2.5 bg-zinc-950/40">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-zinc-200 bg-zinc-850 hover:bg-zinc-800 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            {t.common.cancel}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onConfirm(addr, cp, locality, lat, lon);
+              onClose();
+            }}
+            className="px-5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all cursor-pointer"
+          >
+            {t.common.save}
+          </button>
+        </div>
       </div>
     </div>
   );

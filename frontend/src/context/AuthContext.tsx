@@ -64,11 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
     setLoading(true);
     try {
       const res = await apiRequest("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: cleanEmail, password }),
       });
       localStorage.setItem("georoute_token", res.access_token);
       const userData = await apiRequest("/api/auth/me");

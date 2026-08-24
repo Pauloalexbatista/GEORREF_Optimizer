@@ -1,28 +1,94 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card-bg: rgba(24, 24, 27, 0.8);
+  --card-border: #27272a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html.light {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card-bg: rgba(255, 255, 255, 0.95);
+  --card-border: #e2e8f0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.dark {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card-bg: rgba(24, 24, 27, 0.8);
+  --card-border: #27272a;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Light mode overrides for common dark classes */
+html.light .bg-zinc-950 {
+  background-color: #f8fafc !important;
+}
+html.light .bg-zinc-900 {
+  background-color: #ffffff !important;
+}
+html.light .bg-zinc-900\/60,
+html.light .bg-zinc-900\/70,
+html.light .bg-zinc-900\/80,
+html.light .bg-zinc-900\/90,
+html.light .bg-zinc-900\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+html.light .bg-zinc-850 {
+  background-color: #f1f5f9 !important;
+}
+html.light .bg-zinc-800 {
+  background-color: #e2e8f0 !important;
+}
+html.light .border-zinc-800,
+html.light .border-zinc-700 {
+  border-color: #e2e8f0 !important;
+}
+html.light .border-zinc-850 {
+  border-color: #cbd5e1 !important;
+}
+html.light .text-zinc-100 {
+  color: #0f172a !important;
+}
+html.light .text-zinc-200 {
+  color: #1e293b !important;
+}
+html.light .text-zinc-300 {
+  color: #334155 !important;
+}
+html.light .text-zinc-400 {
+  color: #475569 !important;
+}
+html.light .text-zinc-300 {
+  color: #64748b !important;
+}
+html.light .text-zinc-400,
+html.light .placeholder-zinc-400::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
 }
 
 /* Print styles for cleaner PDFs */
@@ -76,4 +142,52 @@ body {
     color: #000000 !important;
     text-shadow: none !important;
   }
+}
+
+/* Extended Light mode overrides for Tables and Matrix */
+html.light table {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+html.light thead,
+html.light table th {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+html.light tbody,
+html.light table td {
+  color: #1e293b !important;
+  border-color: #e2e8f0 !important;
+}
+html.light tr.border-b {
+  border-color: #e2e8f0 !important;
+}
+html.light tr:hover td {
+  background-color: #f8fafc !important;
+}
+html.light .bg-zinc-950\/40,
+html.light .bg-zinc-950\/60,
+html.light .bg-zinc-950\/80,
+html.light .bg-zinc-950\/90,
+html.light .bg-zinc-950\/95,
+html.light .bg-zinc-950 {
+  background-color: #f8fafc !important;
+}
+html.light .bg-zinc-900\/40,
+html.light .bg-zinc-900\/50,
+html.light .bg-zinc-900\/60,
+html.light .bg-zinc-900 {
+  background-color: #ffffff !important;
+}
+html.light header {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #e2e8f0 !important;
+}
+html.light select,
+html.light input,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
 }

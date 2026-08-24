@@ -278,7 +278,7 @@ def get_utilizador(email):
     """Obter utilizador por email"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM utilizadores WHERE email = ?", (email,))
+        cursor.execute("SELECT * FROM utilizadores WHERE LOWER(email) = LOWER(?)", (email.strip(),))
         return cursor.fetchone()
 
 
@@ -677,3 +677,131 @@ if __name__ == "__main__":
     else:
         print("[DEMO] Conta demo já existe")
 
+
+
+# ==========================================
+# GESTÃO DE ACESSOS E UTILIZADORES (SUPERADMIN)
+# ==========================================
+
+def listar_todos_utilizadores_admin():
+    """Retorna todos os utilizadores com detalhes da empresa, validade e programas."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                u.id,
+                u.empresa_id,
+                COALESCE(e.nome, 'Sem Empresa') as empresa_nome,
+                u.nome as responsavel,
+                u.email,
+                u.is_admin,
+                u.is_superadmin,
+                u.is_active,
+                COALESCE(u.data_validade, e.data_validade, '2099-12-31') as data_validade,
+                COALESCE(u.programas, e.programas, 'site,app') as programas,
+                u.password_plain,
+                u.created_at
+            FROM utilizadores u
+            LEFT JOIN empresas e ON u.empresa_id = e.id
+            ORDER BY u.is_superadmin DESC, u.id ASC
+        """)
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+
+def criar_utilizador_admin(empresa_nome, responsavel, email, password_plain, password_hash, data_validade="2027-12-31", programas="site,app", is_admin=False):
+    """Cria uma nova empresa (se não existir) e o respetivo utilizador com validade e programas."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM empresas WHERE LOWER(nome) = LOWER(?)", (empresa_nome.strip(),))
+        emp_row = cursor.fetchone()
+        if emp_row:
+            empresa_id = emp_row["id"]
+        else:
+            cursor.execute("""
+                INSERT INTO empresas (nome, email, plano, data_validade, programas, is_active)
+                VALUES (?, ?, 'pro', ?, ?, 1)
+            """, (empresa_nome.strip(), email.strip(), data_validade, programas))
+            empresa_id = cursor.lastrowid
+        
+        cursor.execute("""
+            INSERT INTO utilizadores (empresa_id, nome, email, password_hash, password_plain, is_admin, is_superadmin, is_active, data_validade, programas)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
+        """, (empresa_id, responsavel.strip(), email.strip(), password_hash, password_plain, 1 if is_admin else 0, data_validade, programas))
+        user_id = cursor.lastrowid
+        conn.commit()
+        return user_id
+
+def atualizar_utilizador_admin(user_id, empresa_nome, responsavel, email, password_plain=None, password_hash=None, data_validade="2027-12-31", programas="site,app", is_active=1):
+    """Atualiza dados do utilizador, empresa, password, validade e programas."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT empresa_id, is_superadmin FROM utilizadores WHERE id = ?", (user_id,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            raise ValueError("Utilizador não encontrado")
+        
+        empresa_id = user_row["empresa_id"]
+        is_sup = bool(user_row["is_superadmin"])
+        
+        # Se for superadmin, manter sempre ativo e válido
+        if is_sup:
+            is_active = 1
+            data_validade = "2099-12-31"
+
+        cursor.execute("UPDATE empresas SET nome = ?, data_validade = ?, programas = ?, is_active = ? WHERE id = ?",
+                       (empresa_nome.strip(), data_validade, programas, is_active, empresa_id))
+        
+        if password_hash and password_plain:
+            cursor.execute("""
+                UPDATE utilizadores 
+                SET nome = ?, email = ?, password_hash = ?, password_plain = ?, data_validade = ?, programas = ?, is_active = ?
+                WHERE id = ?
+            """, (responsavel.strip(), email.strip(), password_hash, password_plain, data_validade, programas, is_active, user_id))
+        else:
+            cursor.execute("""
+                UPDATE utilizadores 
+                SET nome = ?, email = ?, data_validade = ?, programas = ?, is_active = ?
+                WHERE id = ?
+            """, (responsavel.strip(), email.strip(), data_validade, programas, is_active, user_id))
+            
+        conn.commit()
+        return True
+
+def eliminar_utilizador_admin(user_id):
+    """Elimina um utilizador e a respetiva empresa se não houver mais utilizadores."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT empresa_id, is_superadmin FROM utilizadores WHERE id = ?", (user_id,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            return False
+        if user_row["email"] in ("pauloalexbatista@gmail.com", "paulo.batista@ttm.pt"):
+            raise ValueError("Não é permitido eliminar a conta de Administrador Principal.")
+            
+        empresa_id = user_row["empresa_id"]
+        cursor.execute("DELETE FROM utilizadores WHERE id = ?", (user_id,))
+        
+        cursor.execute("SELECT COUNT(*) as count FROM utilizadores WHERE empresa_id = ?", (empresa_id,))
+        count_row = cursor.fetchone()
+        if count_row and count_row["count"] == 0:
+            cursor.execute("DELETE FROM empresas WHERE id = ?", (empresa_id,))
+            cursor.execute("DELETE FROM projetos WHERE empresa_id = ?", (empresa_id,))
+            
+        conn.commit()
+        return True
+
+def toggle_utilizador_status_admin(user_id):
+    """Alterna o estado ativo/bloqueado de um utilizador."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT is_active, is_superadmin FROM utilizadores WHERE id = ?", (user_id,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            return None
+        if user_row["is_superadmin"]:
+            raise ValueError("Não é permitido desativar o Administrador Principal")
+            
+        new_status = 0 if user_row["is_active"] else 1
+        cursor.execute("UPDATE utilizadores SET is_active = ? WHERE id = ?", (new_status, user_id))
+        conn.commit()
+        return bool(new_status)

@@ -9,6 +9,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 
 import { apiRequest } from "@/utils/api";
+import { useI18n } from "@/context/I18nContext";
 import dynamic from "next/dynamic";
 
 const WarehouseGeoModal = dynamic(() => import("@/components/WarehouseGeoModal"), { ssr: false });
@@ -58,6 +59,7 @@ interface Vehicle {
 
 
 export default function FleetPage() {
+  const { t } = useI18n();
 
   const { selectedProject } = useProjects();
 
@@ -455,7 +457,7 @@ export default function FleetPage() {
 
             <h1 className="text-2xl font-bold tracking-tight text-zinc-50 font-sans">Frota e Armazéns</h1>
 
-            <p className="text-zinc-400 text-xs mt-1">Configure os seus armazéns logísticos e os veículos de distribuição da sua frota.</p>
+            <p className="text-zinc-400 text-xs mt-1">{t.fleet.subtitle}</p>
 
           </div>
 
@@ -467,7 +469,7 @@ export default function FleetPage() {
 
             </svg>
 
-            <span>{importing ? "A importar..." : "Importar Excel"}</span>
+            <span>{importing ? "A importar..." : t.common.importExcel}</span>
 
             <input
 
@@ -503,7 +505,7 @@ export default function FleetPage() {
 
             </svg>
 
-            <span>{loading ? "A Guardar..." : "Guardar Configurações"}</span>
+            <span>{loading ? "A Guardar..." : t.fleet.saveConfigBtn}</span>
 
           </button>
 
@@ -575,7 +577,7 @@ export default function FleetPage() {
 
                 <div>
 
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Nome do Armazém</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Nome do Armazém</label>
 
                   <input
 
@@ -587,7 +589,7 @@ export default function FleetPage() {
 
                     onChange={e => setWhName(e.target.value)}
 
-                    placeholder="Ex: Armazém Central Porto"
+                    placeholder={t.fleet.whNamePlaceholder}
 
                     className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none"
 
@@ -597,7 +599,7 @@ export default function FleetPage() {
 
                 <div>
 
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Morada Completa</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Morada Completa</label>
 
                   <input
 
@@ -609,7 +611,7 @@ export default function FleetPage() {
 
                     onChange={e => setWhAddr(e.target.value)}
 
-                    placeholder="Ex: Rua Direita, nº 123"
+                    placeholder={t.fleet.whAddressPlaceholder}
 
                     className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none"
 
@@ -621,7 +623,7 @@ export default function FleetPage() {
 
                   <div>
 
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">C. Postal</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">C. Postal</label>
 
                     <input
 
@@ -633,7 +635,7 @@ export default function FleetPage() {
 
                       onChange={e => setWhCp(e.target.value)}
 
-                      placeholder="Ex: 4000-001"
+                      placeholder={t.fleet.whCpPlaceholder}
 
                       className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none"
 
@@ -643,7 +645,7 @@ export default function FleetPage() {
 
                   <div>
 
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Localidade</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Localidade</label>
 
                     <input
 
@@ -655,7 +657,7 @@ export default function FleetPage() {
 
                       onChange={e => setWhLocality(e.target.value)}
 
-                      placeholder="Ex: Porto"
+                      placeholder={t.fleet.whLocalityPlaceholder}
 
                       className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none"
 
@@ -667,7 +669,7 @@ export default function FleetPage() {
                 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Latitude (Opcional)</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Latitude (Opcional)</label>
                     <input
                       type="number"
                       step="0.000001"
@@ -678,7 +680,7 @@ export default function FleetPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Longitude (Opcional)</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Longitude (Opcional)</label>
                     <input
                       type="number"
                       step="0.000001"
@@ -693,13 +695,13 @@ export default function FleetPage() {
                 <button
                   type="button"
                   onClick={() => setIsMapModalOpen(true)}
-                  className="w-full bg-zinc-950 border border-zinc-800 hover:bg-zinc-850 hover:border-zinc-700 text-zinc-350 hover:text-zinc-200 rounded-lg py-2 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center space-x-1.5 mt-1"
+                  className="w-full bg-zinc-950 border border-zinc-800 hover:bg-zinc-850 hover:border-zinc-700 text-zinc-200 hover:text-zinc-200 rounded-lg py-2 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center space-x-1.5 mt-1"
                 >
                   <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span>Georreferenciar no Mapa</span>
+                  <span>{t.fleet.whGeoBtn}</span>
                 </button>
 
                 <div className="flex space-x-2">
@@ -739,11 +741,11 @@ export default function FleetPage() {
 
             <div className="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
 
-              <h3 className="text-sm font-bold text-zinc-100 mb-4">Armazéns Configurados</h3>
+              <h3 className="text-sm font-bold text-zinc-100 mb-4">{t.fleet.configuredWarehouses}</h3>
 
               {warehouses.length === 0 ? (
 
-                <div className="text-center py-12 text-zinc-500 text-xs">
+                <div className="text-center py-12 text-zinc-300 text-xs">
 
                   Nenhum armazém adicionado. Utilize o formulário para registar os pontos de partida.
 
@@ -761,9 +763,9 @@ export default function FleetPage() {
 
                         <p className="text-xs font-bold text-zinc-250">{wh.name}</p>
 
-                        <p className="text-[10px] text-zinc-450">{wh.address}, {wh.cp} {wh.locality}</p>
+                        <p className="text-[10px] text-zinc-300">{wh.address}, {wh.cp} {wh.locality}</p>
 
-                        <p className="text-[9px] font-mono text-zinc-500">Coordenadas: {wh.lat.toFixed(5)}, {wh.lon.toFixed(5)}</p>
+                        <p className="text-[9px] font-mono text-zinc-300">Coordenadas: {wh.lat.toFixed(5)}, {wh.lon.toFixed(5)}</p>
 
                       </div>
 
@@ -779,7 +781,7 @@ export default function FleetPage() {
                             setWhLat(wh.lat ? wh.lat.toString() : "");
                             setWhLon(wh.lon ? wh.lon.toString() : "");
                           }}
-                          className="p-2 bg-zinc-900 hover:bg-indigo-950/30 border border-zinc-800 hover:border-indigo-800 text-zinc-450 hover:text-indigo-400 rounded-lg transition-colors cursor-pointer"
+                          className="p-2 bg-zinc-900 hover:bg-indigo-950/30 border border-zinc-800 hover:border-indigo-800 text-zinc-300 hover:text-indigo-400 rounded-lg transition-colors cursor-pointer"
                           title="Editar Armazém"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -788,7 +790,7 @@ export default function FleetPage() {
                         </button>
                         <button
                           onClick={() => handleDeleteWarehouse(idx)}
-                          className="p-2 bg-zinc-900 hover:bg-red-950/30 border border-zinc-800 hover:border-red-800 text-zinc-450 hover:text-red-400 rounded-lg transition-colors cursor-pointer"
+                          className="p-2 bg-zinc-900 hover:bg-red-950/30 border border-zinc-800 hover:border-red-800 text-zinc-300 hover:text-red-400 rounded-lg transition-colors cursor-pointer"
                           title="Eliminar Armazém"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -839,7 +841,7 @@ export default function FleetPage() {
 
                   <div>
 
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Identificador do Veículo</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Identificador do Veículo</label>
 
                     <input
 
@@ -861,7 +863,7 @@ export default function FleetPage() {
 
                   <div>
 
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Armazém de Origem</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Armazém de Origem</label>
 
                     <select
 
@@ -893,7 +895,7 @@ export default function FleetPage() {
 
                     <div>
 
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Capacidade (kg)</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Capacidade (kg)</label>
 
                       <input
 
@@ -915,7 +917,7 @@ export default function FleetPage() {
 
                     <div>
 
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Cap. Volume (m³)</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Cap. Volume (m³)</label>
 
                       <input
 
@@ -943,7 +945,7 @@ export default function FleetPage() {
 
                     <div>
 
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Custo / KM (€)</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Custo / KM (€)</label>
 
                       <input
 
@@ -967,7 +969,7 @@ export default function FleetPage() {
 
                     <div>
 
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Velocidade Média</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Velocidade Média</label>
 
                       <input
 
@@ -993,7 +995,7 @@ export default function FleetPage() {
 
                     <div>
 
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Horário Início</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Horário Início</label>
 
                       <input
 
@@ -1015,7 +1017,7 @@ export default function FleetPage() {
 
                     <div>
 
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">Horário Fim</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Horário Fim</label>
 
                       <input
 
@@ -1080,7 +1082,7 @@ export default function FleetPage() {
 
               {fleet.length === 0 ? (
 
-                <div className="text-center py-12 text-zinc-500 text-xs">
+                <div className="text-center py-12 text-zinc-300 text-xs">
 
                   Nenhum veículo registado. Adicione veículos de distribuição para calcular as rotas.
 
@@ -1094,7 +1096,7 @@ export default function FleetPage() {
 
                     <thead>
 
-                      <tr className="bg-zinc-950/40 border-b border-zinc-800 text-[9px] font-bold uppercase tracking-wider text-zinc-450">
+                      <tr className="bg-zinc-950/40 border-b border-zinc-800 text-[9px] font-bold uppercase tracking-wider text-zinc-300">
 
                         <th className="px-4 py-3">Veículo</th>
 
@@ -1148,7 +1150,7 @@ export default function FleetPage() {
                                   setVStart(v.horario_inicio);
                                   setVEnd(v.horario_fim);
                                 }}
-                                className="p-1.5 bg-zinc-900 hover:bg-indigo-950/30 border border-zinc-800 hover:border-indigo-800 text-zinc-450 hover:text-indigo-400 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 bg-zinc-900 hover:bg-indigo-950/30 border border-zinc-800 hover:border-indigo-800 text-zinc-300 hover:text-indigo-400 rounded-lg transition-colors cursor-pointer"
                                 title="Editar Veículo"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1157,7 +1159,7 @@ export default function FleetPage() {
                               </button>
                               <button
                                 onClick={() => handleDeleteVehicle(idx)}
-                                className="p-1.5 bg-zinc-900 hover:bg-red-950/30 border border-zinc-800 hover:border-red-800 text-zinc-450 hover:text-red-400 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 bg-zinc-900 hover:bg-red-950/30 border border-zinc-800 hover:border-red-800 text-zinc-300 hover:text-red-400 rounded-lg transition-colors cursor-pointer"
                                 title="Eliminar Veículo"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

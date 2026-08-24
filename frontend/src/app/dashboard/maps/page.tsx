@@ -72,7 +72,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
             ))}
           </div>
           <div className="border-t border-zinc-700 pt-2.5">
-            <label className="block text-xs text-zinc-500 mb-1">Cor personalizada</label>
+            <label className="block text-xs text-zinc-300 mb-1">Cor personalizada</label>
             <input
               type="color"
               value={value}
@@ -266,7 +266,7 @@ export default function MapsPage() {
   };
 
   const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <span className="text-zinc-600 ml-1">⇅</span>;
+    if (sortField !== field) return <span className="text-zinc-300 ml-1">⇅</span>;
     return <span className="text-indigo-400 ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>;
   };
 
@@ -326,7 +326,7 @@ export default function MapsPage() {
               value={nomeMapa}
               onChange={e => setNomeMapa(e.target.value)}
               placeholder="Ex: Zonas Comerciais Norte"
-              className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-650 outline-none"
+              className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-400 outline-none"
             />
           </div>
           <div className="flex gap-2">
@@ -371,7 +371,7 @@ export default function MapsPage() {
                     </button>
                   </div>
                 </div>
-                <p className="text-[10px] text-zinc-550 leading-relaxed">
+                <p className="text-[10px] text-zinc-300 leading-relaxed">
                   💡 <b>Colunas necessárias:</b> Código Postal (ex: <i>CP</i>, <i>CP4</i>) e Nome da Zona (ex: <i>Zone</i>, <i>Zona</i>).
                 </p>
                 <input
@@ -379,21 +379,21 @@ export default function MapsPage() {
                   value={filterText}
                   onChange={e => setFilterText(e.target.value)}
                   placeholder="🔍 Filtrar por zona, CP ou concelho..."
-                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-zinc-300 placeholder-zinc-650 outline-none"
+                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-zinc-300 placeholder-zinc-400 outline-none"
                 />
               </div>
 
               {/* Table Body */}
               <div className="flex-1 overflow-auto">
                 {filteredSorted.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-zinc-600 text-sm">
+                  <div className="flex flex-col items-center justify-center h-full text-zinc-300 text-sm">
                     {mapeamentos.length === 0
                       ? "Lista vazia. Clique em + Linha ou Importar Excel."
                       : "Nenhum resultado para o filtro aplicado."}
                   </div>
                 ) : (
                   <table className="w-full text-left text-sm text-zinc-300 border-collapse">
-                    <thead className="text-[11px] uppercase text-zinc-500">
+                    <thead className="text-[11px] uppercase text-zinc-300">
                       <tr>
                         <th
                           className="px-3 py-2.5 font-semibold cursor-pointer hover:text-zinc-300 select-none sticky top-0 bg-zinc-950 z-10 border-b border-zinc-800"
@@ -436,9 +436,9 @@ export default function MapsPage() {
                                 className="w-full bg-transparent text-xs font-mono outline-none text-zinc-400 placeholder-zinc-700"
                               />
                               {item.concelho && (
-                                <div className="text-[10px] text-zinc-500 font-sans mt-0.5 leading-snug">
+                                <div className="text-[10px] text-zinc-300 font-sans mt-0.5 leading-snug">
                                   {item.distrito} · {item.concelho}
-                                  {item.freguesia && <span className="block text-[9px] text-zinc-600 italic">{item.freguesia}</span>}
+                                  {item.freguesia && <span className="block text-[9px] text-zinc-300 italic">{item.freguesia}</span>}
                                 </div>
                               )}
                             </td>
@@ -467,7 +467,7 @@ export default function MapsPage() {
               </div>
 
               {/* Stats footer */}
-              <div className="px-3 py-2 border-t border-zinc-800 flex items-center justify-between text-xs text-zinc-600 bg-zinc-950/40">
+              <div className="px-3 py-2 border-t border-zinc-800 flex items-center justify-between text-xs text-zinc-300 bg-zinc-950/40">
                 <span>{mapeamentos.length} linhas · {[...new Set(mapeamentos.map(m => m.zona))].filter(Boolean).length} zonas</span>
                 {filterText && <span className="text-indigo-400">{filteredSorted.length} resultados</span>}
               </div>
@@ -494,7 +494,7 @@ export default function MapsPage() {
               {nomeMapa && (
                 <div className="absolute top-4 left-4 z-[2000] bg-zinc-900/90 backdrop-blur border border-zinc-750 px-4 py-2 rounded-lg shadow-lg pointer-events-none">
                   <h2 className="text-zinc-100 font-bold text-base">{nomeMapa}</h2>
-                  <p className="text-zinc-550 text-xs">{mapData.length} zonas mapeadas</p>
+                  <p className="text-zinc-300 text-xs">{mapData.length} zonas mapeadas</p>
                 </div>
               )}
               

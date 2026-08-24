@@ -6,6 +6,7 @@ const DeliveryMapPicker = dynamic(() => import("@/components/DeliveryMapPicker")
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
+import { useI18n } from "@/context/I18nContext";
 
 interface Delivery {
   id: number;
@@ -28,6 +29,7 @@ interface Delivery {
 }
 
 export default function GeoreferencingPage() {
+  const { t } = useI18n();
   const { selectedProject } = useProjects();
   const [step, setStep] = useState<"upload" | "geocoding" | "results">("upload");
   const [loading, setLoading] = useState(false);
@@ -310,7 +312,7 @@ export default function GeoreferencingPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Georreferenciação</h1>
-            <p className="text-zinc-400 text-xs mt-1">Valide e atribua coordenadas precisas às encomendas dos seus clientes.</p>
+            <p className="text-zinc-400 text-xs mt-1">{t.geocoding.subtitle}</p>
           </div>
           {step === "results" && (
             <div className="flex items-center space-x-3">
@@ -318,7 +320,7 @@ export default function GeoreferencingPage() {
                 onClick={() => setStep("upload")}
                 className="cursor-pointer bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-xl px-4 py-2 text-xs font-semibold transition-colors"
               >
-                Carregar Novo Ficheiro
+                {t.geocoding.importDeliveriesBtn}
               </button>
               <button
                 onClick={() => handleDownloadFile(`/api/geocoding/export/${selectedProject?.id}`, `Clientes_Georreferenciados_${selectedProject?.id}.xlsx`)}
@@ -327,7 +329,7 @@ export default function GeoreferencingPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                <span>Exportar Excel</span>
+                <span>{t.common.exportExcel}</span>
               </button>
             </div>
           )}
@@ -342,7 +344,7 @@ export default function GeoreferencingPage() {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-zinc-200">Carregar Ficheiro de Encomendas</h3>
-              <p className="text-xs text-zinc-500 mt-1 max-w-sm">
+              <p className="text-xs text-zinc-300 mt-1 max-w-sm">
                 Arraste ou carregue um ficheiro Excel (.xlsx, .xls) ou CSV contendo os dados dos clientes e entregas.
               </p>
             </div>
@@ -376,7 +378,7 @@ export default function GeoreferencingPage() {
             <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
             <div>
               <h3 className="text-sm font-semibold text-zinc-200">A Georreferenciar Encomendas...</h3>
-              <p className="text-xs text-zinc-500 mt-1">A cruzar moradas com a base de dados de códigos postais e coordenadas GPS.</p>
+              <p className="text-xs text-zinc-300 mt-1">A cruzar moradas com a base de dados de códigos postais e coordenadas GPS.</p>
             </div>
           </div>
         )}
@@ -388,7 +390,7 @@ export default function GeoreferencingPage() {
               <div className="flex items-center space-x-2 flex-1 max-w-md">
                 <input
                   type="text"
-                  placeholder="Pesquisar por cliente, morada ou concelho..."
+                  placeholder={t.geocoding.searchPlaceholder}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500"
@@ -431,7 +433,7 @@ export default function GeoreferencingPage() {
                     <th onClick={() => handleSort("status")} className="py-3 px-4 cursor-pointer">Estado</th>
                     <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-4 cursor-pointer">Código</th>
                     <th onClick={() => handleSort("morada")} className="py-3 px-4 cursor-pointer">Morada Original</th>
-                    <th className="py-3 px-4">CP</th>
+                    <th className="py-3 px-4">{t.geocoding.tableCp}</th>
                     <th className="py-3 px-4">Concelho</th>
                     <th className="py-3 px-4">Coordenadas</th>
                     <th className="py-3 px-4 text-center">Ações</th>
@@ -456,7 +458,7 @@ export default function GeoreferencingPage() {
                         <td className="py-2.5 px-4">
                           <div className="font-semibold text-zinc-200">{del.nome_cliente || del.codigo_cliente}</div>
                           {del.nome_cliente && del.nome_cliente !== del.codigo_cliente && (
-                            <div className="text-[10px] text-zinc-500 font-mono">{del.codigo_cliente}</div>
+                            <div className="text-[10px] text-zinc-300 font-mono">{del.codigo_cliente}</div>
                           )}
                         </td>
                         <td className="py-2.5 px-4 text-zinc-300 truncate max-w-xs">{del.morada}</td>
@@ -569,7 +571,7 @@ export default function GeoreferencingPage() {
                             }
                           }
                         }}
-                        className="w-full bg-zinc-950 border border-indigo-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-400 font-mono outline-none focus:border-indigo-400 placeholder-zinc-600"
+                        className="w-full bg-zinc-950 border border-indigo-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-400 font-mono outline-none focus:border-indigo-400 placeholder-zinc-400"
                       />
                     </div>
 
@@ -634,7 +636,7 @@ export default function GeoreferencingPage() {
                           ))}
                         </div>
                       ) : (
-                        <div className="p-3 text-[11px] text-zinc-500 bg-zinc-950/50 border border-zinc-800/50 rounded-xl italic text-center">
+                        <div className="p-3 text-[11px] text-zinc-300 bg-zinc-950/50 border border-zinc-800/50 rounded-xl italic text-center">
                           {suggestionsLoading ? "A procurar sugestões..." : "Sem sugestões exatas na BD. Use o mapa ao lado para pesquisar ou clicar."}
                         </div>
                       )}

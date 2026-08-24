@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
+import { useI18n } from "@/context/I18nContext";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -199,8 +200,10 @@ export default function MapComponent({
   warehouses,
   vehicles,
   onMoveClientRoute,
-  onUpdateClientCoords
+  onUpdateClientCoords,
 }: MapComponentProps) {
+  const { t } = useI18n();
+
   const [isMounted, setIsMounted] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(11);
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({});
@@ -279,6 +282,35 @@ export default function MapComponent({
     fetchRoads();
   }, [clients, warehouses, isMounted]);
 
+    // Sort vehicles: 1. Warehouse (grouped together) -> 2. Active with deliveries first -> 3. Vehicle Name/Number
+  const sortedVehiclesList = useMemo(() => {
+    const list = [...vehicles];
+    return list.sort((a, b) => {
+      // Inferred or configured warehouse prefix
+      const whA = (a.includes("_") ? a.split("_")[0] : a).trim().toLowerCase();
+      const whB = (b.includes("_") ? b.split("_")[0] : b).trim().toLowerCase();
+
+      if (whA !== whB) {
+        return whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
+      }
+
+      const countA = clients.filter((c) => c.Rota === a).length;
+      const countB = clients.filter((c) => c.Rota === b).length;
+      const isActiveA = countA > 0;
+      const isActiveB = countB > 0;
+
+      if (isActiveA !== isActiveB) {
+        return isActiveA ? -1 : 1; // Active with deliveries first inside warehouse
+      }
+
+      if (countA !== countB) {
+        return countB - countA; // More deliveries first
+      }
+
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [vehicles, clients]);
+
   // Filter clients based on selected route pills
   const visibleClients = useMemo(() => {
     return clients.filter(c => {
@@ -327,11 +359,13 @@ export default function MapComponent({
 
   if (!isMounted) {
     return (
-      <div className="w-full h-full rounded-2xl border border-zinc-800 bg-zinc-950 flex items-center justify-center text-zinc-500 text-xs font-mono">
+      <div className="w-full h-full rounded-2xl border border-zinc-800 bg-zinc-950 flex items-center justify-center text-zinc-300 text-xs font-mono">
         A carregar mapa interativo...
       </div>
     );
   }
+
+  
 
   const allVehicleOptions = ["Por Distribuir", ...vehicles];
 
@@ -350,54 +384,47 @@ export default function MapComponent({
                 : "bg-zinc-850 text-zinc-300 hover:bg-zinc-750 hover:text-white"
             }`}
           >
-            ✨ Todas ({clients.length})
+            ✨ {t.tactical.allVehiclesFilter} ({clients.length})
           </button>
 
-          {/* Individual Vehicle Route Chips */}
-          {vehicles.map((v, i) => {
-            const routeColor = routeColors[i % routeColors.length];
-            const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes(v);
-            const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === v;
-            const count = clients.filter(c => c.Rota === v).length;
+                                  {/* Individual Vehicle Route Chips */}
+            {sortedVehiclesList.map((v, i) => {
+              const routeColor = routeColors[i % routeColors.length];
+              const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes(v);
+              const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === v;
+              const count = clients.filter(c => c.Rota === v).length;
 
-            return (
-              <button
-                key={v}
-                onClick={(e) => toggleRouteFilter(v, e)}
-                title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-all flex items-center space-x-1.5 cursor-pointer border ${
-                  isExclusive
-                    ? "border-indigo-400 bg-indigo-950/90 text-indigo-100 shadow-sm ring-1 ring-indigo-400/50"
-                    : isSelected
-                    ? "border-zinc-700 bg-zinc-850/90 text-zinc-200"
-                    : "border-transparent bg-zinc-900/40 text-zinc-500 opacity-40 hover:opacity-80"
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: routeColor }} />
-                <span>{v}</span>
-                <span className="text-[9px] text-zinc-400 font-mono">({count})</span>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={v}
+                  onClick={(e) => toggleRouteFilter(v, e)}
+                  title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
+                    isExclusive
+                      ? "border-indigo-500 bg-indigo-600 text-white ring-2 ring-indigo-400/80 shadow-md"
+                      : isSelected
+                      ? "border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 hover:border-indigo-400 hover:shadow"
+                      : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-400 opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: routeColor }} />
+                  <span className="truncate max-w-[100px] font-bold">{v}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                      count > 0
+                        ? isExclusive
+                          ? "bg-white text-indigo-900 border-white/80"
+                          : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
+                        : "bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
 
-          {/* Pending deliveries button */}
-          {clients.some(c => isPendingRoute(c.Rota)) && (
-            <button
-              onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-all flex items-center space-x-1 cursor-pointer border ${
-                selectedRoutes.length === 1 && selectedRoutes[0] === "Por Distribuir"
-                  ? "border-amber-400 bg-amber-950 text-amber-200 ring-1 ring-amber-400/50"
-                  : selectedRoutes.length === 0 || selectedRoutes.includes("Por Distribuir")
-                  ? "border-amber-800/80 bg-amber-950/40 text-amber-300"
-                  : "border-transparent bg-zinc-900/40 text-zinc-500 opacity-40 hover:opacity-80"
-              }`}
-            >
-              <span>📦 Pendentes</span>
-              <span className="text-[9px] font-mono">({clients.filter(c => isPendingRoute(c.Rota)).length})</span>
-            </button>
-          )}
-
-          {/* Clear filter button */}
+            {/* Clear filter button */}
           {selectedRoutes.length > 0 && (
             <button
               onClick={() => setSelectedRoutes([])}
@@ -438,8 +465,8 @@ export default function MapComponent({
                 <p className="font-bold text-xs flex items-center space-x-1">
                   <span>🏠</span> <span>{wh.name}</span>
                 </p>
-                <p className="text-[10px] text-zinc-600 mt-0.5">Armazém / Centro de Distribuição</p>
-                <p className="text-[9px] text-zinc-500 mt-1 font-mono">{wh.address}</p>
+                <p className="text-[10px] text-zinc-300 mt-0.5">Armazém / Centro de Distribuição</p>
+                <p className="text-[9px] text-zinc-300 mt-1 font-mono">{wh.address}</p>
               </div>
             </Popup>
           </Marker>
@@ -476,7 +503,7 @@ export default function MapComponent({
                         {isPending ? "Pendente" : `Paragem #${c.Ordem}`}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded border border-zinc-200">
+                    <span className="text-[10px] font-mono bg-zinc-100 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-200">
                       {c.Cliente}
                     </span>
                   </div>
@@ -487,9 +514,9 @@ export default function MapComponent({
                       <p className="font-bold text-zinc-800">{c.Nome_Cliente}</p>
                     )}
                     <p className="text-zinc-700 font-medium">{c.Morada}</p>
-                    <p className="text-zinc-500 text-[10px]">{c.CP} {c.Localidade}</p>
+                    <p className="text-zinc-300 text-[10px]">{c.CP} {c.Localidade}</p>
                     
-                    <div className="pt-1 flex items-center justify-between text-[11px] text-zinc-600 border-t border-zinc-100">
+                    <div className="pt-1 flex items-center justify-between text-[11px] text-zinc-300 border-t border-zinc-100">
                       <span>Janela: <b>{c.Janela_Horaria || "Qualquer"}</b></span>
                       <span>Carga: <b>{c.Carga_Acum || 0} kg</b></span>
                     </div>
@@ -498,7 +525,7 @@ export default function MapComponent({
                   {/* Route Reassignment Selector inside Popup */}
                   {onMoveClientRoute && (
                     <div className="mt-2.5 pt-2 border-t border-zinc-200 flex items-center justify-between">
-                      <label className="text-[10px] font-semibold text-zinc-500">Mover para:</label>
+                      <label className="text-[10px] font-semibold text-zinc-300">Mover para:</label>
                       <select
                         value={isPending ? "Por Distribuir" : c.Rota}
                         onChange={(e) => onMoveClientRoute(c.Cliente, e.target.value, c.id || c.ID_Original, c.Morada)}

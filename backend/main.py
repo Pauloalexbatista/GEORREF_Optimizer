@@ -6,7 +6,7 @@ import os
 # Ensure root import works
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from backend.api import auth, projects, geocoding, fleet, solver, maps
+from backend.api import auth, projects, geocoding, fleet, solver, maps, admin_users
 from database import init_database
 
 # Initialize database
@@ -16,9 +16,9 @@ except Exception as e:
     print(f"Error initializing database: {e}")
 
 app = FastAPI(
-    title='GeoRoute Pro API',
-    description='Backend API for professional vehicle routing and geocoding',
-    version='1.0.0'
+    title='GeoRoutePlan API',
+    description='Backend API for professional vehicle routing, geocoding and license management',
+    version='2.0.0'
 )
 
 # Configure CORS
@@ -32,6 +32,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix='/api')
+app.include_router(admin_users.router, prefix='/api')
 app.include_router(projects.router, prefix='/api')
 app.include_router(geocoding.router, prefix='/api')
 app.include_router(fleet.router, prefix='/api')
@@ -40,5 +41,4 @@ app.include_router(maps.router)
 
 @app.get('/')
 def read_root():
-    return {'message': 'Welcome to GeoRoute Pro API'}
-
+    return {'message': 'Welcome to GeoRoutePlan API'}
