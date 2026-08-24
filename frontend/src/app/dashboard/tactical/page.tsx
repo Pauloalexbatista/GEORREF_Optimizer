@@ -27,6 +27,7 @@ interface RouteNode {
   KM_Anterior: number;
   Dist_Acum: number;
   Peso_KG?: number;
+  Volume_m3?: number;
   Carga_Acum: number;
   Carga_Vol_Acum: number;
 }
@@ -1080,8 +1081,12 @@ export default function TacticalPage() {
               const maxKg = vConfig?.capacidade_kg || 1000;
               const maxVol = vConfig?.capacidade_vol || 5.0;
 
-              const totalKg = allStops.reduce((sum, item) => sum + (item.Peso_KG || 0), 0);
-              const totalVol = allStops.reduce((sum, item) => sum + (item.Carga_Vol_Acum || 0), 0);
+              const totalKg = allStops.length > 0
+                ? (allStops[allStops.length - 1].Carga_Acum || allStops.reduce((sum, item) => sum + (item.Peso_KG || 0), 0))
+                : 0;
+              const totalVol = allStops.length > 0
+                ? (allStops[allStops.length - 1].Carga_Vol_Acum || allStops.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0))
+                : 0;
               const kgPct = Math.round((totalKg / maxKg) * 100);
               const volPct = Math.round((totalVol / maxVol) * 100);
 

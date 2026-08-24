@@ -309,6 +309,9 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         new_row["Ordem"] = order
         new_row["Peso_KG"] = demand
         new_row["Volume_m3"] = vol_demand
+        new_row["Carga_Acum"] = round(cumul_load, 1)
+        new_row["Carga_Vol_Acum"] = round(cumul_vol, 2)
+        new_row["Volume_m3"] = vol_demand
         new_row["Chegada"] = minutes_to_time_str(arr_min)
         new_row["Tempo_Espera"] = int(round(wait_min))
         new_row["Tempo_Entrega"] = serv_time
