@@ -247,6 +247,22 @@ def get_projetos(empresa_id):
         return cursor.fetchall()
 
 
+def eliminar_projeto(projeto_id):
+    """Elimina um projeto e todos os seus dados dependentes"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (projeto_id,))
+        cursor.execute("DELETE FROM snapshots WHERE projeto_id = ?", (projeto_id,))
+        cursor.execute("DELETE FROM frota WHERE projeto_id = ?", (projeto_id,))
+        cursor.execute("DELETE FROM metricas_projeto WHERE projeto_id = ?", (projeto_id,))
+        try:
+            cursor.execute("DELETE FROM mapeamentos_zonas WHERE projeto_id = ?", (projeto_id,))
+            cursor.execute("DELETE FROM mapas_guardados WHERE projeto_id = ?", (projeto_id,))
+        except Exception:
+            pass
+        cursor.execute("DELETE FROM projetos WHERE id = ?", (projeto_id,))
+        conn.commit()
+
 def get_projeto(projeto_id):
     """Obter projeto por ID"""
     with get_db() as conn:

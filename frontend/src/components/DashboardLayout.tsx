@@ -11,13 +11,16 @@ import { useTheme } from "@/context/ThemeContext";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { projects, selectedProject, selectProject, createProject } = useProjects();
+  const { projects, selectedProject, selectProject, createProject, deleteProject } = useProjects();
   const { t, language, setLanguage } = useI18n();
   const { theme, toggleTheme } = useTheme();
 
   const [showCreateProj, setShowCreateProj] = useState(false);
   const [newProjName, setNewProjName] = useState("");
   const [newProjDesc, setNewProjDesc] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingProj, setIsDeletingProj] = useState(false);
+  const [createProjError, setCreateProjError] = useState<string | null>(null);
   const [showLangMenu, setShowLangMenu] = useState(false);
 
       const menuItems = [
@@ -76,13 +79,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjName.trim()) return;
+    setCreateProjError(null);
     try {
       await createProject(newProjName, newProjDesc);
       setNewProjName("");
       setNewProjDesc("");
       setShowCreateProj(false);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setCreateProjError(err.message || "Erro ao criar projeto.");
+    }
+  };
+
+  const handleDeleteCurrentProject = async () => {
+    if (!selectedProject) return;
+    setIsDeletingProj(true);
+    try {
+      await deleteProject(selectedProject.id);
+      setShowDeleteConfirm(false);
+    } catch (err: any) {
+      alert("Erro ao eliminar projeto: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setIsDeletingProj(false);
     }
   };
 
@@ -120,17 +137,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <label className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
                 {t.navigation.projects}
               </label>
-              <span className="text-[10px] text-zinc-300 font-mono">
-                {projects.length} Total
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                projects.length >= 10
+                  ? "bg-rose-950/60 border-rose-800/80 text-rose-300 font-bold"
+                  : projects.length >= 8
+                  ? "bg-amber-950/60 border-amber-800/80 text-amber-300 font-semibold"
+                  : "bg-zinc-850 border-zinc-800 text-zinc-400"
+              }`}>
+                {projects.length}/10 Max
               </span>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1.5">
               <select
                 value={selectedProject ? selectedProject.id : ""}
                 onChange={(e) => {
                   selectProject(parseInt(e.target.value, 10));
                 }}
-                className="w-full bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 outline-none transition-all cursor-pointer truncate"
+                className="w-full bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-200 outline-none transition-all cursor-pointer truncate"
               >
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -139,16 +162,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 ))}
                 {projects.length === 0 && <option value="">{t.navigation.noProjects}</option>}
               </select>
+
+              {/* Add Project Button */}
               <button
                 type="button"
-                onClick={() => setShowCreateProj(true)}
-                className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 p-1.5 rounded-lg text-zinc-300 transition-all cursor-pointer shrink-0"
-                title={t.navigation.newProject}
+                onClick={() => {
+                  setCreateProjError(null);
+                  setShowCreateProj(true);
+                }}
+                className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 p-1.5 rounded-lg text-zinc-300 hover:text-white transition-all cursor-pointer shrink-0"
+                title={projects.length >= 10 ? "Limite de 10 projetos atingido" : t.navigation.newProject}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
               </button>
+
+              {/* Delete Current Project Button */}
+              {selectedProject && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="bg-zinc-850 hover:bg-rose-950/60 border border-zinc-800 hover:border-rose-700/80 p-1.5 rounded-lg text-zinc-400 hover:text-rose-300 transition-all cursor-pointer shrink-0"
+                  title="Eliminar projeto atual"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
 

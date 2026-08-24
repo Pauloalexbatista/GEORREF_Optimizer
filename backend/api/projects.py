@@ -6,7 +6,7 @@ import os
 
 # Resolve imports from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from database import get_projetos, get_projeto, criar_projeto, get_db
+from database import get_projetos, get_projeto, criar_projeto, eliminar_projeto, get_db
 from backend.api.auth import get_current_user, UserResponse
 
 router = APIRouter(prefix='/projects', tags=['projects'])
@@ -41,6 +41,14 @@ def list_projects(current_user: UserResponse = Depends(get_current_user)):
 def create_new_project(req: ProjectCreate, current_user: UserResponse = Depends(get_current_user)):
     if not req.nome.strip():
         raise HTTPException(status_code=400, detail='O nome do projeto não pode ser vazio.')
+        
+    # Limit to 10 projects per company
+    existing_projects = get_projetos(current_user.empresa_id)
+    if len(existing_projects) >= 10 and not getattr(current_user, "is_superadmin", False):
+        raise HTTPException(
+            status_code=400,
+            detail='Atingiu o limite máximo de 10 projetos por empresa. Por favor, elimine um projeto antigo para criar um novo.'
+        )
         
     try:
         proj_id = criar_projeto(current_user.empresa_id, req.nome, req.descricao)
@@ -78,3 +86,20 @@ def get_project_details(project_id: int, current_user: UserResponse = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.delete('/{project_id}')
+def delete_project(project_id: int, current_user: UserResponse = Depends(get_current_user)):
+    try:
+        proj = get_projeto(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail='Projeto não encontrado.')
+            
+        if proj['empresa_id'] != current_user.empresa_id and not getattr(current_user, 'is_superadmin', False):
+            raise HTTPException(status_code=403, detail='Não tem permissão para eliminar este projeto.')
+            
+        eliminar_projeto(project_id)
+        return {'status': 'success', 'message': f'Projeto {project_id} eliminado com sucesso.'}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

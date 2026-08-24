@@ -18,6 +18,7 @@ interface ProjectContextType {
   selectProject: (id: number) => void;
   refreshProjects: () => Promise<void>;
   createProject: (nome: string, descricao?: string) => Promise<Project>;
+  deleteProject: (id: number) => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -87,6 +88,25 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+    const deleteProject = async (id: number) => {
+    try {
+      await apiRequest(`/api/projects/${id}`, { method: "DELETE" });
+      const remaining = projects.filter((p) => p.id !== id);
+      setProjects(remaining);
+      if (selectedProject?.id === id) {
+        if (remaining.length > 0) {
+          setSelectedProject(remaining[0]);
+          localStorage.setItem("georoute_selected_project_id", remaining[0].id.toString());
+        } else {
+          setSelectedProject(null);
+          localStorage.removeItem("georoute_selected_project_id");
+        }
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
   return (
     <ProjectContext.Provider
       value={{
@@ -96,6 +116,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         selectProject,
         refreshProjects,
         createProject,
+        deleteProject,
       }}
     >
       {children}
