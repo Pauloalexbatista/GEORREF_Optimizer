@@ -1228,6 +1228,10 @@ async def import_fleet_warehouses(
                     if d.get("Morada"):
                         coord_map[str(d["Morada"]).strip().lower()] = (d.get("Latitude", 0.0), d.get("Longitude", 0.0), d.get("Peso_KG", 50.0), d.get("Volume_M3", 0.1))
 
+                # If Rotas has more entries than deliveries_list, rebuild deliveries_list completely from Rotas!
+                if len(df_rotas_raw) >= len(deliveries_list):
+                    deliveries_list = []
+
                 # Process all Rotas rows
                 for r_idx, r_row in df_rotas_raw.iterrows():
                     veh_name = str(r_row[col_rt_veh]).strip() if col_rt_veh and pd.notna(r_row[col_rt_veh]) else "Por Distribuir"
@@ -1263,9 +1267,8 @@ async def import_fleet_warehouses(
                         except Exception:
                             pass
                             
-                    # --- C. REVERSE ENGINEERING: DELIVERIES IF NOT ALREADY POPULATED ---
-                    if not sheet_entregas or not deliveries_list:
-                        deliveries_list.append({
+                    # --- C. REVERSE ENGINEERING: DELIVERIES ---
+                    deliveries_list.append({
                             "Armazem": wh_name,
                             "Doc_ID": doc_val,
                             "Codigo_Cliente": doc_val,

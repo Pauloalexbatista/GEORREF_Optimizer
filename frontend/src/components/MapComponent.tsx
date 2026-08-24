@@ -522,8 +522,47 @@ export default function MapComponent({
             </div>
           </div>
 
-          {/* Right: Actions (Fit Bounds & Toggle OSRM Roads) */}
+          {/* Right: Actions (Layer Switcher, Fit Bounds & Toggle OSRM Roads) */}
           <div className="flex items-center space-x-2">
+            {/* Google Layer Switcher */}
+            <div className="flex items-center space-x-1 bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-xl border border-zinc-300 dark:border-zinc-800 text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setMapLayer("standard")}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  mapLayer === "standard"
+                    ? "bg-indigo-600 text-white shadow-sm font-bold"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                }`}
+                title="Mapa Padrão Vetor"
+              >
+                🗺️ Mapa
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapLayer("google_sat")}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  mapLayer === "google_sat"
+                    ? "bg-indigo-600 text-white shadow-sm font-bold"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                }`}
+                title="Google Satélite de alta resolução (Custo Zero)"
+              >
+                🛰️ Satélite
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapLayer("google_hybrid")}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  mapLayer === "google_hybrid"
+                    ? "bg-indigo-600 text-white shadow-sm font-bold"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                }`}
+                title="Google Híbrido com nomes de ruas e estradas (Custo Zero)"
+              >
+                🏙️ Híbrido
+              </button>
+            </div>
             <button
               onClick={() => setShowRoads(!showRoads)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center space-x-1.5 shadow-sm ${
