@@ -366,7 +366,7 @@ export default function TacticalPage() {
     if (!selectedProject) return;
     setActionLoading(`opt_${routeName}`);
     try {
-      const res = await apiRequest("/api/solver/optimize-route", {
+      const res = await apiRequest("/api/solver/optimize-single-route", {
         method: "POST",
         body: JSON.stringify({
           project_id: selectedProject.id,

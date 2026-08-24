@@ -1098,6 +1098,7 @@ def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/optimize-route")
 @router.post("/optimize-single-route")
 def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
