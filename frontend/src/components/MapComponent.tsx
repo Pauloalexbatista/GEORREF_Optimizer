@@ -63,39 +63,45 @@ function isPendingRoute(routeName: string) {
 function MapInitialController({ coords }: { coords: [number, number] }) {
   const map = useMap();
   const initializedRef = useRef(false);
-  const lastCenterStr = useRef("");
 
   useEffect(() => {
-    const centerStr = coords.join(",");
-    if (coords && coords[0] !== 0 && (!initializedRef.current || lastCenterStr.current !== centerStr)) {
-      if (!initializedRef.current) {
-        map.setView(coords, 11);
-        initializedRef.current = true;
-        lastCenterStr.current = centerStr;
-      }
+    if (!initializedRef.current && coords[0] !== 0 && coords[1] !== 0) {
+      map.setView(coords, map.getZoom() || 11);
+      initializedRef.current = true;
     }
   }, [coords, map]);
 
   return null;
 }
 
-// Button component inside map container to fit all visible bounds
+// Auto Fit Bounds Controller (triggers on demand)
 function MapBoundsFitter({ triggerKey, points }: { triggerKey: string; points: [number, number][] }) {
   const map = useMap();
 
   useEffect(() => {
-    if (points.length > 0 && triggerKey) {
-      try {
-        const bounds = L.latLngBounds(points);
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-      } catch (e) {}
-    }
+    if (!triggerKey || points.length === 0) return;
+    try {
+      const validPoints = points.filter(p => p[0] !== 0 && p[1] !== 0);
+      if (validPoints.length > 0) {
+        const bounds = L.latLngBounds(validPoints.map(p => L.latLng(p[0], p[1])));
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15, animate: true });
+      }
+    } catch (e) {}
   }, [triggerKey, points, map]);
 
   return null;
 }
 
-// Color palette for vehicle routes
+// Track zoom level dynamically to scale markers and icons
+function MapTracker({ setZoom }: { setZoom: (z: number) => void }) {
+  const map = useMapEvents({
+    zoomend: () => {
+      setZoom(map.getZoom());
+    },
+  });
+  return null;
+}
+
 const routeColors = [
   "#6366f1", // Indigo
   "#ec4899", // Pink
@@ -114,100 +120,78 @@ const routeColors = [
 ];
 
 function getRouteColor(routeName: string, vehicleList: string[]) {
-  if (isPendingRoute(routeName)) return "#f59e0b";
+  if (isPendingRoute(routeName)) return "#f59e0b"; // Amber for pending
   const idx = vehicleList.indexOf(routeName);
   if (idx === -1) return routeColors[0];
   return routeColors[idx % routeColors.length];
 }
 
-function createNumberedCircleIcon(number: number, color: string, isPending: boolean = false, zoomLevel: number = 11) {
-  let size = 26;
-  let fontSize = 11;
-  let borderWidth = 2;
-
-  if (zoomLevel >= 15) {
-    size = 32;
-    fontSize = 13;
-    borderWidth = 2.5;
-  } else if (zoomLevel <= 10) {
-    size = 18;
-    fontSize = 9;
-    borderWidth = 1.5;
-  }
-
-  const displayText = isPending ? "•" : number;
-
-  const html = `
-    <div style="
-      background-color: ${color};
-      color: white;
-      width: ${size}px;
-      height: ${size}px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-weight: 800;
-      font-size: ${fontSize}px;
-      border: ${borderWidth}px solid rgba(255, 255, 255, 0.95);
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-      cursor: pointer;
-      user-select: none;
-      transition: transform 0.15s ease;
-    " onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1.0)'">
-      ${displayText}
-    </div>
-  `;
-
+// Marker Icon for Warehouse
+function getWarehouseIcon(zoom: number) {
+  const size = Math.max(26, Math.min(38, 22 + (zoom - 10) * 2));
   return L.divIcon({
-    html: html,
-    className: "custom-leaflet-marker",
+    className: "warehouse-marker",
+    html: `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        background-color: #1e1b4b;
+        border: 2px solid #818cf8;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        color: white;
+        font-size: ${Math.round(size * 0.55)}px;
+      ">
+        🏠
+      </div>
+    `,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -size / 2],
   });
 }
 
-function getWarehouseIcon(zoomLevel: number = 11) {
-  let size = 32;
-  if (zoomLevel >= 15) size = 40;
-  else if (zoomLevel <= 10) size = 24;
+// Marker Icon for Clients
+function createNumberedCircleIcon(
+  order: number,
+  color: string,
+  isPending: boolean,
+  zoom: number
+) {
+  const size = isPending
+    ? Math.max(18, Math.min(26, 16 + (zoom - 10) * 2))
+    : Math.max(22, Math.min(32, 20 + (zoom - 10) * 2));
 
-  const html = `
-    <div style="
-      background-color: #0f172a;
-      color: #38bdf8;
-      width: ${size}px;
-      height: ${size}px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 2px solid #38bdf8;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.6);
-      font-size: ${Math.round(size * 0.55)}px;
-    ">
-      🏠
-    </div>
-  `;
+  const displayText = isPending ? "⚠️" : String(order || 1);
+  const fontSize = isPending ? Math.round(size * 0.55) : Math.round(size * 0.45);
 
   return L.divIcon({
-    html: html,
-    className: "warehouse-leaflet-marker",
+    className: "custom-client-marker",
+    html: `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        background-color: ${color};
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        color: #ffffff;
+        font-weight: 900;
+        font-family: monospace;
+        font-size: ${fontSize}px;
+        cursor: grab;
+      ">
+        ${displayText}
+      </div>
+    `,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -size / 2],
   });
-}
-
-function MapTracker({ setZoom }: { setZoom: (z: number) => void }) {
-  const map = useMapEvents({
-    zoomend: () => {
-      setZoom(map.getZoom());
-    },
-  });
-  return null;
 }
 
 export default function MapComponent({
@@ -223,11 +207,11 @@ export default function MapComponent({
   const [zoomLevel, setZoomLevel] = useState(11);
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({});
   
-  // Interactive Route & Warehouse & Search Filter states
-  const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
+  // Interactive Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "pending">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "empty" | "pending">("all");
+  const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
   const [showRoads, setShowRoads] = useState(true);
   const [fitTrigger, setFitTrigger] = useState("");
 
@@ -301,35 +285,6 @@ export default function MapComponent({
     fetchRoads();
   }, [clients, warehouses, isMounted]);
 
-    // Sort vehicles: 1. Warehouse (grouped together) -> 2. Active with deliveries first -> 3. Vehicle Name/Number
-  const sortedVehiclesList = useMemo(() => {
-    const list = [...vehicles];
-    return list.sort((a, b) => {
-      // Inferred or configured warehouse prefix
-      const whA = (a.includes("_") ? a.split("_")[0] : a).trim().toLowerCase();
-      const whB = (b.includes("_") ? b.split("_")[0] : b).trim().toLowerCase();
-
-      if (whA !== whB) {
-        return whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
-      }
-
-      const countA = clients.filter((c) => c.Rota === a).length;
-      const countB = clients.filter((c) => c.Rota === b).length;
-      const isActiveA = countA > 0;
-      const isActiveB = countB > 0;
-
-      if (isActiveA !== isActiveB) {
-        return isActiveA ? -1 : 1; // Active with deliveries first inside warehouse
-      }
-
-      if (countA !== countB) {
-        return countB - countA; // More deliveries first
-      }
-
-      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-    });
-  }, [vehicles, clients]);
-
   // Extract unique warehouses
   const warehouseOptions = useMemo(() => {
     const set = new Set<string>();
@@ -342,7 +297,51 @@ export default function MapComponent({
     return Array.from(set);
   }, [warehouses, clients]);
 
-  // Filter clients based on search query, warehouse, status, and selected route pills
+  // Vehicle stats for badges
+  const { activeVehiclesCount, emptyVehiclesCount, pendingStopsCount } = useMemo(() => {
+    const withCargo = vehicles.filter(v => clients.some(c => c.Rota === v)).length;
+    const empty = Math.max(0, vehicles.length - withCargo);
+    const pending = clients.filter(c => isPendingRoute(c.Rota)).length;
+    return { activeVehiclesCount: withCargo, emptyVehiclesCount: empty, pendingStopsCount: pending };
+  }, [vehicles, clients]);
+
+  // Filtered vehicles list based on active warehouse & status filter
+  const filteredVehiclesList = useMemo(() => {
+    let list = [...vehicles];
+
+    // 1. Warehouse Filter
+    if (selectedWarehouse !== "all") {
+      const selWh = selectedWarehouse.toLowerCase();
+      list = list.filter(v => {
+        const vWh = (v.includes("_") ? v.split("_")[0] : v).trim().toLowerCase();
+        if (vWh === selWh || v.toLowerCase().includes(selWh)) return true;
+        // Check if any clients in this vehicle belong to the warehouse
+        return clients.some(c => c.Rota === v && (c.Armazem || "").toLowerCase() === selWh);
+      });
+    }
+
+    // 2. Status Filter
+    if (statusFilter === "with_cargo") {
+      list = list.filter(v => clients.some(c => c.Rota === v));
+    } else if (statusFilter === "empty") {
+      list = list.filter(v => !clients.some(c => c.Rota === v));
+    } else if (statusFilter === "pending") {
+      list = []; // In pending status, only pending chip is shown
+    }
+
+    // Sort: Active with deliveries first -> vehicle name
+    return list.sort((a, b) => {
+      const countA = clients.filter(c => c.Rota === a).length;
+      const countB = clients.filter(c => c.Rota === b).length;
+      if ((countA > 0) !== (countB > 0)) {
+        return countA > 0 ? -1 : 1;
+      }
+      if (countA !== countB) return countB - countA;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [vehicles, clients, selectedWarehouse, statusFilter]);
+
+  // Filter visible clients
   const visibleClients = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return clients.filter(c => {
@@ -366,7 +365,6 @@ export default function MapComponent({
         const cWh = (c.Armazem || "").toLowerCase();
         const selWh = selectedWarehouse.toLowerCase();
         if (cWh && cWh !== "n/a" && cWh !== selWh) {
-          // If vehicle has warehouse prefix
           const rName = (c.Rota || "").toLowerCase();
           if (!rName.includes(selWh)) return false;
         }
@@ -376,6 +374,7 @@ export default function MapComponent({
       const isPending = isPendingRoute(c.Rota);
       if (statusFilter === "pending" && !isPending) return false;
       if (statusFilter === "with_cargo" && isPending) return false;
+      if (statusFilter === "empty" && isPending) return false;
 
       // 4. Route selection pills
       if (selectedRoutes.length === 0) return true;
@@ -428,123 +427,212 @@ export default function MapComponent({
     );
   }
 
-  
-
-  const allVehicleOptions = ["Por Distribuir", ...vehicles];
-
   return (
     <div className="w-full h-full rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative z-10">
       
-      {/* FLOATING ROUTE FILTER SELECTOR BAR */}
-      <div className="absolute top-3 left-12 right-12 z-[1000] flex items-center justify-between gap-2 pointer-events-none">
-        <div className="flex items-center flex-wrap gap-1 bg-zinc-950/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-800 shadow-xl pointer-events-auto max-h-24 overflow-y-auto">
+      {/* FLOATING FILTER BAR (IDENTICAL TO SYSTEM) */}
+      <div className="absolute top-3 left-4 right-4 z-[1000] flex flex-col gap-1.5 pointer-events-none">
+        
+        {/* Main Filter Toolbar */}
+        <div className="bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl pointer-events-auto flex flex-wrap items-center justify-between gap-2.5">
+          
+          {/* Left: Search input, Warehouse dropdown & Status pills */}
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Search Input */}
+            <div className="relative min-w-[220px] max-w-xs">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">🔍</span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Pesquisar cliente, código, morada, CP..."
+                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 focus:border-indigo-500 rounded-xl pl-8 pr-7 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 outline-none transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Warehouse Filter */}
+            {warehouseOptions.length > 0 && (
+              <select
+                value={selectedWarehouse}
+                onChange={(e) => setSelectedWarehouse(e.target.value)}
+                className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 focus:border-indigo-500 rounded-xl px-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer font-medium shadow-sm"
+              >
+                <option value="all">🏠 Todos os Armazéns ({warehouseOptions.length})</option>
+                {warehouseOptions.map((wh) => (
+                  <option key={wh} value={wh}>
+                    🏠 {wh}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Status Segmented Pills Filter */}
+            <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-xl border border-zinc-300 dark:border-zinc-800 text-[11px] font-semibold">
+              <button
+                onClick={() => setStatusFilter("all")}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  statusFilter === "all"
+                    ? "bg-indigo-600 text-white shadow-sm font-bold"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                }`}
+              >
+                Todos ({vehicles.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter("with_cargo")}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+                  statusFilter === "with_cargo"
+                    ? "bg-emerald-600 text-white shadow-sm font-bold"
+                    : "text-emerald-700 dark:text-emerald-400 hover:text-emerald-800"
+                }`}
+              >
+                <span>🚚 Com Carga ({activeVehiclesCount})</span>
+              </button>
+              <button
+                onClick={() => setStatusFilter("empty")}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+                  statusFilter === "empty"
+                    ? "bg-zinc-700 text-white shadow-sm font-bold"
+                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700"
+                }`}
+              >
+                <span>🌙 Vazias ({emptyVehiclesCount})</span>
+              </button>
+              {pendingStopsCount > 0 && (
+                <button
+                  onClick={() => setStatusFilter("pending")}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+                    statusFilter === "pending"
+                      ? "bg-amber-600 text-white shadow-sm font-bold"
+                      : "text-amber-600 dark:text-amber-400 hover:text-amber-700"
+                  }`}
+                >
+                  <span>⚠️ Por Distribuir ({pendingStopsCount})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Actions (Fit Bounds & Toggle OSRM Roads) */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowRoads(!showRoads)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center space-x-1.5 shadow-sm ${
+                showRoads
+                  ? "bg-indigo-50 dark:bg-indigo-950/80 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold"
+                  : "bg-zinc-100 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+              }`}
+              title="Ligar/Desligar traçados de estrada reais"
+            >
+              <span>🛣️ Traçados</span>
+            </button>
+
+            <button
+              onClick={handleFitAll}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md cursor-pointer transition-all flex items-center space-x-1"
+              title="Enquadrar todas as paragens visíveis no ecrã"
+            >
+              <span>🎯 Enquadrar</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filtered Vehicle Route Chips Strip */}
+        <div className="flex items-center flex-wrap gap-1 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl pointer-events-auto max-h-24 overflow-y-auto">
           {/* Todas button */}
           <button
             onClick={() => setSelectedRoutes([])}
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
               selectedRoutes.length === 0
                 ? "bg-indigo-600 text-white shadow-sm"
-                : "bg-zinc-850 text-zinc-300 hover:bg-zinc-750 hover:text-white"
+                : "bg-zinc-100 dark:bg-zinc-850 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-750"
             }`}
           >
-            ✨ {t.tactical.allVehiclesFilter} ({clients.length})
+            ✨ Todas ({visibleClients.length}/{clients.length})
           </button>
 
-                                  {/* "Por Distribuir" Pending Deliveries Chip */}
-            {(() => {
-              const pendingStops = clients.filter(c => isPendingRoute(c.Rota));
-              const pendingCount = pendingStops.length;
-              if (pendingCount === 0) return null;
-              
-              const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes("Por Distribuir");
-              const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === "Por Distribuir";
+          {/* "Por Distribuir" Pending Deliveries Chip */}
+          {(() => {
+            const pendingStops = clients.filter(c => isPendingRoute(c.Rota));
+            const pendingCount = pendingStops.length;
+            if (pendingCount === 0) return null;
+            if (statusFilter === "with_cargo" || statusFilter === "empty") return null;
+            
+            const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes("Por Distribuir");
+            const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === "Por Distribuir";
 
-              return (
-                <button
-                  key="Por Distribuir"
-                  onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
-                  title="Clique para ver só encomendas Por Distribuir (Ctrl+Clique para seleção múltipla)"
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
+            return (
+              <button
+                key="Por Distribuir"
+                onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
+                title="Clique para ver só encomendas Por Distribuir (Ctrl+Clique para seleção múltipla)"
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
+                  isExclusive
+                    ? "border-amber-500 bg-amber-600 text-white ring-2 ring-amber-400/80 shadow-md"
+                    : isSelected
+                    ? "border-amber-500/50 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 hover:border-amber-400"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 text-amber-600/60 opacity-60 hover:opacity-100"
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm bg-amber-500" />
+                <span className="truncate max-w-[120px] font-bold">⚠️ Por Distribuir</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
                     isExclusive
-                      ? "border-amber-500 bg-amber-600 text-white ring-2 ring-amber-400/80 shadow-md"
-                      : isSelected
-                      ? "border-amber-500/50 bg-amber-950/40 text-amber-300 hover:border-amber-400 hover:shadow"
-                      : "border-zinc-800 bg-zinc-950/60 text-amber-500/50 opacity-60 hover:opacity-100"
+                      ? "bg-white text-amber-900 border-white/80"
+                      : "bg-amber-500/20 text-amber-900 dark:text-amber-200 border-amber-500/40"
                   }`}
                 >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm bg-amber-500" />
-                  <span className="truncate max-w-[120px] font-bold">⚠️ Por Distribuir</span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
-                      isExclusive
-                        ? "bg-white text-amber-900 border-white/80"
-                        : "bg-amber-500/20 text-amber-200 border-amber-500/40"
-                    }`}
-                  >
-                    {pendingCount}
-                  </span>
-                </button>
-              );
-            })()}
+                  {pendingCount}
+                </span>
+              </button>
+            );
+          })()}
 
-            {/* Individual Vehicle Route Chips */}
-            {sortedVehiclesList.map((v, i) => {
-              const routeColor = routeColors[i % routeColors.length];
-              const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes(v);
-              const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === v;
-              const count = clients.filter(c => c.Rota === v).length;
+          {/* Individual Filtered Vehicle Route Chips */}
+          {filteredVehiclesList.map((v, i) => {
+            const routeColor = getRouteColor(v, vehicles);
+            const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes(v);
+            const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === v;
+            const count = clients.filter(c => c.Rota === v).length;
 
-              return (
-                <button
-                  key={v}
-                  onClick={(e) => toggleRouteFilter(v, e)}
-                  title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
-                    isExclusive
-                      ? "border-indigo-500 bg-indigo-600 text-white ring-2 ring-indigo-400/80 shadow-md"
-                      : isSelected
-                      ? "border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 hover:border-indigo-400 hover:shadow"
-                      : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-400 opacity-60 hover:opacity-100"
+            return (
+              <button
+                key={v}
+                onClick={(e) => toggleRouteFilter(v, e)}
+                title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
+                  isExclusive
+                    ? "border-indigo-500 bg-indigo-600 text-white ring-2 ring-indigo-400/80 shadow-md"
+                    : isSelected
+                    ? "border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 hover:border-indigo-400 hover:shadow"
+                    : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-400 opacity-60 hover:opacity-100"
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: routeColor }} />
+                <span className="truncate max-w-[110px] font-bold">{v}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                    count > 0
+                      ? isExclusive
+                        ? "bg-white text-indigo-900 border-white/80"
+                        : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
+                      : "bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
                   }`}
                 >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: routeColor }} />
-                  <span className="truncate max-w-[100px] font-bold">{v}</span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
-                      count > 0
-                        ? isExclusive
-                          ? "bg-white text-indigo-900 border-white/80"
-                          : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
-                        : "bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-
-            {/* Clear filter button */}
-          {selectedRoutes.length > 0 && (
-            <button
-              onClick={() => setSelectedRoutes([])}
-              className="px-2 py-0.5 rounded-lg text-[9px] font-semibold bg-rose-950/80 text-rose-300 hover:bg-rose-900 border border-rose-800/60 transition-all cursor-pointer"
-              title="Mostrar todas as rotas"
-            >
-              ✕ Limpar Filtro
-            </button>
-          )}
-        </div>
-
-        {/* Fit Bounds Button */}
-        <div className="pointer-events-auto shrink-0">
-          <button
-            onClick={handleFitAll}
-            className="bg-zinc-950/90 hover:bg-zinc-850 text-zinc-200 border border-zinc-700 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold shadow-xl flex items-center space-x-1.5 cursor-pointer backdrop-blur-md transition-all"
-            title="Enquadrar todas as paragens visíveis no ecrã"
-          >
-            <span>🎯 Enquadrar</span>
-          </button>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -631,7 +719,8 @@ export default function MapComponent({
                         onChange={(e) => onMoveClientRoute(c.Cliente, e.target.value, c.id || c.ID_Original, c.Morada)}
                         className="text-[10px] bg-zinc-50 border border-zinc-300 rounded px-1.5 py-0.5 font-medium text-zinc-800 outline-none focus:border-indigo-500 cursor-pointer"
                       >
-                        {allVehicleOptions.map((v) => (
+                        <option value="Por Distribuir">⚠️ Por Distribuir</option>
+                        {vehicles.map((v) => (
                           <option key={v} value={v}>
                             {v}
                           </option>
@@ -645,21 +734,23 @@ export default function MapComponent({
           );
         })}
 
-        {/* Real OSRM Road Geometries (Filtered) */}
-        {Object.entries(roadGeometries).map(([rName, coords]) => {
-          if (coords.length < 2) return null;
-          if (selectedRoutes.length > 0 && !selectedRoutes.includes(rName)) return null;
+        {/* Real OSRM Road Geometry Polylines */}
+        {showRoads && Object.entries(roadGeometries).map(([rName, coords]) => {
+          if (selectedRoutes.length > 0 && !selectedRoutes.includes(rName)) {
+            return null;
+          }
           const color = getRouteColor(rName, vehicles);
+
           return (
             <Polyline
-              key={`road-${rName}`}
+              key={"road-" + rName}
               positions={coords}
               pathOptions={{
                 color: color,
                 weight: 4,
                 opacity: 0.85,
+                lineCap: "round",
                 lineJoin: "round",
-                lineCap: "round"
               }}
             />
           );
