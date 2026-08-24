@@ -681,11 +681,11 @@ export default function TacticalPage() {
           <div>
             <div className="flex items-center space-x-3">
               <span className="w-3 h-3 rounded-full bg-indigo-500 shadow-md shadow-indigo-500/50" />
-              <h1 className="text-2xl font-black tracking-tight text-zinc-50 font-sans">
+              <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
                 Matriz Operacional & Planeamento Tático
               </h1>
             </div>
-            <p className="text-zinc-400 text-xs mt-1">
+            <p className="text-zinc-600 dark:text-zinc-400 text-xs mt-1">
               Gestão a toda a largura das paragens, capacidades de carga, janelas horárias e transferências entre viaturas.
             </p>
           </div>

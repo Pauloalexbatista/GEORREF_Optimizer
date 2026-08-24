@@ -246,7 +246,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           <div className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-[10px] text-zinc-300">
             <span className="text-zinc-400 uppercase font-mono">Subscrição</span>
-            <span className="font-bold text-amber-400">Vitalícia</span>
+            <span className="font-bold text-amber-400">
+              {Boolean((user as any)?.is_superadmin)
+                ? "Vitalícia"
+                : (user as any)?.data_validade
+                ? `Até ${(user as any).data_validade}`
+                : "Ativa"}
+            </span>
           </div>
 
           <button
@@ -285,7 +291,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
-                Admin Vitalício
+                {Boolean((user as any)?.is_superadmin)
+                  ? "Admin Vitalício"
+                  : (user as any)?.data_validade
+                  ? `Ativa até ${(user as any).data_validade}`
+                  : "Licença Ativa"}
               </span>
             </div>
 

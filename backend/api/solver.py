@@ -755,552 +755,61 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                                 "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), 0.0)
                             })
             
-            # 3. Synchronize any valid delivery from entregas that was NOT in routes_list (e.g. newly georeferenced)
-            pending_order = len([r for r in routes_list if is_pending_route(r["Rota"])]) + 1
-            for d_id, d in valid_deliv_by_id.items():
-                d_code = str(d.get("codigo_cliente", "")).strip().upper()
-                if d_id not in seen_deliv_ids and d_code not in seen_deliv_codes:
-                    win_s = str(d.get("janela_inicio", "") or "").strip()
-                    win_e = str(d.get("janela_fim", "") or "").strip()
-                    combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
+            # 3. If df_routes was not empty and already contains all deliveries, do not add duplicates!
+            has_existing_routes = (raw_routes is not None and not df_routes.empty) if 'df_routes' in locals() else False
+            
+            # If snapshot routes exist and cover the deliveries, we only sync if DB has genuinely extra deliveries
+            if not has_existing_routes or len(routes_list) < len(valid_deliv_by_id):
+                pending_order = len([r for r in routes_list if is_pending_route(r["Rota"])]) + 1
+                for d_id, d in valid_deliv_by_id.items():
+                    d_code = str(d.get("codigo_cliente", "")).strip().upper().replace("_X000D_", "").strip()
+                    d_name = str(d.get("nome_cliente", "")).strip().upper().replace("_X000D_", "").strip()
+                    d_addr = str(d.get("morada", "")).strip().lower()
+                    d_cp = str(d.get("codigo_postal", "")).strip().lower()
                     
-                    routes_list.append({
-                        "id": d_id,
-                        "ID_Original": d_id,
-                        "Rota": "Por Distribuir",
-                        "Armazem": "N/A",
-                        "Ordem": pending_order,
-                        "Cliente": str(d.get("codigo_cliente", f"Cliente_{d_id}")),
-                        "Nome_Cliente": str(d.get("nome_cliente") or d.get("codigo_cliente", f"Cliente_{d_id}")),
-                        "Morada": str(d.get("morada", "N/A")),
-                        "CP": str(d.get("codigo_postal", "N/A")),
-                        "Localidade": str(d.get("_concelho") or d.get("concelho", "")),
-                        "Janela_Horaria": combined_window,
-                        "Latitude": clean_num(d.get("latitude")),
-                        "Longitude": clean_num(d.get("longitude")),
-                        "Chegada": "00:00",
-                        "Tempo_Espera": 0,
-                        "Tempo_Entrega": 0,
-                        "Saida": "00:00",
-                        "Nivel_Qualidade": clean_int(d.get("nivel_qualidade"), 1),
-                        "KM_Anterior": 0.0,
-                        "Dist_Acum": 0.0,
-                        "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
-                        "Carga_Acum": round(clean_num(d.get("peso_kg"), 50.0), 1),
-                        "Carga_Vol_Acum": round(clean_num(d.get("volume_m3"), 0.1), 2)
-                    })
-                    pending_order += 1
+                    # Check if already accounted for in routes_list
+                    already_in_routes = (
+                        d_id in seen_deliv_ids or 
+                        (d_code and d_code in seen_deliv_codes) or
+                        any(
+                            (r.get("Cliente", "").strip().upper() == d_code) or
+                            (r.get("Nome_Cliente", "").strip().upper() == d_name) or
+                            (r.get("Morada", "").strip().lower() == d_addr and d_addr)
+                            for r in routes_list
+                        )
+                    )
                     
-            resp_data = {
-                "status": "success" if routes_list else "none",
-                "routes": routes_list,
-                "quality_metrics": sanitize_json_data(state_dict.get("routes_metrics", {}))
-            }
-            return sanitize_json_data(resp_data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/reassign")
-def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Depends(get_current_user)):
-    proj = get_projeto(req.project_id)
-    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-        
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas para reatribuir.")
-                
-            state_dict = deserialize_state(row["payload_json"])
-            raw_routes = state_dict.get("routes_solution")
-            
-            if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
-                
-            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-            
-        if df_routes.empty:
-            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
-            
-        target_idx = None
-        
-        # Match by delivery_id / ID_Original if supplied
-        if req.delivery_id is not None:
-            if "id" in df_routes.columns:
-                m_id = df_routes[df_routes["id"] == req.delivery_id].index
-                if len(m_id) > 0:
-                    target_idx = m_id[0]
-            if target_idx is None and "ID_Original" in df_routes.columns:
-                m_id = df_routes[df_routes["ID_Original"] == req.delivery_id].index
-                if len(m_id) > 0:
-                    target_idx = m_id[0]
-                    
-        # Match by client_code AND address if supplied
-        if target_idx is None and req.client_code and req.address:
-            t_code = str(req.client_code).strip().upper()
-            t_addr = str(req.address).strip().upper()
-            m_both = df_routes[
-                (df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) &
-                (df_routes["Morada"].astype(str).str.strip().str.upper() == t_addr)
-            ].index
-            if len(m_both) > 0:
-                target_idx = m_both[0]
-                
-        # Match by client_code
-        if target_idx is None and req.client_code:
-            t_code = str(req.client_code).strip().upper()
-            m_code = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code].index
-            if len(m_code) == 0:
-                m_code = df_routes[df_routes["Cliente"].astype(str).str.contains(t_code, case=False, na=False)].index
-            if len(m_code) > 0:
-                target_idx = m_code[0]
-                
-        if target_idx is None:
-            raise HTTPException(status_code=404, detail="Cliente/Entrega não encontrado nas rotas.")
-        
-        new_route_clean = req.new_route
-        if is_pending_route(new_route_clean):
-            new_route_clean = "Por Distribuir"
-            
-        df_routes.loc[target_idx, "Rota"] = new_route_clean
-        if not is_pending_route(new_route_clean):
-            df_routes.loc[target_idx, "Ordem"] = 99999
-            
-        warehouses_df = state_dict.get("warehouses_geocoded")
-        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
-            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
-        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
-        
-        updated_rows = []
-        unique_routes = df_routes["Rota"].unique()
-        
-        for r_name in unique_routes:
-            route_clients = df_routes[df_routes["Rota"] == r_name].copy()
-            if is_pending_route(r_name):
-                order = 1
-                for idx, row_c in route_clients.iterrows():
-                    row_c["Rota"] = "Por Distribuir"
-                    row_c["Ordem"] = order
-                    row_c["Chegada"] = "00:00"
-                    row_c["Tempo_Espera"] = 0
-                    row_c["Tempo_Entrega"] = 0
-                    row_c["Saida"] = "00:00"
-                    row_c["KM_Anterior"] = 0.0
-                    row_c["Dist_Acum"] = 0.0
-                    updated_rows.append(row_c.to_dict())
-                    order += 1
-                continue
-                
-            route_clients = route_clients.sort_values(by="Ordem")
-            v_info = fleet_dict.get(r_name, {})
-            wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
-            depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-            v_start = str(v_info.get("start_time", "09:50"))
-            v_speed = float(v_info.get("speed", 50.0))
-            
-            recalc_stops = recalculate_route_stops(route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed)
-            updated_rows.extend(recalc_stops)
-                
-        df_new_routes = pd.DataFrame(updated_rows)
-        state_dict["routes_solution"] = df_new_routes
-        payload = serialize_state(state_dict)
-        
-        snapshot_name = f"Reatribuição Manual ({datetime.now().strftime('%H:%M:%S')})"
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
-                (req.project_id, current_user.id, 3, snapshot_name, payload)
-            )
-            conn.commit()
-            
-        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/reassign-entire-route")
-def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserResponse = Depends(get_current_user)):
-    proj = get_projeto(req.project_id)
-    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-        
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas.")
-                
-            state_dict = deserialize_state(row["payload_json"])
-            raw_routes = state_dict.get("routes_solution")
-            
-            if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
-                
-            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-            
-        if df_routes.empty:
-            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
-            
-        src_clean = req.source_route.strip()
-        tgt_clean = req.target_route.strip()
-        if is_pending_route(tgt_clean):
-            tgt_clean = "Por Distribuir"
-            
-        if is_pending_route(src_clean):
-            src_mask = df_routes["Rota"].astype(str).apply(is_pending_route)
-        else:
-            src_mask = df_routes["Rota"].astype(str).str.strip().str.upper() == src_clean.upper()
-            
-        if not src_mask.any():
-            raise HTTPException(status_code=404, detail=f"A rota '{src_clean}' não tem paragens atribuídas.")
-            
-        df_routes.loc[src_mask, "Rota"] = tgt_clean
-        if not is_pending_route(tgt_clean):
-            df_routes.loc[src_mask, "Ordem"] = 99999
-            
-        warehouses_df = state_dict.get("warehouses_geocoded")
-        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
-            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
-        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
-        
-        updated_rows = []
-        unique_routes = df_routes["Rota"].unique()
-        
-        for r_name in unique_routes:
-            route_clients = df_routes[df_routes["Rota"] == r_name].copy()
-            if is_pending_route(r_name):
-                order = 1
-                for idx, row_c in route_clients.iterrows():
-                    row_c["Rota"] = "Por Distribuir"
-                    row_c["Ordem"] = order
-                    row_c["Chegada"] = "00:00"
-                    row_c["Tempo_Espera"] = 0
-                    row_c["Tempo_Entrega"] = 0
-                    row_c["Saida"] = "00:00"
-                    row_c["KM_Anterior"] = 0.0
-                    row_c["Dist_Acum"] = 0.0
-                    updated_rows.append(row_c.to_dict())
-                    order += 1
-                continue
-                
-            route_clients = route_clients.sort_values(by="Ordem")
-            v_info = fleet_dict.get(r_name, {})
-            wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
-            depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-            v_start = str(v_info.get("start_time", "09:50"))
-            v_speed = float(v_info.get("speed", 50.0))
-            
-            recalc_stops = recalculate_route_stops(route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed)
-            updated_rows.extend(recalc_stops)
-                
-        df_new_routes = pd.DataFrame(updated_rows)
-        state_dict["routes_solution"] = df_new_routes
-        payload = serialize_state(state_dict)
-        
-        snapshot_name = f"Transferência Rota {src_clean} -> {tgt_clean} ({datetime.now().strftime('%H:%M:%S')})"
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
-                (req.project_id, current_user.id, 3, snapshot_name, payload)
-            )
-            conn.commit()
-            
-        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/reorder")
-def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends(get_current_user)):
-    proj = get_projeto(req.project_id)
-    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-        
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas para reordenar.")
-                
-            state_dict = deserialize_state(row["payload_json"])
-            raw_routes = state_dict.get("routes_solution")
-            
-            if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
-                
-            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-            
-        if df_routes.empty:
-            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
-            
-        route_mask = df_routes["Rota"] == req.route_name
-        route_stops = df_routes[route_mask].copy().sort_values(by="Ordem")
-        
-        clean_code = str(req.client_code).strip().upper()
-        current_idx = None
-        for i, (idx, r) in enumerate(route_stops.iterrows()):
-            if str(r["Cliente"]).strip().upper() == clean_code:
-                current_idx = i
-                break
-                
-        if current_idx is None:
-            raise HTTPException(status_code=404, detail="Paragem não encontrada na rota indicada.")
-            
-        target_idx = max(0, min(len(route_stops) - 1, req.new_order - 1))
-        
-        indices = list(route_stops.index)
-        elem = indices.pop(current_idx)
-        indices.insert(target_idx, elem)
-        
-        for new_pos, idx in enumerate(indices, 1):
-            df_routes.loc[idx, "Ordem"] = new_pos
-            
-        warehouses_df = state_dict.get("warehouses_geocoded")
-        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
-            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
-        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
-        
-        updated_rows = []
-        for r_name in df_routes["Rota"].unique():
-            r_clients = df_routes[df_routes["Rota"] == r_name].copy()
-            if is_pending_route(r_name):
-                ord_num = 1
-                for idx, row_c in r_clients.iterrows():
-                    row_c["Rota"] = "Por Distribuir"
-                    row_c["Ordem"] = ord_num
-                    row_c["Chegada"] = "00:00"
-                    row_c["Tempo_Espera"] = 0
-                    row_c["Tempo_Entrega"] = 0
-                    row_c["Saida"] = "00:00"
-                    row_c["KM_Anterior"] = 0.0
-                    row_c["Dist_Acum"] = 0.0
-                    updated_rows.append(row_c.to_dict())
-                    ord_num += 1
-                continue
-                
-            r_clients = r_clients.sort_values(by="Ordem")
-            v_info = fleet_dict.get(r_name, {})
-            wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
-            depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-            v_start = str(v_info.get("start_time", "09:50"))
-            v_speed = float(v_info.get("speed", 50.0))
-            
-            recalc_stops = recalculate_route_stops(r_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed)
-            updated_rows.extend(recalc_stops)
-                
-        df_new_routes = pd.DataFrame(updated_rows)
-        state_dict["routes_solution"] = df_new_routes
-        payload = serialize_state(state_dict)
-        
-        snapshot_name = f"Reordenação Rota {req.route_name} ({datetime.now().strftime('%H:%M:%S')})"
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
-                (req.project_id, current_user.id, 3, snapshot_name, payload)
-            )
-            conn.commit()
-            
-        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/optimize-route")
-@router.post("/optimize-single-route")
-def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse = Depends(get_current_user)):
-    proj = get_projeto(req.project_id)
-    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-        
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                raise HTTPException(status_code=400, detail="Não existem rotas calculadas para otimizar.")
-                
-            state_dict = deserialize_state(row["payload_json"])
-            raw_routes = state_dict.get("routes_solution")
-            
-            if raw_routes is None:
-                raise HTTPException(status_code=400, detail="Não existem rotas ativas neste projeto.")
-                
-            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-            
-        if df_routes.empty:
-            raise HTTPException(status_code=400, detail="A lista de rotas está vazia.")
-            
-        route_mask = df_routes["Rota"] == req.route_name
-        route_stops = df_routes[route_mask].copy()
-        
-        if len(route_stops) <= 1:
-            return sanitize_json_data({"status": "success", "routes": df_routes.to_dict(orient="records")})
-            
-        warehouses_df = state_dict.get("warehouses_geocoded")
-        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
-            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
-        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
-        v_info = fleet_dict.get(req.route_name, {})
-        
-        wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
-        depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-        v_start_min = parse_time_to_minutes(v_info.get("start_time", "09:50"), 590)
-        v_speed = float(v_info.get("speed", 50.0))
-        
-        # Time-Window Aware Routing for Single Route
-        # Group stops by window start time
-        stop_indices = list(route_stops.index)
-        
-        def get_stop_window_start(idx):
-            w_str = str(df_routes.loc[idx, "Janela_Horaria"])
-            w_s, _ = parse_time_window_str(w_str)
-            return w_s
-            
-        # Sort stops primarily by opening window, preserving feasibility
-        distinct_windows = sorted(list(set([get_stop_window_start(idx) for idx in stop_indices])))
-        
-        ordered_indices = []
-        cur_lat, cur_lon = depot_lat, depot_lon
-        
-        for w_val in distinct_windows:
-            window_cluster = [idx for idx in stop_indices if get_stop_window_start(idx) == w_val]
-            
-            # Nearest neighbor within the same time window cluster
-            unvisited_cluster = list(window_cluster)
-            while unvisited_cluster:
-                best_idx = None
-                best_dist = float("inf")
-                for idx in unvisited_cluster:
-                    c_lat = float(df_routes.loc[idx, "Latitude"])
-                    c_lon = float(df_routes.loc[idx, "Longitude"])
-                    d = haversine_distance(cur_lat, cur_lon, c_lat, c_lon)
-                    if d < best_dist:
-                        best_dist = d
-                        best_idx = idx
-                ordered_indices.append(best_idx)
-                unvisited_cluster.remove(best_idx)
-                cur_lat = float(df_routes.loc[best_idx, "Latitude"])
-                cur_lon = float(df_routes.loc[best_idx, "Longitude"])
-                
-        # 2-Opt local refinement strictly within the ordered sequence that does not violate time windows
-        def calc_path_dist(idx_list):
-            d_total = 0.0
-            p_lat, p_lon = depot_lat, depot_lon
-            for i in idx_list:
-                clat = float(df_routes.loc[i, "Latitude"])
-                clon = float(df_routes.loc[i, "Longitude"])
-                d_total += haversine_distance(p_lat, p_lon, clat, clon)
-                p_lat, p_lon = clat, clon
-            return d_total
-            
-        improved = True
-        while improved:
-            improved = False
-            best_path_dist = calc_path_dist(ordered_indices)
-            for i in range(len(ordered_indices) - 1):
-                for j in range(i + 1, len(ordered_indices)):
-                    new_idx_list = ordered_indices[:i] + ordered_indices[i:j+1][::-1] + ordered_indices[j+1:]
-                    
-                    # Verify that reversing does not invert time windows (e.g. putting 12:30 before 10:30)
-                    is_valid_windows = True
-                    for k in range(len(new_idx_list) - 1):
-                        w_curr = get_stop_window_start(new_idx_list[k])
-                        w_next = get_stop_window_start(new_idx_list[k+1])
-                        if w_curr > w_next and w_curr > 0 and w_next > 0:
-                            is_valid_windows = False
-                            break
-                            
-                    if is_valid_windows:
-                        new_d = calc_path_dist(new_idx_list)
-                        if new_d < best_path_dist - 0.01:
-                            ordered_indices = new_idx_list
-                            best_path_dist = new_d
-                            improved = True
-                            break
-                if improved:
-                    break
-                    
-        for pos, idx in enumerate(ordered_indices, 1):
-            df_routes.loc[idx, "Ordem"] = pos
-            
-        updated_rows = []
-        for r_name in df_routes["Rota"].unique():
-            r_clients = df_routes[df_routes["Rota"] == r_name].copy()
-            if is_pending_route(r_name):
-                ord_num = 1
-                for idx, row_c in r_clients.iterrows():
-                    row_c["Rota"] = "Por Distribuir"
-                    row_c["Ordem"] = ord_num
-                    row_c["Chegada"] = "00:00"
-                    row_c["Tempo_Espera"] = 0
-                    row_c["Tempo_Entrega"] = 0
-                    row_c["Saida"] = "00:00"
-                    row_c["KM_Anterior"] = 0.0
-                    row_c["Dist_Acum"] = 0.0
-                    updated_rows.append(row_c.to_dict())
-                    ord_num += 1
-                continue
-                
-            r_clients = r_clients.sort_values(by="Ordem")
-            v_curr_info = fleet_dict.get(r_name, {})
-            curr_wh = v_curr_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
-            depot_c_lat, depot_c_lon = get_depot_coords(warehouses_df, curr_wh)
-            curr_v_start = str(v_curr_info.get("start_time", "09:50"))
-            curr_v_speed = float(v_curr_info.get("speed", 50.0))
-            
-            recalc_stops = recalculate_route_stops(r_clients.to_dict(orient="records"), depot_c_lat, depot_c_lon, curr_v_start, curr_v_speed)
-            updated_rows.extend(recalc_stops)
-                
-        df_new_routes = pd.DataFrame(updated_rows)
-        state_dict["routes_solution"] = df_new_routes
-        payload = serialize_state(state_dict)
-        
-        snapshot_name = f"Otimização Rota {req.route_name} ({datetime.now().strftime('%H:%M:%S')})"
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
-                (req.project_id, current_user.id, 3, snapshot_name, payload)
-            )
-            conn.commit()
-            
-        return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/export-full/{project_id}")
-def export_full_project(project_id: int, current_user: UserResponse = Depends(get_current_user)):
-    proj = get_projeto(project_id)
-    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-        
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                raise HTTPException(status_code=400, detail="Não existem dados exportáveis.")
-                
-            state_dict = deserialize_state(row["payload_json"])
-            
+                    if not already_in_routes:
+                        win_s = str(d.get("janela_inicio", "") or "").strip()
+                        win_e = str(d.get("janela_fim", "") or "").strip()
+                        combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
+                        
+                        routes_list.append({
+                            "id": d_id,
+                            "ID_Original": d_id,
+                            "Rota": "Por Distribuir",
+                            "Armazem": str(d.get("armazem", "N/A")),
+                            "Ordem": pending_order,
+                            "Cliente": str(d.get("codigo_cliente", f"Cliente_{d_id}")),
+                            "Nome_Cliente": str(d.get("nome_cliente") or d.get("codigo_cliente", f"Cliente_{d_id}")),
+                            "Morada": str(d.get("morada", "N/A")),
+                            "CP": str(d.get("codigo_postal", "N/A")),
+                            "Localidade": str(d.get("_concelho") or d.get("concelho", "")),
+                            "Janela_Horaria": combined_window,
+                            "Latitude": clean_num(d.get("latitude")),
+                            "Longitude": clean_num(d.get("longitude")),
+                            "Chegada": "00:00",
+                            "Tempo_Espera": 0,
+                            "Tempo_Entrega": 15,
+                            "Saida": "00:00",
+                            "Nivel_Qualidade": clean_int(d.get("nivel_qualidade"), 1),
+                            "KM_Anterior": 0.0,
+                            "Dist_Acum": 0.0,
+                            "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
+                            "Carga_Acum": 0.0,
+                            "Carga_Vol_Acum": 0.0
+                        })
+                        pending_order += 1
             routes_df = state_dict.get('routes_solution')
             if routes_df is None or (isinstance(routes_df, pd.DataFrame) and routes_df.empty):
                 routes_df = state_dict.get('routes_df')
