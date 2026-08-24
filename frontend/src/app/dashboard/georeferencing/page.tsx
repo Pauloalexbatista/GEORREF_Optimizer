@@ -550,7 +550,19 @@ export default function GeoreferencingPage() {
                         <label className="block text-[11px] font-bold text-indigo-300">
                           📋 Colar Coordenadas (Google Maps)
                         </label>
-                        <span className="text-[9px] text-zinc-400 font-mono">Ex: 38.600914, -7.888504</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const query = `${corrAddr} ${corrCp} ${corrCity}`.trim();
+                            if (query) {
+                              window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, '_blank');
+                            }
+                          }}
+                          className="text-[10px] font-bold text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/80 border border-rose-800/60 px-2 py-0.5 rounded-lg transition-all flex items-center space-x-1 cursor-pointer"
+                          title="Abrir pesquisa desta morada no Google Maps para ver no mapa e copiar coordenadas"
+                        >
+                          <span>🗺️ Abrir Google Maps ↗</span>
+                        </button>
                       </div>
                       <input
                         type="text"
