@@ -237,14 +237,15 @@ class AdvancedRouteOptimizer:
                             time_dimension.CumulVar(model_idx).SetRange(c_start * 100, horizon_scaled)
                             time_dimension.SetCumulVarSoftUpperBound(model_idx, c_end * 100, 200000)
 
-            # 6. Warehouse & Multi-Tag Rule Routing Restrictions
+            # 6. Strict Warehouse & Multi-Tag Rule Restrictions
+            # Rule: 1 car from Warehouse X serves ONLY deliveries of Warehouse X (regardless of KM)
             for location_idx in range(num_warehouses, num_locations):
                 client_idx = location_idx - num_warehouses
                 allowed_vehicles = []
                 c_wh = str(client_warehouses[client_idx]).strip() if (client_warehouses and client_idx < len(client_warehouses)) else ""
                 c_rule = str(client_rules[client_idx]).strip() if (client_rules and client_idx < len(client_rules)) else ""
                 
-                # If warehouse is not explicitly assigned, find geographically closest warehouse depot
+                # If warehouse is not explicitly assigned in data, assign to closest warehouse depot
                 if (not c_wh or c_wh.upper() in ["", "N/A", "NONE", "NAN"]) and num_warehouses > 1:
                     min_w_dist = float("inf")
                     closest_w_idx = 0
@@ -257,18 +258,11 @@ class AdvancedRouteOptimizer:
                         c_wh = str(vehicle_warehouses[closest_w_idx]).strip()
 
                 for v_idx in range(num_vehicles):
-                    v_depot = depot_indices[v_idx] if v_idx < len(depot_indices) else 0
-                    dist_to_v_depot = float(distance_matrix[v_depot][location_idx])
-
-                    # Check warehouse compatibility
+                    # Strict warehouse matching: vehicle from warehouse X takes ONLY deliveries from warehouse X
                     if vehicle_warehouses and c_wh and c_wh.upper() not in ["", "N/A", "NONE", "NAN"]:
                         v_wh = str(vehicle_warehouses[v_idx]).strip()
                         if v_wh.lower() != c_wh.lower():
                             continue
-                            
-                    # Geographic radius limit: never send a vehicle further than 180 km from base if multiple depots exist
-                    if num_warehouses > 1 and dist_to_v_depot > 180.0:
-                        continue
 
                     # Check Multi-Tag rule compatibility
                     v_rule = str(vehicle_rules[v_idx]).strip() if (vehicle_rules and v_idx < len(vehicle_rules)) else ""
