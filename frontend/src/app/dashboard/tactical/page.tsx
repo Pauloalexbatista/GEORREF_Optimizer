@@ -1265,6 +1265,48 @@ export default function TacticalPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-850">
+                            {/* 1ª LINHA: ARMAZÉM DE ORIGEM (PARTIDA) */}
+                            {!isPending && (
+                              <tr className="bg-indigo-950/25 border-b border-indigo-800/40 text-indigo-200 font-medium">
+                                <td className="py-2.5 px-3.5 text-center">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-900/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
+                                    🛫 Partida
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <div className="font-bold text-indigo-300 flex items-center space-x-1.5">
+                                    <span>🏠</span>
+                                    <span>{whData.name}</span>
+                                  </div>
+                                  <div className="text-[10px] text-indigo-400/80 font-mono">Armazém de Origem</div>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <div className="text-zinc-200 truncate max-w-sm">{whData.address}</div>
+                                  <div className="text-[10px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800 text-[10px]">
+                                    Início Turno
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <div className="font-mono text-xs font-bold text-emerald-400">
+                                    🛫 {startTimeStr}
+                                  </div>
+                                  <span className="text-[9px] text-zinc-400 block font-normal">Saída da Base</span>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-zinc-400">
+                                  0 kg
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-zinc-400">
+                                  0.0 km
+                                </td>
+                                <td className="py-2.5 px-4 text-center text-[10px] text-indigo-300 font-semibold">
+                                  Base Central
+                                </td>
+                              </tr>
+                            )}
+
                             {filteredStops.map((stop, idx) => {
                               const isLate = !isPending && isDeliveryLate(stop.Chegada, stop.Janela_Horaria);
                               const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
@@ -1395,6 +1437,52 @@ export default function TacticalPage() {
                                 </tr>
                               );
                             })}
+
+                            {/* ÚLTIMA LINHA: REGRESSO AO ARMAZÉM (CHEGADA) */}
+                            {!isPending && allStops.length > 0 && (
+                              <tr className="bg-emerald-950/25 border-t border-emerald-800/40 text-emerald-200 font-medium">
+                                <td className="py-2.5 px-3.5 text-center">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 shadow-sm">
+                                    🏁 Regresso
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <div className="font-bold text-emerald-300 flex items-center space-x-1.5">
+                                    <span>🏠</span>
+                                    <span>{whData.name}</span>
+                                  </div>
+                                  <div className="text-[10px] text-emerald-400/80 font-mono">Regresso ao Armazém</div>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <div className="text-zinc-200 truncate max-w-sm">{whData.address}</div>
+                                  <div className="text-[10px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800 text-[10px]">
+                                    Fim Turno
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <div className="font-mono text-xs font-bold text-emerald-400">
+                                    🏁 {returnArrivalTimeStr}
+                                  </div>
+                                  <span className="text-[9px] text-zinc-400 block font-normal">
+                                    Total: {totalDurationStr}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono">
+                                  <div className="text-zinc-300 font-semibold">{totalKg.toFixed(0)} kg</div>
+                                  <div className="text-[9px] text-zinc-400">Total Entregue</div>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono">
+                                  <div className="text-indigo-300 font-semibold">{totalRouteKm.toFixed(1)} km</div>
+                                  <div className="text-[9px] text-zinc-400">+{returnDist.toFixed(1)}km regresso</div>
+                                </td>
+                                <td className="py-2.5 px-4 text-center text-[10px] text-emerald-300 font-semibold">
+                                  Fim da Rota
+                                </td>
+                              </tr>
+                            )}
                           </tbody>
                         </table>
                       )}
