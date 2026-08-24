@@ -144,6 +144,11 @@ async def upload_file(file: UploadFile = File(...), current_user: UserResponse =
                 if s.lower().strip() in ['entregas', 'clientes', 'encomendas', 'deliveries', 'orders']:
                     sheet_to_read = s
                     break
+            if not sheet_to_read:
+                for s in xls.sheet_names:
+                    if s.lower().strip() in ['rotas', 'routes', 'planeamento', 'plano_rotas']:
+                        sheet_to_read = s
+                        break
             if sheet_to_read:
                 df = pd.read_excel(xls, sheet_name=sheet_to_read, nrows=2)
             else:

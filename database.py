@@ -118,6 +118,9 @@ def init_database():
         add_column_if_missing("utilizadores", "data_validade", "TEXT DEFAULT '2099-12-31'")
         add_column_if_missing("utilizadores", "programas", "TEXT DEFAULT 'site,app'")
         add_column_if_missing("utilizadores", "password_plain", "TEXT")
+        add_column_if_missing("frota", "capacidade_volume", "REAL DEFAULT 0.0")
+        add_column_if_missing("frota", "armazem", "TEXT DEFAULT ''")
+        add_column_if_missing("entregas", "armazem", "TEXT DEFAULT 'Armazém Principal'")
         
         # Garantir privilégios SuperAdmin ao Paulo Batista se existir
         cursor.execute("""

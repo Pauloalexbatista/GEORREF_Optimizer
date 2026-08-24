@@ -394,7 +394,8 @@ export default function FleetPage() {
 
       
 
-      alert("Frota e armazens importados com sucesso!");
+      const resJson = await response.json();
+      alert(resJson.message || "Ficheiro importado com sucesso!");
 
       
 
