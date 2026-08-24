@@ -79,6 +79,21 @@ const routeColors = [
   "#e11d48", // Rose
 ];
 
+function formatTimeWindow(winStr: string): string {
+  if (!winStr || winStr === "Qualquer" || winStr === "--" || winStr === "None") return "Qualquer";
+  const cleaned = String(winStr)
+    .replace(/\d{4}-\d{2}-\d{2}\s*/g, "")
+    .replace(/T/g, " ")
+    .replace(/:00(?=\s|$|-)/g, "")
+    .trim();
+  if (cleaned.includes("-")) {
+    const parts = cleaned.split("-").map(p => p.trim().slice(0, 5));
+    if (parts[0] && parts[1]) return `${parts[0]} - ${parts[1]}`;
+    if (parts[0]) return `${parts[0]} - 23:59`;
+  }
+  return cleaned.slice(0, 13) || "Qualquer";
+}
+
 function isPendingRoute(routeName: string) {
   if (!routeName) return true;
   const s = routeName.toUpperCase();
@@ -1369,7 +1384,7 @@ export default function TacticalPage() {
                                   {/* Janela Horária */}
                                   <td className="py-2.5 px-3">
                                     <span className="font-mono text-zinc-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[11px] block text-center">
-                                      {stop.Janela_Horaria || "Qualquer"}
+                                      {formatTimeWindow(stop.Janela_Horaria)}
                                     </span>
                                   </td>
 

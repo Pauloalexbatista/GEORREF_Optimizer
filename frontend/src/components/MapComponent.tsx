@@ -38,6 +38,21 @@ interface MapComponentProps {
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
 }
 
+function formatTimeWindow(winStr?: string): string {
+  if (!winStr || winStr === "Qualquer" || winStr === "--" || winStr === "None") return "Qualquer";
+  const cleaned = String(winStr)
+    .replace(/\d{4}-\d{2}-\d{2}\s*/g, "")
+    .replace(/T/g, " ")
+    .replace(/:00(?=\s|$|-)/g, "")
+    .trim();
+  if (cleaned.includes("-")) {
+    const parts = cleaned.split("-").map(p => p.trim().slice(0, 5));
+    if (parts[0] && parts[1]) return `${parts[0]} - ${parts[1]}`;
+    if (parts[0]) return `${parts[0]} - 23:59`;
+  }
+  return cleaned.slice(0, 13) || "Qualquer";
+}
+
 function isPendingRoute(routeName: string) {
   if (!routeName) return true;
   const s = routeName.toUpperCase();
@@ -208,8 +223,12 @@ export default function MapComponent({
   const [zoomLevel, setZoomLevel] = useState(11);
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({});
   
-  // Interactive Route Selector: empty array means ALL routes visible
+  // Interactive Route & Warehouse & Search Filter states
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedWarehouse, setSelectedWarehouse] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "pending">("all");
+  const [showRoads, setShowRoads] = useState(true);
   const [fitTrigger, setFitTrigger] = useState("");
 
   useEffect(() => {
@@ -311,17 +330,61 @@ export default function MapComponent({
     });
   }, [vehicles, clients]);
 
-  // Filter clients based on selected route pills
+  // Extract unique warehouses
+  const warehouseOptions = useMemo(() => {
+    const set = new Set<string>();
+    warehouses.forEach(w => {
+      if (w.name) set.add(w.name);
+    });
+    clients.forEach(c => {
+      if (c.Armazem && c.Armazem !== "N/A") set.add(c.Armazem);
+    });
+    return Array.from(set);
+  }, [warehouses, clients]);
+
+  // Filter clients based on search query, warehouse, status, and selected route pills
   const visibleClients = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
     return clients.filter(c => {
       if (c.Latitude === 0 || c.Longitude === 0) return false;
+
+      // 1. Text Search
+      if (q) {
+        const matchCode = String(c.Cliente || "").toLowerCase().includes(q);
+        const matchName = String(c.Nome_Cliente || "").toLowerCase().includes(q);
+        const matchAddr = String(c.Morada || "").toLowerCase().includes(q);
+        const matchCP = String(c.CP || "").toLowerCase().includes(q);
+        const matchLoc = String(c.Localidade || "").toLowerCase().includes(q);
+        const matchRoute = String(c.Rota || "").toLowerCase().includes(q);
+        if (!matchCode && !matchName && !matchAddr && !matchCP && !matchLoc && !matchRoute) {
+          return false;
+        }
+      }
+
+      // 2. Warehouse Filter
+      if (selectedWarehouse !== "all") {
+        const cWh = (c.Armazem || "").toLowerCase();
+        const selWh = selectedWarehouse.toLowerCase();
+        if (cWh && cWh !== "n/a" && cWh !== selWh) {
+          // If vehicle has warehouse prefix
+          const rName = (c.Rota || "").toLowerCase();
+          if (!rName.includes(selWh)) return false;
+        }
+      }
+
+      // 3. Status Filter
+      const isPending = isPendingRoute(c.Rota);
+      if (statusFilter === "pending" && !isPending) return false;
+      if (statusFilter === "with_cargo" && isPending) return false;
+
+      // 4. Route selection pills
       if (selectedRoutes.length === 0) return true;
-      if (isPendingRoute(c.Rota)) {
+      if (isPending) {
         return selectedRoutes.includes("Por Distribuir");
       }
       return selectedRoutes.includes(c.Rota);
     });
-  }, [clients, selectedRoutes]);
+  }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes]);
 
   // Points for auto fit bounds
   const visiblePoints: [number, number][] = useMemo(() => {
@@ -554,7 +617,7 @@ export default function MapComponent({
                     <p className="text-zinc-600 text-[10px] font-medium">{c.CP} {c.Localidade}</p>
                     
                     <div className="pt-1 flex items-center justify-between text-[11px] text-zinc-700 border-t border-zinc-200">
-                      <span>Janela: <b>{c.Janela_Horaria || "Qualquer"}</b></span>
+                      <span>Janela: <b>{formatTimeWindow(c.Janela_Horaria)}</b></span>
                       <span>Carga: <b>{c.Carga_Acum || 0} kg</b></span>
                     </div>
                   </div>

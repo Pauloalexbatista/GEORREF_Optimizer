@@ -104,15 +104,53 @@ def is_pending_route(route_name: str) -> bool:
     s = str(route_name).upper()
     return "PENDENTE" in s or "DISTRIBUIR" in s
 
+def format_time_slot(t_val) -> str:
+    if t_val is None or pd.isna(t_val):
+        return ""
+    s = str(t_val).strip()
+    if not s or s.lower() in ["none", "nan", "qualquer", "n/a", "nat", "0", "0.0"]:
+        return ""
+    if " " in s:
+        s = s.split(" ")[-1].strip()
+    if "T" in s:
+        s = s.split("T")[-1].strip()
+    if ":" in s:
+        parts = s.split(":")
+        try:
+            h = int(parts[0])
+            m = int(parts[1])
+            return f"{h:02d}:{m:02d}"
+        except Exception:
+            pass
+    return s[:5]
+
+def format_time_window_display(start_val, end_val) -> str:
+    s1 = format_time_slot(start_val)
+    s2 = format_time_slot(end_val)
+    if s1 and s2:
+        return f"{s1} - {s2}"
+    if s1:
+        return f"{s1} - 23:59"
+    return "Qualquer"
+
 def parse_time_to_minutes(t_val, default=480) -> int:
-    if not t_val:
+    if not t_val or pd.isna(t_val):
         return default
-    s = str(t_val).strip()[:5]
+    s = str(t_val).strip()
+    if not s or s.lower() in ["none", "nan", "qualquer", "n/a", "nat"]:
+        return default
+    if " " in s:
+        s = s.split(" ")[-1].strip()
+    if "T" in s:
+        s = s.split("T")[-1].strip()
     try:
         parts = s.split(":")
-        return int(parts[0]) * 60 + int(parts[1])
+        if len(parts) >= 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        return default
     except Exception:
         return default
+
 
 def minutes_to_time_str(m: int) -> str:
     h = (int(m) // 60) % 24
@@ -481,9 +519,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     client_row = deliveries_df.iloc[client_idx]
                     visited_client_indices.add(client_idx)
                     
-                    win_s = str(client_row.get("Slot1_Inicio", "") or "").strip()
-                    win_e = str(client_row.get("Slot1_Fim", "") or "").strip()
-                    combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
+                    win_s = client_row.get("Slot1_Inicio", "")
+                    win_e = client_row.get("Slot1_Fim", "")
+                    combined_window = format_time_window_display(win_s, win_e)
                     
                     deliv_id = int(client_row.get("id", client_idx + 1))
                     raw_stops.append({
@@ -526,9 +564,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         pending_order = 1
         for client_idx in sorted(dropped_client_indices):
             client_row = deliveries_df.iloc[client_idx]
-            win_s = str(client_row.get("Slot1_Inicio", "") or "").strip()
-            win_e = str(client_row.get("Slot1_Fim", "") or "").strip()
-            combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
+            win_s = client_row.get("Slot1_Inicio", "")
+            win_e = client_row.get("Slot1_Fim", "")
+            combined_window = format_time_window_display(win_s, win_e)
             
             deliv_id = int(client_row.get("id", client_idx + 1))
             routes_list.append({

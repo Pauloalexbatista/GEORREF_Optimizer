@@ -23,6 +23,21 @@ const routeColors = [
   "#e11d48", // Rose
 ];
 
+function formatTimeWindow(winStr: string): string {
+  if (!winStr || winStr === "Qualquer" || winStr === "--" || winStr === "None") return "Qualquer";
+  const cleaned = String(winStr)
+    .replace(/\d{4}-\d{2}-\d{2}\s*/g, "")
+    .replace(/T/g, " ")
+    .replace(/:00(?=\s|$|-)/g, "")
+    .trim();
+  if (cleaned.includes("-")) {
+    const parts = cleaned.split("-").map(p => p.trim().slice(0, 5));
+    if (parts[0] && parts[1]) return `${parts[0]} - ${parts[1]}`;
+    if (parts[0]) return `${parts[0]} - 23:59`;
+  }
+  return cleaned.slice(0, 13) || "Qualquer";
+}
+
 function isPendingRoute(routeName: string) {
   if (!routeName) return true;
   const s = routeName.toUpperCase();
@@ -874,7 +889,7 @@ export default function RoutesMatrixPage() {
                               <td className={`py-2.5 px-4 text-center font-mono text-[11px] ${
                                 isLate ? "text-rose-400 font-bold" : "text-zinc-400"
                               }`}>
-                                {stop.Janela_Horaria || "Qualquer"}
+                                {formatTimeWindow(stop.Janela_Horaria)}
                               </td>
                               <td className={`py-2.5 px-4 text-center font-mono font-semibold ${
                                 isPending ? "text-zinc-300" : isLate ? "text-rose-400 bg-rose-950/40 rounded border border-rose-800/50" : "text-emerald-400"
