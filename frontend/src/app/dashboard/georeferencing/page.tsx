@@ -268,34 +268,51 @@ export default function GeoreferencingPage() {
     setGoogleCoordsInput("");
   };
 
+  const saveCurrentDelivery = async () => {
+    if (!editingDelivery || !selectedProject) return;
+    await apiRequest(`/api/geocoding/delivery/${editingDelivery.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        morada: corrAddr,
+        codigo_postal: corrCp,
+        concelho: corrCity,
+        latitude: corrLat,
+        longitude: corrLon,
+      }),
+    });
+    const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+    setDeliveries(data);
+  };
+
+  const handleGoToPrevious = async () => {
+    if (!editingDelivery) return;
+    const currentIndex = filteredAndSortedDeliveries.findIndex(d => d.id === editingDelivery.id);
+    if (currentIndex > 0) {
+      // Save current if has changes
+      try {
+        if (corrLat !== editingDelivery.latitude || corrLon !== editingDelivery.longitude || corrAddr !== editingDelivery.morada) {
+          await saveCurrentDelivery();
+        }
+      } catch (e) {
+        console.error("Auto-save on previous error:", e);
+      }
+      openCorrection(filteredAndSortedDeliveries[currentIndex - 1]);
+    }
+  };
+
   const submitCorrection = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!editingDelivery || !selectedProject) return;
 
     setLoading(true);
     try {
-      await apiRequest(`/api/geocoding/delivery/${editingDelivery.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          morada: corrAddr,
-          codigo_postal: corrCp,
-          concelho: corrCity,
-          latitude: corrLat,
-          longitude: corrLon,
-        }),
-      });
-
-      // Refresh list
-      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
-      setDeliveries(data);
+      await saveCurrentDelivery();
 
       const currentIndex = filteredAndSortedDeliveries.findIndex(d => d.id === editingDelivery.id);
-      const remainingFailed = filteredAndSortedDeliveries.filter(
-        (d, idx) => idx > currentIndex && (d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99)
-      );
-
-      if (remainingFailed.length > 0) {
-        openCorrection(remainingFailed[0]);
+      
+      // If there is a next delivery in current filter, go to it
+      if (currentIndex >= 0 && currentIndex < filteredAndSortedDeliveries.length - 1) {
+        openCorrection(filteredAndSortedDeliveries[currentIndex + 1]);
       } else {
         setEditingDelivery(null);
       }
@@ -675,22 +692,40 @@ export default function GeoreferencingPage() {
                   onClick={() => setEditingDelivery(null)}
                   className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
                 >
-                  Cancelar
+                  Fechar
                 </button>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center space-x-2 shadow-lg shadow-indigo-600/20"
-                >
-                  {loading && (
-                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  )}
-                  <span>{loading ? "A gravar..." : "Gravar & Próximo"}</span>
-                </button>
+                <div className="flex items-center space-x-2.5">
+                  {(() => {
+                    const cIdx = filteredAndSortedDeliveries.findIndex(d => d.id === editingDelivery.id);
+                    const hasPrev = cIdx > 0;
+                    return (
+                      <button
+                        type="button"
+                        disabled={!hasPrev || loading}
+                        onClick={handleGoToPrevious}
+                        className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-750 disabled:opacity-40 disabled:cursor-not-allowed border border-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow"
+                        title="Voltar ao cliente anterior da lista"
+                      >
+                        <span>⬅️ Anterior</span>
+                      </button>
+                    );
+                  })()}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center space-x-2 shadow-lg shadow-indigo-600/20"
+                  >
+                    {loading && (
+                      <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
+                    <span>{loading ? "A gravar..." : "Gravar & Próximo ➔"}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
