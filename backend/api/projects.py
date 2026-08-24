@@ -64,7 +64,7 @@ def get_project_details(project_id: int, current_user: UserResponse = Depends(ge
             raise HTTPException(status_code=404, detail='Projeto não encontrado.')
             
         # Ensure it belongs to the user's company
-        if proj['empresa_id'] != current_user.empresa_id:
+        if proj['empresa_id'] != current_user.empresa_id and not getattr(current_user, 'is_superadmin', False):
             raise HTTPException(status_code=403, detail='Não tem permissão para aceder a este projeto.')
             
         return ProjectResponse(

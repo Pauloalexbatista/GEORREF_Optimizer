@@ -199,7 +199,7 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
     proj = get_projeto(mapping.project_id)
 
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
 
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
 
@@ -713,7 +713,7 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
 
     proj = get_projeto(project_id)
 
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
 
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
 
@@ -826,7 +826,7 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
 
                 raise HTTPException(status_code=404, detail="Entrega não encontrada.")
 
-            if row["empresa_id"] != current_user.empresa_id:
+            if row["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False):
 
                 raise HTTPException(status_code=403, detail="Não tem permissão para editar esta entrega.")
 
@@ -968,7 +968,7 @@ def export_geocoding_results(
 
     proj = get_projeto(project_id)
 
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
 
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
 

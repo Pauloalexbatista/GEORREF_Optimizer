@@ -355,7 +355,7 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
 
 
 
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
 
 
 
@@ -627,7 +627,7 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
 
 
 
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
 
 
 
@@ -870,7 +870,7 @@ async def import_fleet_warehouses(
     current_user: UserResponse = Depends(get_current_user)
 ):
     proj = get_projeto(project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:

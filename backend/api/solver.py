@@ -175,12 +175,39 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
     return fleet_dict
 
 def get_depot_coords(warehouses_df, wh_name=None):
-    if warehouses_df is not None and not warehouses_df.empty:
-        if wh_name:
-            match = warehouses_df[warehouses_df["Nome_Armazem"].astype(str).str.strip().str.lower() == str(wh_name).strip().lower()]
-            if not match.empty:
-                return float(match.iloc[0]["Latitude"]), float(match.iloc[0]["Longitude"])
-        return float(warehouses_df.iloc[0]["Latitude"]), float(warehouses_df.iloc[0]["Longitude"])
+    try:
+        if warehouses_df is not None:
+            if isinstance(warehouses_df, list):
+                warehouses_df = pd.DataFrame(warehouses_df)
+            if isinstance(warehouses_df, pd.DataFrame) and not warehouses_df.empty:
+                # Find name column
+                name_col = None
+                for col in ["Nome_Armazem", "Nome_Armazém", "Armazem", "Armazém", "Nome", "name", "warehouse", "Armazem_Nome"]:
+                    if col in warehouses_df.columns:
+                        name_col = col
+                        break
+                
+                # Find lat and lon columns
+                lat_col = None
+                for col in ["Latitude", "latitude", "lat", "Lat", "LAT"]:
+                    if col in warehouses_df.columns:
+                        lat_col = col
+                        break
+                        
+                lon_col = None
+                for col in ["Longitude", "longitude", "lon", "Lon", "lng", "Lng", "LON", "LNG"]:
+                    if col in warehouses_df.columns:
+                        lon_col = col
+                        break
+                        
+                if lat_col and lon_col:
+                    if wh_name and name_col:
+                        match = warehouses_df[warehouses_df[name_col].astype(str).str.strip().str.lower() == str(wh_name).strip().lower()]
+                        if not match.empty:
+                            return float(match.iloc[0][lat_col]), float(match.iloc[0][lon_col])
+                    return float(warehouses_df.iloc[0][lat_col]), float(warehouses_df.iloc[0][lon_col])
+    except Exception as e:
+        print(f"Notice in get_depot_coords: {e}")
     return 38.6593, -9.1758
 
 def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 15) -> list:
@@ -243,7 +270,7 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
 @router.post("/solve")
 def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -556,7 +583,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
 @router.get("/{project_id}")
 def get_solver_solution(project_id: int, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -626,7 +653,7 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
 @router.post("/reassign")
 def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -749,7 +776,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
 @router.post("/reassign-entire-route")
 def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -845,7 +872,7 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
 @router.post("/reorder")
 def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -944,7 +971,7 @@ def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends
 @router.post("/optimize-single-route")
 def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -1109,7 +1136,7 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
 @router.get("/export-full/{project_id}")
 def export_full_project(project_id: int, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
@@ -1188,7 +1215,7 @@ class OptimizeAllSequencesRequest(BaseModel):
 @router.post("/optimize-all-sequences")
 def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(req.project_id)
-    if not proj or proj["empresa_id"] != current_user.empresa_id:
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
         
     try:
