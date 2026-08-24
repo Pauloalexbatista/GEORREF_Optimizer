@@ -460,10 +460,17 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         routes_list = []
         visited_client_indices = set()
         
+        default_wh_name = "Armazém Principal"
+        if warehouses_df is not None and not warehouses_df.empty:
+            for w_col in ["Nome_Armazem", "Nome_Armazém", "name", "Nome", "armazem", "warehouse"]:
+                if w_col in warehouses_df.columns:
+                    default_wh_name = str(warehouses_df.iloc[0][w_col])
+                    break
+
         for vehicle_idx, route in enumerate(result["routes"]):
             vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
             v_info = fleet_dict.get(vehicle_name, {})
-            warehouse_origin = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"])
+            warehouse_origin = v_info.get("warehouse", default_wh_name)
             depot_lat, depot_lon = get_depot_coords(warehouses_df, warehouse_origin)
             
             raw_stops = []
@@ -569,12 +576,13 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             )
             conn.commit()
             
-        return {
+        resp_obj = {
             "status": "success",
             "routes": routes_list,
             "vehicles": vehicle_names,
             "quality_metrics": result.get("quality_metrics", {})
         }
+        return sanitize_json_data(resp_obj)
     except HTTPException as he:
         raise he
     except Exception as e:

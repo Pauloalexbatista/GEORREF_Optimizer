@@ -294,7 +294,7 @@ export default function TacticalPage() {
             balance_load: loadMode === "balanced",
             max_route_duration: maxTravelTime,
             respect_time_windows: respectWindows,
-            time_limit_seconds: 30,
+            time_limit_seconds: 12,
           },
         }),
       });
