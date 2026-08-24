@@ -23,7 +23,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [createProjError, setCreateProjError] = useState<string | null>(null);
   const [showLangMenu, setShowLangMenu] = useState(false);
 
-      const menuItems = [
+  const menuItems = [
     {
       name: t.navigation.geocoding,
       href: "/dashboard/georeferencing",
@@ -117,7 +117,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const currentLang = languageOptions.find((l) => l.code === language) || languageOptions[0];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
+    <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans">
       {/* Sidebar */}
       <aside className="w-64 border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-xl flex flex-col justify-between z-30 shrink-0 no-print">
         <div>
@@ -192,8 +192,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="bg-zinc-850 hover:bg-rose-950/60 border border-zinc-800 hover:border-rose-700/80 p-1.5 rounded-lg text-zinc-400 hover:text-rose-300 transition-all cursor-pointer shrink-0"
-                  title="Eliminar projeto atual"
+                  className="bg-zinc-850 hover:bg-rose-950/60 border border-zinc-800 hover:border-rose-700/80 p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 transition-all cursor-pointer shrink-0"
+                  title={`Eliminar projeto "${selectedProject.nome}"`}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -225,7 +225,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </nav>
         </div>
 
-                {/* User Info & License Status & Logout */}
+        {/* User Info & License Status & Logout */}
         <div className="p-4 border-t border-zinc-800 bg-zinc-950/20 flex flex-col space-y-3">
           <div className="flex items-center space-x-3 px-2">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0">
@@ -234,43 +234,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="min-w-0 flex-1">
               <div className="flex items-center space-x-1.5">
                 <p className="text-xs font-bold text-zinc-100 truncate">{user.nome}</p>
-                {(user as any)?.is_superadmin && (
-                  <span className="px-1.5 py-0.2 rounded text-[8px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    ADMIN
+                {((user as any).is_superadmin || (user as any).is_admin) && (
+                  <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-400 border border-amber-400/30">
+                    {(user as any).is_superadmin ? "ADMIN" : "ADMIN"}
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-zinc-300 truncate">{user.email}</p>
+              <p className="text-[10px] text-zinc-400 truncate">{user.email}</p>
             </div>
           </div>
 
-          {/* License Expiry Indicator for User */}
-          <div className="px-2 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 flex flex-col space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Subscrição</span>
-              {(user as any)?.is_superadmin ? (
-                <span className="text-[10px] font-black text-amber-400">Vitalícia</span>
-              ) : (user as any)?.dias_restantes <= 0 ? (
-                <span className="text-[10px] font-black text-red-400">Expirada</span>
-              ) : (user as any)?.dias_restantes <= 15 ? (
-                <span className="text-[10px] font-black text-amber-400">{(user as any).dias_restantes} dias</span>
-              ) : (
-                <span className="text-[10px] font-black text-emerald-400">{(user as any)?.dias_restantes} dias</span>
-              )}
-            </div>
-            {!(user as any)?.is_superadmin && (user as any)?.data_validade && (
-              <span className="text-[9px] text-zinc-300 font-mono">
-                Válido até {(user as any).data_validade.slice(0, 10)}
-              </span>
-            )}
+          <div className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-[10px] text-zinc-300">
+            <span className="text-zinc-400 uppercase font-mono">Subscrição</span>
+            <span className="font-bold text-amber-400">Vitalícia</span>
           </div>
 
           <button
             type="button"
             onClick={logout}
-            className="w-full flex items-center justify-center space-x-2 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+            className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850/80 border border-zinc-800/80 transition-all cursor-pointer"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
             <span>{t.auth.logout}</span>
@@ -279,49 +263,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-zinc-950">
         {/* Top Header */}
-        <header className="h-16 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-40 no-print shrink-0">
-          <div className="min-w-0 flex-1 mr-4">
-            <h2 className="text-base font-bold text-zinc-100 truncate">
-              {selectedProject ? selectedProject.nome : t.navigation.selectProject}
+        <header className="h-16 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-xl flex items-center justify-between px-8 z-20 shrink-0 no-print">
+          <div className="flex items-center space-x-4">
+            <h2 className="text-sm font-bold text-zinc-100 truncate">
+              {selectedProject ? selectedProject.nome : t.navigation.noProjectSelected}
             </h2>
-            {selectedProject?.descricao && (
-              <p className="text-[11px] text-zinc-300 truncate">{selectedProject.descricao}</p>
+            {selectedProject && selectedProject.descricao && (
+              <span className="text-xs text-zinc-400 hidden md:inline border-l border-zinc-800 pl-4 truncate">
+                {selectedProject.descricao}
+              </span>
             )}
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Top License Status Pill for User */}
-            {user && (
-              <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-zinc-850 border border-zinc-800 text-xs shadow-sm">
-                <span className="text-zinc-400 font-semibold">Licença:</span>
-                {(user as any)?.is_superadmin ? (
-                  <span className="font-bold text-amber-400 flex items-center space-x-1">
-                    <span>👑</span>
-                    <span>Admin Vitalício</span>
-                  </span>
-                ) : (user as any)?.dias_restantes <= 0 ? (
-                  <span className="font-extrabold text-red-400">🔴 Expirada</span>
-                ) : (user as any)?.dias_restantes <= 15 ? (
-                  <span className="font-bold text-amber-400">
-                    🟡 Restam {(user as any).dias_restantes} dias (até {(user as any).data_validade?.slice(0, 10)})
-                  </span>
-                ) : (
-                  <span className="font-bold text-emerald-400">
-                    🟢 Restam {(user as any)?.dias_restantes} dias (até {(user as any)?.data_validade?.slice(0, 10)})
-                  </span>
-                )}
-              </div>
-            )}
+            {/* License info pill */}
+            <div className="hidden lg:flex items-center space-x-2 bg-zinc-850 border border-zinc-800 px-3 py-1.5 rounded-xl text-xs">
+              <span className="text-zinc-400">Licença:</span>
+              <span className="font-bold text-amber-400 flex items-center gap-1">
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Admin Vitalício
+              </span>
+            </div>
 
-            {/* Language Switcher */}
+            {/* Language Selector Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowLangMenu(!showLangMenu)}
-                className="flex items-center space-x-1.5 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-300 transition-all cursor-pointer"
-                title={t.common.language}
+                className="flex items-center space-x-1.5 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 px-2.5 py-1.5 rounded-xl text-xs text-zinc-200 transition-all cursor-pointer"
               >
                 <span>{currentLang.flag}</span>
                 <span className="font-mono uppercase text-[11px]">{currentLang.code}</span>
@@ -362,12 +335,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               title={theme === "dark" ? t.common.lightMode : t.common.darkMode}
             >
               {theme === "dark" ? (
-                // Sun Icon
                 <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
               ) : (
-                // Moon Icon
                 <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                 </svg>
@@ -410,53 +381,133 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Modal Criar Projeto */}
       {showCreateProj && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-zinc-100 mb-4">{t.navigation.newProject}</h3>
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                  {t.navigation.projectName}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newProjName}
-                  onChange={(e) => setNewProjName(e.target.value)}
-                  placeholder="Ex: Planeamento de Agosto 2026"
-                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-3.5 py-2 text-xs text-zinc-100 placeholder-zinc-400 transition-all outline-none"
-                />
-              </div>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-zinc-100">{t.navigation.newProject}</h3>
+              <span className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                projects.length >= 10
+                  ? "bg-rose-950/60 border-rose-800 text-rose-300 font-bold"
+                  : "bg-zinc-800 border-zinc-700 text-zinc-400"
+              }`}>
+                {projects.length}/10 Projetos
+              </span>
+            </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                  {t.navigation.projectDesc}
-                </label>
-                <textarea
-                  value={newProjDesc}
-                  onChange={(e) => setNewProjDesc(e.target.value)}
-                  placeholder="..."
-                  rows={3}
-                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-3.5 py-2 text-xs text-zinc-100 placeholder-zinc-400 transition-all outline-none resize-none"
-                />
+            {projects.length >= 10 ? (
+              <div className="space-y-4">
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs text-rose-200 leading-relaxed">
+                  <p className="font-bold flex items-center space-x-1.5 text-rose-300 mb-1">
+                    <span>⚠️</span> <span>Limite de 10 Projetos Atingido</span>
+                  </p>
+                  Atingiu o limite máximo de 10 projetos ativos por empresa. Por favor, elimine um projeto antigo com o botão 🗑️ antes de criar um novo.
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateProj(false)}
+                    className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
+            ) : (
+              <form onSubmit={handleCreateProject} className="space-y-4">
+                {createProjError && (
+                  <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-800 text-xs text-rose-300 font-medium">
+                    {createProjError}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+                    {t.navigation.projectName}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newProjName}
+                    onChange={(e) => setNewProjName(e.target.value)}
+                    placeholder="Ex: Planeamento de Agosto 2026"
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-3.5 py-2 text-xs text-zinc-100 placeholder-zinc-400 transition-all outline-none"
+                  />
+                </div>
 
-              <div className="flex justify-end space-x-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateProj(false)}
-                  className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  {t.common.cancel}
-                </button>
-                <button
-                  type="submit"
-                  className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white px-4 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-md shadow-indigo-500/10 cursor-pointer"
-                >
-                  {t.navigation.createProjectBtn}
-                </button>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+                    {t.navigation.projectDesc}
+                  </label>
+                  <textarea
+                    value={newProjDesc}
+                    onChange={(e) => setNewProjDesc(e.target.value)}
+                    placeholder="Descrição opcional..."
+                    rows={3}
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-3.5 py-2 text-xs text-zinc-100 placeholder-zinc-400 transition-all outline-none resize-none"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateProj(false)}
+                    className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    {t.common.cancel}
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white px-4 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-md shadow-indigo-500/10 cursor-pointer"
+                  >
+                    {t.navigation.createProjectBtn}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Eliminar Projeto */}
+      {showDeleteConfirm && selectedProject && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center text-lg shrink-0">
+                🗑️
               </div>
-            </form>
+              <div>
+                <h3 className="text-base font-bold text-zinc-100">Eliminar Projeto</h3>
+                <p className="text-xs text-zinc-400">Esta ação é irreversível.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300 space-y-2">
+              <p>
+                Tem a certeza que deseja eliminar o projeto <b className="text-white font-bold">"{selectedProject.nome}"</b>?
+              </p>
+              <p className="text-[11px] text-rose-400/90 font-medium">
+                ⚠️ Serão eliminadas permanentemente todas as entregas, viaturas e rotas calculadas deste projeto.
+              </p>
+            </div>
+
+            <div className="flex space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingProj}
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingProj}
+                onClick={handleDeleteCurrentProject}
+                className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-rose-600/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingProj ? "A eliminar..." : "Sim, Eliminar"}
+              </button>
+            </div>
           </div>
         </div>
       )}
