@@ -127,8 +127,38 @@ export default function DetachedMapPage() {
           clients={clients}
           warehouses={warehouses}
           vehicles={vehicles}
-          onMoveClientRoute={() => {}}
-          onUpdateClientCoords={() => {}}
+          onMoveClientRoute={(clientName, newRoute, delivId, addr) => {
+            const updated = clients.map((c) => {
+              if (c.Cliente === clientName || (delivId && c.id === delivId)) {
+                return { ...c, Rota: newRoute };
+              }
+              return c;
+            });
+            setClients(updated);
+            const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles };
+            try {
+              const ch = new BroadcastChannel("georoute_map_sync");
+              ch.postMessage(payload);
+              localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+              ch.close();
+            } catch (e) {}
+          }}
+          onUpdateClientCoords={(clientName, lat, lon) => {
+            const updated = clients.map((c) => {
+              if (c.Cliente === clientName) {
+                return { ...c, Latitude: lat, Longitude: lon, Rota: "Por Distribuir" };
+              }
+              return c;
+            });
+            setClients(updated);
+            const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles };
+            try {
+              const ch = new BroadcastChannel("georoute_map_sync");
+              ch.postMessage(payload);
+              localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+              ch.close();
+            } catch (e) {}
+          }}
         />
       </div>
     </div>

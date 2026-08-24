@@ -5,9 +5,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
-import dynamic from "next/dynamic";
-
-const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
 interface RouteNode {
   id?: number;
@@ -119,6 +116,19 @@ function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
   return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
 }
 
+function isDeliveryLate(serviceStartTime: string, windowStr: string): boolean {
+  if (!serviceStartTime || !windowStr || windowStr === "Qualquer" || windowStr === "--") return false;
+  const parts = windowStr.split("-");
+  if (parts.length < 2) return false;
+  const endStr = parts[1].trim().slice(0, 5);
+  const [endH, endM] = endStr.split(":").map((x) => parseInt(x, 10) || 0);
+  const [startH, startM] = serviceStartTime.split(":").map((x) => parseInt(x, 10) || 0);
+  const endMin = endH * 60 + endM;
+  const startMin = startH * 60 + startM;
+  if (endMin <= 0 || endMin >= 1440) return false;
+  return startMin > endMin;
+}
+
 function calculateDurationString(startStr: string, endStr: string): string {
   const [h1, m1] = (startStr || "08:00").split(":").map(Number);
   const [h2, m2] = (endStr || "08:00").split(":").map(Number);
@@ -138,28 +148,50 @@ export default function TacticalPage() {
   const [fleetList, setFleetList] = useState<VehicleData[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [solving, setSolving] = useState(false);
+  const [reorderingAll, setReorderingAll] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
-  // Optimization params state & 2x2 Decision Matrix
-  const [strategy, setStrategy] = useState<"distance" | "far_first">("far_first");
-  const [loadMode, setLoadMode] = useState<"full" | "balanced">("full");
-  const [timeLimit, setTimeLimit] = useState(15);
-  const [distWeight, setDistWeight] = useState(100);
-  const [balWeight, setBalWeight] = useState(0);
-  const [maxDurStr, setMaxDurStr] = useState("08:00");
+  // Accordion state
+  const [expandedRoutes, setExpandedRoutes] = useState<Record<string, boolean>>({
+    "Por Distribuir": true,
+  });
+
+  // Filter & Search states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState("all");
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<"all" | "active" | "empty" | "pending" | "late">("all");
+
+  // Strategy Config Drawer
   const [showConfig, setShowConfig] = useState(false);
+  const [strategy, setStrategy] = useState("distance");
+  const [loadMode, setLoadMode] = useState("balanced");
+  const [maxTravelTime, setMaxTravelTime] = useState("09:00");
+  const [respectWindows, setRespectWindows] = useState(true);
 
   const channelRef = useRef<BroadcastChannel | null>(null);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      channelRef.current = new BroadcastChannel("georoute_map_sync");
+    }
+    return () => {
+      channelRef.current?.close();
+    };
+  }, []);
+
   const broadcastUpdate = (updatedRoutes: RouteNode[], vList: string[], wList: WarehouseData[]) => {
     const mappedClients = updatedRoutes.map((r) => ({
+      id: r.id || r.ID_Original,
+      ID_Original: r.id || r.ID_Original,
       Cliente: r.Cliente,
       Nome_Cliente: r.Nome_Cliente || r.Cliente,
       Morada: r.Morada,
+      CP: r.CP,
+      Localidade: r.Localidade,
       Latitude: r.Latitude,
       Longitude: r.Longitude,
       Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
@@ -168,6 +200,8 @@ export default function TacticalPage() {
       Chegada: r.Chegada,
       Saida: r.Saida,
       KM_Anterior: r.KM_Anterior,
+      Dist_Acum: r.Dist_Acum,
+      Carga_Acum: r.Carga_Acum,
     }));
 
     const payload = { type: "MAP_UPDATE", clients: mappedClients, warehouses: wList, vehicles: vList };
@@ -179,7 +213,7 @@ export default function TacticalPage() {
 
   const handleOpenDetachedMap = () => {
     if (typeof window !== "undefined") {
-      window.open("/dashboard/tactical/detached-map", "GeoRouteMap2", "width=1280,height=800,menubar=no,toolbar=no");
+      window.open("/dashboard/tactical/detached-map", "GeoRouteDetachedMap", "width=1350,height=900,menubar=no,toolbar=no,location=no,status=no");
     }
   };
 
@@ -189,20 +223,6 @@ export default function TacticalPage() {
     }
   };
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      channelRef.current = new BroadcastChannel("georoute_map_sync");
-      channelRef.current.onmessage = (event) => {
-        if (event.data?.type === "MAP_UPDATE") {
-          loadTacticalData();
-        }
-      };
-    }
-    return () => {
-      channelRef.current?.close();
-    };
-  }, []);
-
   const loadTacticalData = async () => {
     if (!selectedProject) return;
     setLoading(true);
@@ -210,7 +230,7 @@ export default function TacticalPage() {
     try {
       const fleetRes = await apiRequest(`/api/fleet/${selectedProject.id}`);
       const rawFleet: VehicleData[] = fleetRes.fleet || [];
-      const vList = rawFleet.map((v) => v.veiculo);
+      const vList = rawFleet.map((v: any) => v.veiculo);
       const rawWh: WarehouseData[] = fleetRes.warehouses || [];
 
       setFleetList(rawFleet);
@@ -227,14 +247,18 @@ export default function TacticalPage() {
       }));
       setRoutes(loadedRoutes);
 
-      if (loadedRoutes.length > 0) {
-        const firstWithStops = loadedRoutes.find((r) => !isPendingRoute(r.Rota));
-        setExpandedRoute(firstWithStops ? firstWithStops.Rota : "Por Distribuir");
-      }
+      const initialExp: Record<string, boolean> = { "Por Distribuir": true };
+      vList.forEach((v: string) => {
+        initialExp[v] = true;
+      });
+      setExpandedRoutes(initialExp);
+
+      const assignedCount = loadedRoutes.filter((r) => !isPendingRoute(r.Rota)).length;
+      setStatusMsg(`Carregadas ${loadedRoutes.length} paragens (${assignedCount} atribuídas, ${vList.length} viaturas).`);
       broadcastUpdate(loadedRoutes, vList, rawWh);
     } catch (e: any) {
       console.error("Failed to load tactical data:", e);
-      setError("Erro ao carregar dados táticos. Por favor configure a frota e os clientes primeiro.");
+      setError("Erro ao carregar dados táticos. Certifique-se de que a frota e os clientes estão configurados.");
     } finally {
       setLoading(false);
     }
@@ -244,13 +268,22 @@ export default function TacticalPage() {
     loadTacticalData();
   }, [selectedProject]);
 
+  const toggleRouteExpand = (routeName: string) => {
+    setExpandedRoutes((prev) => ({ ...prev, [routeName]: !prev[routeName] }));
+  };
+
+  const toggleAllRoutes = (expand: boolean) => {
+    const allState: Record<string, boolean> = { "Por Distribuir": expand };
+    vehicles.forEach((v) => {
+      allState[v] = expand;
+    });
+    setExpandedRoutes(allState);
+  };
+
   const handleSolveRoutes = async () => {
     if (!selectedProject) return;
     setSolving(true);
     setError(null);
-    setInfoMsg(null);
-    setShowConfig(false);
-
     try {
       const res = await apiRequest("/api/solver/solve", {
         method: "POST",
@@ -258,12 +291,10 @@ export default function TacticalPage() {
           project_id: selectedProject.id,
           params: {
             strategy: strategy,
-            load_mode: loadMode,
-            time_limit: timeLimit,
-            time_limit_seconds: timeLimit,
-            distance_weight: distWeight,
-            balance_weight: loadMode === "balanced" ? (balWeight > 0 ? balWeight : 50) : 0,
-            max_route_duration: maxDurStr,
+            balance_load: loadMode === "balanced",
+            max_route_duration: maxTravelTime,
+            respect_time_windows: respectWindows,
+            time_limit_seconds: 30,
           },
         }),
       });
@@ -272,7 +303,6 @@ export default function TacticalPage() {
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-
       setRoutes(updatedRoutes);
       if (res.vehicles && res.vehicles.length > 0) {
         setVehicles(res.vehicles);
@@ -280,30 +310,19 @@ export default function TacticalPage() {
 
       const pendingCount = updatedRoutes.filter((r) => isPendingRoute(r.Rota)).length;
       const assignedCount = updatedRoutes.length - pendingCount;
+      const alertMsg = pendingCount > 0
+        ? `Otimização concluída: ${assignedCount} paragens atribuídas à frota. ${pendingCount} encomendas ficaram na rota "Por Distribuir" para gestão manual.`
+        : `Otimização concluída com sucesso: Todas as ${assignedCount} paragens foram distribuídas pelas ${vehicles.length} viaturas.`;
 
-      if (pendingCount > 0) {
-        setInfoMsg(
-          `Otimização concluída: ${assignedCount} paragens atribuídas à frota. ${pendingCount} encomendas ficaram na rota "Por Distribuir" para gestão manual.`
-        );
-      } else {
-        setInfoMsg(`Otimização concluída com 100% de sucesso: todas as ${assignedCount} paragens foram distribuídas pelos veículos.`);
-      }
-
-      const firstVehicleWithStops = updatedRoutes.find((r) => !isPendingRoute(r.Rota));
-      if (firstVehicleWithStops) {
-        setExpandedRoute(firstVehicleWithStops.Rota);
-      } else if (pendingCount > 0) {
-        setExpandedRoute("Por Distribuir");
-      }
+      alert(alertMsg);
       broadcastUpdate(updatedRoutes, vehicles, warehouses);
     } catch (e: any) {
-      setError(e.message || "Erro inesperado ao otimizar rotas.");
+      console.error("Solver error:", e);
+      alert(e.message || "Erro ao calcular otimização de rotas.");
     } finally {
       setSolving(false);
     }
   };
-
-    const [reorderingAll, setReorderingAll] = useState(false);
 
   const handleOptimizeAllSequences = async () => {
     if (!selectedProject) return;
@@ -313,56 +332,55 @@ export default function TacticalPage() {
         method: "POST",
         body: JSON.stringify({ project_id: selectedProject.id }),
       });
-      const cleaned = (res.routes || []).map((r: any) => ({
+      const updatedRoutes: RouteNode[] = (res.routes || []).map((r: any) => ({
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-      setRoutes(cleaned);
-      broadcastUpdate(cleaned, vehicles, warehouses);
-      setInfoMsg(res.message || "Sequências de todas as viaturas ordenadas com sucesso!");
-    } catch (err: any) {
-      alert(err.message || "Erro ao ordenar sequências.");
+      setRoutes(updatedRoutes);
+      broadcastUpdate(updatedRoutes, vehicles, warehouses);
+      alert("Sequência de todas as rotas otimizada com sucesso!");
+    } catch (e: any) {
+      alert("Erro ao otimizar sequências: " + (e.message || "Erro desconhecido"));
     } finally {
       setReorderingAll(false);
     }
   };
 
-  const handleOptimizeSingleRoute = async (routeName: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleOptimizeSingleRoute = async (routeName: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (!selectedProject) return;
-    setLoading(true);
+    setActionLoading(`opt_${routeName}`);
     try {
-      const res = await apiRequest("/api/solver/optimize-single-route", {
+      const res = await apiRequest("/api/solver/optimize-route", {
         method: "POST",
         body: JSON.stringify({
           project_id: selectedProject.id,
           route_name: routeName,
         }),
       });
-      const cleaned = (res.routes || []).map((r: any) => ({
+      const updatedRoutes: RouteNode[] = (res.routes || []).map((r: any) => ({
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-      setRoutes(cleaned);
-      broadcastUpdate(cleaned, vehicles, warehouses);
-    } catch (err: any) {
-      alert(err.message || "Erro ao otimizar trajeto da rota.");
+      setRoutes(updatedRoutes);
+      broadcastUpdate(updatedRoutes, vehicles, warehouses);
+    } catch (e: any) {
+      alert("Erro ao ordenar trajeto: " + (e.message || "Erro desconhecido"));
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
-  const handleTransferEntireRoute = async (sourceRoute: string, targetRoute: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
+  const handleTransferEntireRoute = async (sourceRoute: string, targetRoute: string) => {
     if (!selectedProject) return;
     const tgtDisplay = isPendingRoute(targetRoute) ? "Por Distribuir" : targetRoute;
     const confirmMsg = isPendingRoute(targetRoute)
-      ? `Tem a certeza que deseja esvaziar a rota "${sourceRoute}" e mover todas as suas paragens para "Por Distribuir"?`
+      ? `Tem a certeza que deseja esvaziar a rota "${sourceRoute}" e mover todas as paragens para "Por Distribuir"?`
       : `Deseja transferir TODAS as paragens de "${sourceRoute}" para a viatura "${targetRoute}"?`;
 
     if (!window.confirm(confirmMsg)) return;
 
-    setLoading(true);
+    setActionLoading(`bulk_${sourceRoute}`);
     try {
       const res = await apiRequest("/api/solver/reassign-entire-route", {
         method: "POST",
@@ -372,122 +390,109 @@ export default function TacticalPage() {
           target_route: tgtDisplay,
         }),
       });
-      const cleaned = (res.routes || []).map((r: any) => ({
+      const updated: RouteNode[] = (res.routes || []).map((r: any) => ({
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-      setRoutes(cleaned);
-      broadcastUpdate(cleaned, vehicles, warehouses);
-      
+      setRoutes(updated);
+      broadcastUpdate(updated, vehicles, warehouses);
     } catch (err: any) {
       alert("Erro ao transferir rota: " + (err.message || "Erro"));
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
-  const handleMoveClientRoute = async (clientName: string, newRoute: string, deliveryId?: number, address?: string) => {
+  const handleReassign = async (clientCode: string, newRoute: string, deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
-    setLoading(true);
+    const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
+    setActionLoading(actKey);
     try {
       const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
       const res = await apiRequest("/api/solver/reassign", {
         method: "POST",
         body: JSON.stringify({
           project_id: selectedProject.id,
-          client_code: clientName,
+          client_code: clientCode,
           delivery_id: deliveryId,
           address: address,
           new_route: targetRoute,
         }),
       });
-      const cleaned = (res.routes || []).map((r: any) => ({
+      const updated: RouteNode[] = (res.routes || []).map((r: any) => ({
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-      setRoutes(cleaned);
-      broadcastUpdate(cleaned, vehicles, warehouses);
-    } catch (e: any) {
-      alert(e.message || "Erro ao reatribuir rota.");
+      setRoutes(updated);
+      broadcastUpdate(updated, vehicles, warehouses);
+    } catch (err: any) {
+      alert("Erro ao reatribuir: " + (err.message || "Erro"));
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
-  const handleReorderStop = async (routeName: string, clientName: string, currentOrder: number, direction: "up" | "down", e: React.MouseEvent, deliveryId?: number, address?: string) => {
-    e.stopPropagation();
+  const handleReorder = async (routeName: string, clientCode: string, currentOrder: number, direction: "up" | "down", deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
     const newOrder = direction === "up" ? currentOrder - 1 : currentOrder + 1;
-    setLoading(true);
+    const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
+    setActionLoading(actKey);
     try {
       const res = await apiRequest("/api/solver/reorder", {
         method: "POST",
         body: JSON.stringify({
           project_id: selectedProject.id,
           route_name: routeName,
-          client_code: clientName,
+          client_code: clientCode,
           delivery_id: deliveryId,
           address: address,
           new_order: newOrder,
         }),
       });
-      const cleaned = (res.routes || []).map((r: any) => ({
+      const updated: RouteNode[] = (res.routes || []).map((r: any) => ({
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-      setRoutes(cleaned);
-      broadcastUpdate(cleaned, vehicles, warehouses);
-    } catch (e: any) {
-      alert(e.message || "Erro ao reordenar paragem.");
+      setRoutes(updated);
+      broadcastUpdate(updated, vehicles, warehouses);
+    } catch (err: any) {
+      alert("Erro ao reordenar: " + (err.message || "Erro"));
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
-  const handleExportExcel = () => {
-    if (!selectedProject) return;
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
-    const projClean = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
-    const filename = `Distribuicao_${projClean}_${dateStr}.xlsx`;
-    handleDownloadFile(`/api/solver/export-full/${selectedProject.id}`, filename);
-  };
   const handleDownloadFile = async (endpoint: string, filename: string) => {
     try {
       const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
-      const headers = new Headers();
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`);
-      }
-      const response = await fetch(`${endpoint}`, { headers });
-      if (!response.ok) {
-        throw new Error("Erro ao descarregar ficheiro.");
-      }
-      const blob = await response.blob();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(endpoint, { headers });
+      if (!res.ok) throw new Error("Erro ao descarregar ficheiro.");
+
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      a.remove();
       window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch (e: any) {
-      alert(e.message || "Erro ao efetuar o download.");
+      alert(e.message || "Erro ao descarregar");
     }
   };
 
-  // Group routes for accordion view
-  const groupedRoutes: { [key: string]: RouteNode[] } = {};
-  routes.forEach((r) => {
-    const routeKey = isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota;
-    if (!groupedRoutes[routeKey]) {
-      groupedRoutes[routeKey] = [];
-    }
-    groupedRoutes[routeKey].push(r);
-  });
+  const handleExportExcel = () => {
+    if (!selectedProject) return;
+    const projClean = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
+    const filename = `GeoRoute_Completo_${projClean}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    handleDownloadFile(`/api/solver/export-full/${selectedProject.id}`, filename);
+  };
 
-  // Helper dictionary for vehicle configs
+  // Grouped and sorted data structures
   const vehicleMap = useMemo(() => {
     const map: Record<string, VehicleData> = {};
     fleetList.forEach((v) => {
@@ -496,7 +501,6 @@ export default function TacticalPage() {
     return map;
   }, [fleetList]);
 
-  // Helper dictionary for warehouses
   const warehouseMap = useMemo(() => {
     const map: Record<string, WarehouseData> = {};
     warehouses.forEach((w) => {
@@ -505,75 +509,150 @@ export default function TacticalPage() {
     return map;
   }, [warehouses]);
 
-  const pendingStops = groupedRoutes["Por Distribuir"] || [];
-  const hasPending = pendingStops.length > 0;
+  const groupedRoutes = useMemo(() => {
+    const groups: Record<string, RouteNode[]> = {};
+    routes.forEach((r) => {
+      const rKey = isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota;
+      if (!groups[rKey]) groups[rKey] = [];
+      groups[rKey].push(r);
+    });
 
-  // Hierarchical sort for tactical sidebar routes:
-  // 1. Armazém (Nível 1)
-  // 2. Estado de Utilização: Rotas Ativas primeiro, depois Vazias (Nível 2)
-  // 3. Horário de Saída
-  // 4. Identificador Numérico
-    // Sort routes: 
-  // 1. "Por Distribuir" (se existir)
-  // 2. Rotas ATIVAS COM ENTREGAS primeiro (Nível 1 - Topo Absoluto)
-  // 3. Rotas VAZIAS depois (Nível 2)
-    // Hierarchical sort for tactical sidebar routes:
-  // 1. "Por Distribuir" (se existir)
-  // 2. Armazém (Nível 1 - todos os carros do mesmo armazém juntos: Faro, Maia, Coimbra, etc.)
-  // 3. Estado de Utilização dentro do Armazém: Rotas com entregas primeiro, depois Vazias (Nível 2)
-  // 4. Mais entregas -> Identificador Numérico (Faro_1, Faro_2, Faro_3...)
+    Object.keys(groups).forEach((k) => {
+      groups[k].sort((a, b) => a.Ordem - b.Ordem);
+    });
+
+    return groups;
+  }, [routes]);
+
+  const hasPending = useMemo(() => {
+    return (groupedRoutes["Por Distribuir"] || []).length > 0;
+  }, [groupedRoutes]);
+
+  // Available unique warehouses
+  const uniqueWarehouseNames = useMemo(() => {
+    const names = new Set<string>();
+    warehouses.forEach((w) => names.add(w.name));
+    fleetList.forEach((v) => {
+      if (v.armazem) names.add(v.armazem);
+    });
+    return Array.from(names);
+  }, [warehouses, fleetList]);
+
+  // Hierarchical sort & filter of route keys
   const displayRouteKeys = useMemo(() => {
     const nonVehicleKeys = Object.keys(groupedRoutes).filter(
       (k) => k !== "Por Distribuir" && !vehicles.includes(k)
     );
-    const list = [...vehicles, ...nonVehicleKeys];
+    let list = [...vehicles, ...nonVehicleKeys];
 
+    // Filter by Warehouse if selected
+    if (selectedWarehouseFilter !== "all") {
+      list = list.filter((vName) => {
+        const vCfg = vehicleMap[vName];
+        const wh = vCfg?.armazem || (vName.includes("_") ? vName.split("_")[0] : "");
+        return wh.toLowerCase() === selectedWarehouseFilter.toLowerCase();
+      });
+    }
+
+    // Filter by Vehicle Status
+    if (selectedStatusFilter === "active") {
+      list = list.filter((vName) => (groupedRoutes[vName] || []).length > 0);
+    } else if (selectedStatusFilter === "empty") {
+      list = list.filter((vName) => (groupedRoutes[vName] || []).length === 0);
+    } else if (selectedStatusFilter === "late") {
+      list = list.filter((vName) => {
+        const items = groupedRoutes[vName] || [];
+        return items.some((it) => isDeliveryLate(it.Chegada, it.Janela_Horaria));
+      });
+    }
+
+    // Sort list
     list.sort((a, b) => {
       const cfgA = vehicleMap[a];
       const cfgB = vehicleMap[b];
 
-      // 1. Armazém (todos os veículos do mesmo armazém ficam juntos)
       const whA = (cfgA?.armazem || (a.includes("_") ? a.split("_")[0] : a) || "").trim().toLowerCase();
       const whB = (cfgB?.armazem || (b.includes("_") ? b.split("_")[0] : b) || "").trim().toLowerCase();
       if (whA !== whB) {
         return whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
       }
 
-      // 2. Estado de Utilização dentro do mesmo armazém
       const stopsA = (groupedRoutes[a] || []).length;
       const stopsB = (groupedRoutes[b] || []).length;
       const isActiveA = stopsA > 0;
       const isActiveB = stopsB > 0;
 
-      if (isActiveA !== isActiveB) {
-        return isActiveA ? -1 : 1; // Rotas com entregas primeiro
-      }
+      if (isActiveA !== isActiveB) return isActiveA ? -1 : 1;
+      if (stopsA !== stopsB) return stopsB - stopsA;
 
-      // 3. Mais entregas primeiro
-      if (stopsA !== stopsB) {
-        return stopsB - stopsA;
-      }
+      const timeA = cfgA?.horario_inicio || "08:00";
+      const timeB = cfgB?.horario_inicio || "08:00";
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
 
-      // 4. Horário de Saída
-      const timeA = cfgA?.horario_inicio || "09:50";
-      const timeB = cfgB?.horario_inicio || "09:50";
-      if (timeA !== timeB) {
-        return timeA.localeCompare(timeB);
-      }
-
-      // 5. Identificador Numérico (Faro_1 -> Faro_2 -> Faro_3)
-      const numA = parseInt(a.replace(/[^0-9]/g, ""), 10) || 0;
-      const numB = parseInt(b.replace(/[^0-9]/g, ""), 10) || 0;
-      if (numA !== numB) {
-        return numA - numB;
-      }
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     });
 
-    return [...(hasPending ? ["Por Distribuir"] : []), ...list];
-  }, [vehicles, groupedRoutes, hasPending, vehicleMap]);
+    // Handle "Por Distribuir" inclusion based on status filter
+    if (selectedStatusFilter === "empty") {
+      return list;
+    }
+    if (selectedStatusFilter === "pending") {
+      return hasPending ? ["Por Distribuir"] : [];
+    }
 
-  const reassignVehicleOptions = [
+    return [...(hasPending ? ["Por Distribuir"] : []), ...list];
+  }, [vehicles, groupedRoutes, hasPending, vehicleMap, selectedWarehouseFilter, selectedStatusFilter]);
+
+  // Global KPIs
+  const globalKpis = useMemo(() => {
+    const pendingStops = groupedRoutes["Por Distribuir"] || [];
+    const assignedStops = routes.filter((r) => !isPendingRoute(r.Rota));
+    const activeVehicles = vehicles.filter((v) => (groupedRoutes[v] || []).length > 0);
+    
+    let totalKm = 0.0;
+    let totalKg = 0.0;
+    let totalVol = 0.0;
+    let totalLate = 0;
+
+    assignedStops.forEach((s) => {
+      totalKg += s.Peso_KG || 0;
+      if (isDeliveryLate(s.Chegada, s.Janela_Horaria)) totalLate++;
+    });
+
+    vehicles.forEach((v) => {
+      const stops = groupedRoutes[v] || [];
+      if (stops.length > 0) {
+        const last = stops[stops.length - 1];
+        const vCfg = vehicleMap[v];
+        const whName = vCfg?.armazem || stops[0].Armazem;
+        const wh = warehouseMap[whName] || warehouses[0];
+        let returnDist = 0.0;
+        if (wh && wh.lat && wh.lon) {
+          returnDist = haversineDistance(last.Latitude, last.Longitude, wh.lat, wh.lon);
+        }
+        totalKm += (last.Dist_Acum || 0) + returnDist;
+      }
+    });
+
+    const onTimeRate = assignedStops.length > 0
+      ? Math.round(((assignedStops.length - totalLate) / assignedStops.length) * 100)
+      : 100;
+
+    return {
+      totalDeliveries: routes.length,
+      assignedCount: assignedStops.length,
+      pendingCount: pendingStops.length,
+      totalKm: totalKm.toFixed(1),
+      totalKg: totalKg.toFixed(0),
+      activeVehiclesCount: activeVehicles.length,
+      totalVehiclesCount: vehicles.length,
+      onTimeRate,
+      totalLate,
+    };
+  }, [routes, groupedRoutes, vehicles, vehicleMap, warehouseMap, warehouses]);
+
+  // Options for reassigning dropdowns
+  const reassignOptions = [
     "Por Distribuir",
     ...vehicles,
     ...Object.keys(groupedRoutes).filter((k) => k !== "Por Distribuir" && !vehicles.includes(k)),
@@ -581,60 +660,70 @@ export default function TacticalPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 h-[calc(100vh-8.5rem)] flex flex-col">
-        {/* Header Section */}
-        <div className="flex items-center justify-between shrink-0">
+      <div className="space-y-5 pb-12">
+        {/* TOP HEADER & ACTION CONTROLS */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-zinc-950/60 p-4 rounded-2xl border border-zinc-800 shadow-xl backdrop-blur-md">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-50 font-sans">Dashboard Tático</h1>
-            <p className="text-zinc-400 text-xs mt-1">{t.tactical.subtitle}</p>
+            <div className="flex items-center space-x-3">
+              <span className="w-3 h-3 rounded-full bg-indigo-500 shadow-md shadow-indigo-500/50" />
+              <h1 className="text-2xl font-black tracking-tight text-zinc-50 font-sans">
+                Matriz Operacional & Planeamento Tático
+              </h1>
+            </div>
+            <p className="text-zinc-400 text-xs mt-1">
+              Gestão a toda a largura das paragens, capacidades de carga, janelas horárias e transferências entre viaturas.
+            </p>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center flex-wrap gap-2.5">
+            {/* 2nd Monitor Fullscreen Map Launcher */}
             <button
               onClick={handleOpenDetachedMap}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-zinc-800 hover:border-emerald-700/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
-              title="Abrir o mapa numa janela independente para o 2.º monitor"
+              className="cursor-pointer bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl px-4 py-2.5 text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center space-x-2 border border-emerald-400/40"
+              title="Abrir o Mapa Dedicado numa janela independente para o 2.º Monitor"
             >
-              <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
-              <span>🖥️ {t.tactical.detachedMapBtn}</span>
+              <span>🖥️ 2.º Monitor — Abrir Mapa Dedicado</span>
             </button>
 
+            {/* Temporary Monitor 3 Link */}
             <button
               onClick={handleOpenRoutesMatrix}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-indigo-400 border border-zinc-800 hover:border-indigo-700/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
-              title="Abrir a Matriz de Gestão de Rotas num 3.º monitor"
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-indigo-400 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-semibold transition-all flex items-center space-x-1.5"
+              title="Abrir Matriz Flutuante em Janela Extra"
             >
-              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-              </svg>
-              <span>🖥️ {t.tactical.routesMatrixBtn}</span>
+              <span>🖥️ 3.º Monitor</span>
             </button>
 
+            {/* Config Strategy */}
             <button
               onClick={() => setShowConfig(!showConfig)}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-xl px-4 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2"
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-semibold transition-all flex items-center space-x-1.5"
             >
-              <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <span>{t.tactical.settingsBtn}</span>
             </button>
 
+            {/* Optimize Sequences TSP */}
             <button
               onClick={handleOptimizeAllSequences}
               disabled={reorderingAll || solving || routes.length === 0}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-amber-400 border border-amber-500/30 hover:border-amber-500/60 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-all flex items-center space-x-2 disabled:opacity-50"
-              title="Ordena a sequência de paragens de cada viatura pelo menor trajeto, sem transferir clientes entre carros."
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-amber-400 border border-amber-500/40 rounded-xl px-3.5 py-2 text-xs font-bold transition-all flex items-center space-x-1.5 disabled:opacity-50"
+              title="Ordena o trajeto mais curto de cada viatura sem alterar as encomendas atribuídas"
             >
               <span>{reorderingAll ? "A ordenar..." : `⚡ ${t.tactical.optimizeSequencesBtn}`}</span>
             </button>
+
+            {/* Global Solve VRP */}
             <button
               onClick={handleSolveRoutes}
               disabled={solving || vehicles.length === 0}
-              className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-xl px-5 py-2 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all flex items-center space-x-2 disabled:opacity-50"
+              className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-indigo-500/20 transition-all flex items-center space-x-2 disabled:opacity-50"
             >
               {solving ? (
                 <>
@@ -650,194 +739,74 @@ export default function TacticalPage() {
                 </>
               )}
             </button>
+
+            {/* Export Excel */}
+            {routes.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-emerald-600/40 rounded-xl px-3 py-2 text-xs font-bold transition-all flex items-center space-x-1.5"
+                title="Exportar Folha Excel Completa"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Exportar Excel</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Error / Info alerts */}
-        {error && (
-          <div className="bg-rose-950/40 border border-rose-800 text-rose-300 px-4 py-3 rounded-2xl text-xs flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{error}</span>
-            </div>
-            <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-200 text-xs">✕</button>
-          </div>
-        )}
-
-        {infoMsg && (
-          <div className="bg-emerald-950/40 border border-emerald-800 text-emerald-300 px-4 py-3 rounded-2xl text-xs flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>{infoMsg}</span>
-            </div>
-            <button onClick={() => setInfoMsg(null)} className="text-emerald-400 hover:text-emerald-200 text-xs">✕</button>
-          </div>
-        )}
-
-        {/* Config Flyout: 2x2 Decision Matrix */}
+        {/* SETTINGS DRAWER / DRAWER OVERLAY */}
         {showConfig && (
-          <div className="bg-zinc-900/95 border border-zinc-800 rounded-2xl p-5 shadow-2xl space-y-4 text-xs shrink-0 backdrop-blur-md">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 shadow-2xl space-y-4 animate-in fade-in duration-150">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div>
-                <h4 className="font-bold text-sm text-zinc-100 flex items-center space-x-2">
-                  <span>{t.tactical.matrixModalTitle}</span>
-                  <span className="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-700 font-mono">
-                    {strategy === "far_first" ? "🎯 ZONAS" : "⚡ KM"} + {loadMode === "full" ? "📦 CHEIO" : "⚖️ EQUILIBRADO"}
-                  </span>
-                </h4>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  {t.tactical.matrixModalDesc}
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <div className="w-36">
-                  <label className="block text-[10px] text-zinc-400 mb-1 font-medium">Duração Máx. (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={maxDurStr}
-                    onChange={(e) => setMaxDurStr(e.target.value)}
-                    placeholder="08:00"
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 font-mono outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div className="w-28">
-                  <label className="block text-[10px] text-zinc-400 mb-1 font-medium">Limite Solver (s)</label>
-                  <input
-                    type="number"
-                    value={timeLimit}
-                    onChange={(e) => setTimeLimit(Number(e.target.value))}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
+              <h3 className="text-sm font-bold text-zinc-100 flex items-center space-x-2">
+                <span>⚙️ Configuração dos Algoritmos de Otimização</span>
+              </h3>
+              <button
+                onClick={() => setShowConfig(false)}
+                className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1 bg-zinc-900 rounded-lg"
+              >
+                ✕ Fechar
+              </button>
             </div>
 
-            {/* 2x2 Interactive Grid */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              {/* Opção 1: ZONA + CHEIO */}
-              <div
-                onClick={() => {
-                  setStrategy("far_first");
-                  setLoadMode("full");
-                }}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "far_first" && loadMode === "full"
-                    ? "bg-indigo-950/50 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50"
-                    : "bg-zinc-950/50 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-850/40"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-base">🎯📦</span>
-                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optZoneFull}</span>
-                    <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-700/60 font-semibold">
-                      {t.tactical.optZoneFullTag}
-                    </span>
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    strategy === "far_first" && loadMode === "full"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-zinc-800 text-zinc-400"
-                  }`}>
-                    {strategy === "far_first" && loadMode === "full" ? "✓ Ativo" : "Selecionar"}
-                  </span>
-                </div>
-                <ul className="text-[11px] text-zinc-300 space-y-1 pl-1">
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Começa pelas entregas mais distantes e agrupa clientes por setor/corredor geográfico.</span>
-                  </li>
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Enche cada carro até ao limite da capacidade/turno para <b>sobrarem viaturas livres</b> no armazém.</span>
-                  </li>
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Se faltarem carros, os clientes que ficarem de fora ficam garantidamente <b>junto ao armazém</b>.</span>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Opção 2: ZONA + EQUILIBRADO */}
-              <div
-                onClick={() => {
-                  setStrategy("far_first");
-                  setLoadMode("balanced");
-                }}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "far_first" && loadMode === "balanced"
-                    ? "bg-indigo-950/50 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50"
-                    : "bg-zinc-950/50 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-850/40"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-base">🎯⚖️</span>
-                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optZoneBal}</span>
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    strategy === "far_first" && loadMode === "balanced"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-zinc-800 text-zinc-400"
-                  }`}>
-                    {strategy === "far_first" && loadMode === "balanced" ? "✓ Ativo" : "Selecionar"}
-                  </span>
-                </div>
-                <ul className="text-[11px] text-zinc-300 space-y-1 pl-1">
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Mantém o agrupamento por setor geográfico a começar nos extremos longínquos.</span>
-                  </li>
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Suaviza a carga para que as viaturas de cada zona tenham um <b>peso e número de paragens equilibrado</b>.</span>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Opção 3: KM + CHEIO */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div
                 onClick={() => {
                   setStrategy("distance");
-                  setLoadMode("full");
+                  setLoadMode("cluster");
                 }}
                 className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "distance" && loadMode === "full"
-                    ? "bg-indigo-950/50 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50"
-                    : "bg-zinc-950/50 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-850/40"
+                  strategy === "distance" && loadMode === "cluster"
+                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-base">⚡📦</span>
-                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optKmFull}</span>
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    strategy === "distance" && loadMode === "full"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-zinc-800 text-zinc-400"
-                  }`}>
-                    {strategy === "distance" && loadMode === "full" ? "✓ Ativo" : "Selecionar"}
-                  </span>
-                </div>
-                <ul className="text-[11px] text-zinc-300 space-y-1 pl-1">
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Minimização matemática global de quilómetros para poupança estrita de combustível.</span>
-                  </li>
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Consolidação no menor número de viaturas possível.</span>
-                  </li>
-                </ul>
+                <p className="font-bold text-zinc-100 mb-1">🎯 Agrupamento por Zonas (Clusters)</p>
+                <p className="text-[11px] text-zinc-400">
+                  Concentra cada viatura na sua zona geográfica principal para máxima densidade de entrega.
+                </p>
               </div>
 
-              {/* Opção 4: KM + EQUILIBRADO */}
+              <div
+                onClick={() => {
+                  setStrategy("balanced");
+                  setLoadMode("balanced");
+                }}
+                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  strategy === "balanced"
+                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
+                }`}
+              >
+                <p className="font-bold text-zinc-100 mb-1">⚖️ Equilíbrio Perfeito de Carga</p>
+                <p className="text-[11px] text-zinc-400">
+                  Distribui o número de paragens e peso de forma equitativa por todos os carros disponíveis.
+                </p>
+              </div>
+
               <div
                 onClick={() => {
                   setStrategy("distance");
@@ -845,437 +814,596 @@ export default function TacticalPage() {
                 }}
                 className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                   strategy === "distance" && loadMode === "balanced"
-                    ? "bg-indigo-950/50 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50"
-                    : "bg-zinc-950/50 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-850/40"
+                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-base">⚡⚖️</span>
-                    <span className="font-bold text-xs text-zinc-100">{t.tactical.optKmBal}</span>
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    strategy === "distance" && loadMode === "balanced"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-zinc-800 text-zinc-400"
-                  }`}>
-                    {strategy === "distance" && loadMode === "balanced" ? "✓ Ativo" : "Selecionar"}
-                  </span>
-                </div>
-                <ul className="text-[11px] text-zinc-300 space-y-1 pl-1">
-                  <li className="flex items-start space-x-1.5">
-                    <span className="text-indigo-400 font-bold">•</span>
-                    <span>Minimiza a quilometragem global enquanto distribui o trabalho proporcionalmente por todas as viaturas ativas da frota.</span>
-                  </li>
-                </ul>
+                <p className="font-bold text-zinc-100 mb-1">⚡ Mínima Quilometragem Total</p>
+                <p className="text-[11px] text-zinc-400">
+                  Reduz ao máximo a soma total de quilómetros percorridos por toda a frota.
+                </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Main Content Layout */}
-        <div className="flex-1 flex gap-6 min-h-0">
-          {/* MAP CONTAINER */}
-          <div className="flex-1 border border-zinc-800 bg-zinc-900/40 rounded-2xl overflow-hidden shadow-2xl relative">
-            <MapComponent
-              clients={routes}
-              warehouses={warehouses}
-              vehicles={vehicles}
-              onMoveClientRoute={handleMoveClientRoute}
-              onUpdateClientCoords={async (clientName, lat, lon) => {
-                await handleMoveClientRoute(clientName, "Por Distribuir");
-              }}
-            />
+        {/* GLOBAL KPI DASHBOARD CARDS */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Total de Paragens
+            </span>
+            <div className="flex items-baseline space-x-2 mt-1">
+              <span className="text-xl font-black text-zinc-100">{globalKpis.totalDeliveries}</span>
+              <span className="text-[11px] text-emerald-400 font-semibold">
+                ({globalKpis.assignedCount} atribuídas)
+              </span>
+            </div>
+            {globalKpis.pendingCount > 0 && (
+              <span className="text-[10px] text-amber-400 font-bold block mt-0.5">
+                ⚠️ {globalKpis.pendingCount} por distribuir
+              </span>
+            )}
           </div>
 
-          {/* SIDEBAR: ROUTES ACCORDION */}
-          <div className="w-[480px] shrink-0 border border-zinc-800 bg-zinc-900/60 backdrop-blur-md rounded-2xl flex flex-col overflow-hidden shadow-2xl">
-            <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/20">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300">Rotas e Distribuição</h3>
-                <p className="text-[10px] text-zinc-300 font-mono mt-0.5">
-                  {vehicles.length} Veículos na Frota • {routes.filter((r) => !isPendingRoute(r.Rota)).length} Paragens Atribuídas
-                </p>
-              </div>
+          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Distância Total Prevista
+            </span>
+            <div className="flex items-baseline space-x-1.5 mt-1">
+              <span className="text-xl font-black text-indigo-400">{globalKpis.totalKm}</span>
+              <span className="text-xs text-zinc-400 font-bold">km</span>
+            </div>
+            <span className="text-[10px] text-zinc-400 mt-0.5 block">
+              Inclui regresso à base
+            </span>
+          </div>
 
-              {routes.length > 0 && (
+          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Utilização da Frota
+            </span>
+            <div className="flex items-baseline space-x-1.5 mt-1">
+              <span className="text-xl font-black text-emerald-400">{globalKpis.activeVehiclesCount}</span>
+              <span className="text-xs text-zinc-400">/ {globalKpis.totalVehiclesCount} viaturas</span>
+            </div>
+            <span className="text-[10px] text-zinc-400 mt-0.5 block">
+              {globalKpis.totalVehiclesCount - globalKpis.activeVehiclesCount} viaturas livres
+            </span>
+          </div>
+
+          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Carga Global
+            </span>
+            <div className="flex items-baseline space-x-1.5 mt-1">
+              <span className="text-xl font-black text-violet-400">{globalKpis.totalKg}</span>
+              <span className="text-xs text-zinc-400 font-bold">kg</span>
+            </div>
+            <span className="text-[10px] text-zinc-400 mt-0.5 block">
+              Distribuída pelas rotas ativas
+            </span>
+          </div>
+
+          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Pontualidade / Janelas
+            </span>
+            <div className="flex items-baseline space-x-1.5 mt-1">
+              <span className={`text-xl font-black ${globalKpis.onTimeRate >= 95 ? "text-emerald-400" : "text-amber-400"}`}>
+                {globalKpis.onTimeRate}%
+              </span>
+              <span className="text-xs text-zinc-400">no horário</span>
+            </div>
+            {globalKpis.totalLate > 0 ? (
+              <span className="text-[10px] text-rose-400 font-bold block mt-0.5">
+                🚨 {globalKpis.totalLate} paragens em atraso
+              </span>
+            ) : (
+              <span className="text-[10px] text-emerald-400 block mt-0.5">
+                ✓ Sem atrasos previstos
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* ADVANCED FILTER & SEARCH TOOLBAR */}
+        <div className="bg-zinc-900/80 border border-zinc-800 p-3.5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center flex-wrap gap-2.5 flex-1">
+            {/* Text Search */}
+            <div className="relative min-w-[240px] max-w-sm flex-1">
+              <input
+                type="text"
+                placeholder="Pesquisar cliente, código, morada, CP..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-zinc-200 outline-none placeholder-zinc-500 transition-all pl-9"
+              />
+              <svg className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {searchQuery && (
                 <button
-                  type="button"
-                  onClick={handleExportExcel}
-                  className="cursor-pointer bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg px-3 py-1.5 text-[10px] font-semibold shadow-md shadow-emerald-500/10 transition-all flex items-center space-x-1.5"
-                  title="Exportar Excel Completo"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-200 text-xs"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  <span>Exportar Excel</span>
+                  ✕
                 </button>
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {displayRouteKeys.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 text-zinc-300">
-                  <svg className="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <p className="text-xs">Não existem rotas calculadas ou veículos configurados.</p>
-                  <button
-                    onClick={handleSolveRoutes}
-                    disabled={solving || vehicles.length === 0}
-                    className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors"
-                  >
-                    Calcular Otimização Agora →
-                  </button>
-                </div>
-              ) : (
-                displayRouteKeys.map((routeName) => {
-                  const isPending = isPendingRoute(routeName);
-                  const items = groupedRoutes[routeName] || [];
-                  const isExpanded = expandedRoute === routeName;
-                  const isEmptyVehicle = !isPending && items.length === 0;
-                  const color = getRouteColor(routeName, vehicles);
+            {/* Warehouse Filter */}
+            {uniqueWarehouseNames.length > 0 && (
+              <select
+                value={selectedWarehouseFilter}
+                onChange={(e) => setSelectedWarehouseFilter(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="all">🏠 Todos os Armazéns ({uniqueWarehouseNames.length})</option>
+                {uniqueWarehouseNames.map((w) => (
+                  <option key={w} value={w}>
+                    🏠 {w}
+                  </option>
+                ))}
+              </select>
+            )}
 
-                  // Vehicle details
-                  const vConfig = vehicleMap[routeName];
-                  const whName = vConfig?.armazem || (items.length > 0 ? items[0].Armazem : warehouses[0]?.name) || "Armazém Principal";
-                  const whData = warehouseMap[whName] || warehouses[0] || {
-                    name: whName,
-                    address: "Base Central",
-                    cp: "0000-000",
-                    locality: "Principal",
-                    lat: 38.6593,
-                    lon: -9.1758,
-                  };
+            {/* Vehicle Status Filter */}
+            <div className="flex items-center space-x-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[11px] font-semibold">
+              <button
+                onClick={() => setSelectedStatusFilter("all")}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  selectedStatusFilter === "all" ? "bg-indigo-600 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Todos ({vehicles.length})
+              </button>
+              <button
+                onClick={() => setSelectedStatusFilter("active")}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  selectedStatusFilter === "active" ? "bg-emerald-600 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                🚚 Com Carga ({globalKpis.activeVehiclesCount})
+              </button>
+              <button
+                onClick={() => setSelectedStatusFilter("empty")}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  selectedStatusFilter === "empty" ? "bg-zinc-800 text-zinc-200 shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                ⚪ Vazias ({globalKpis.totalVehiclesCount - globalKpis.activeVehiclesCount})
+              </button>
+              {hasPending && (
+                <button
+                  onClick={() => setSelectedStatusFilter("pending")}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    selectedStatusFilter === "pending" ? "bg-amber-600 text-white shadow-sm" : "text-amber-400 hover:text-amber-300"
+                  }`}
+                >
+                  ⚠️ Por Distribuir ({globalKpis.pendingCount})
+                </button>
+              )}
+            </div>
+          </div>
 
-                  const startTimeStr = vConfig?.horario_inicio || "09:50";
-                  const speed = vConfig?.velocidade_media || 50.0;
-                  const totalKg = items.reduce((sum, item) => sum + (item.Carga_Acum || 0), 0);
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => toggleAllRoutes(true)}
+              className="px-2.5 py-1.5 bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              ▼ Expandir Todos
+            </button>
+            <button
+              onClick={() => toggleAllRoutes(false)}
+              className="px-2.5 py-1.5 bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              ▲ Colapsar Todos
+            </button>
+          </div>
+        </div>
 
-                  // Calculate return trip from last client to warehouse
-                  let returnDist = 0.0;
-                  let returnTravelMin = 0.0;
-                  let returnArrivalTimeStr = startTimeStr;
-                  let totalRouteKm = 0.0;
+        {/* MAIN FULL-WIDTH ROUTES MATRIX ACCORDION */}
+        <div className="space-y-4">
+          {displayRouteKeys.length === 0 ? (
+            <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-xl bg-zinc-800/80 flex items-center justify-center mx-auto text-zinc-500">
+                🚚
+              </div>
+              <h3 className="text-sm font-bold text-zinc-200">Nenhuma rota encontrada</h3>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                Não existem viaturas ou rotas que correspondam aos filtros selecionados.
+              </p>
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setSelectedWarehouseFilter("all");
+                  setSelectedStatusFilter("all");
+                }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+              >
+                Limpar Todos os Filtros
+              </button>
+            </div>
+          ) : (
+            displayRouteKeys.map((routeName) => {
+              const isPending = isPendingRoute(routeName);
+              const allStops = groupedRoutes[routeName] || [];
+              
+              // Apply search filter to stops within this vehicle
+              const filteredStops = searchQuery.trim() === ""
+                ? allStops
+                : allStops.filter((s) => {
+                    const q = searchQuery.toLowerCase();
+                    return (
+                      s.Cliente.toLowerCase().includes(q) ||
+                      (s.Nome_Cliente && s.Nome_Cliente.toLowerCase().includes(q)) ||
+                      s.Morada.toLowerCase().includes(q) ||
+                      s.Localidade.toLowerCase().includes(q) ||
+                      s.CP.toLowerCase().includes(q)
+                    );
+                  });
 
-                  if (items.length > 0) {
-                    const lastStop = items[items.length - 1];
-                    returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
-                    returnTravelMin = (returnDist / speed) * 60.0;
-                    returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
-                    totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
-                  }
+              const isExpanded = !!expandedRoutes[routeName];
+              const isEmptyVehicle = !isPending && allStops.length === 0;
+              const color = getRouteColor(routeName, vehicles);
 
-                  const totalDurationStr = items.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
+              // Vehicle configuration & warehouse
+              const vConfig = vehicleMap[routeName];
+              const whName = vConfig?.armazem || (allStops.length > 0 ? allStops[0].Armazem : warehouses[0]?.name) || "Armazém Principal";
+              const whData = warehouseMap[whName] || warehouses[0] || {
+                name: whName,
+                address: "Base Central",
+                cp: "0000-000",
+                locality: "Principal",
+                lat: 38.6593,
+                lon: -9.1758,
+              };
 
-                  return (
+              const startTimeStr = vConfig?.horario_inicio || "08:00";
+              const speed = vConfig?.velocidade_media || 50.0;
+              const maxKg = vConfig?.capacidade_kg || 1000;
+              const maxVol = vConfig?.capacidade_vol || 5.0;
+
+              const totalKg = allStops.reduce((sum, item) => sum + (item.Peso_KG || 0), 0);
+              const totalVol = allStops.reduce((sum, item) => sum + (item.Carga_Vol_Acum || 0), 0);
+              const kgPct = Math.round((totalKg / maxKg) * 100);
+              const volPct = Math.round((totalVol / maxVol) * 100);
+
+              // Return trip calculation
+              let returnDist = 0.0;
+              let returnArrivalTimeStr = startTimeStr;
+              let totalRouteKm = 0.0;
+
+              if (allStops.length > 0) {
+                const lastStop = allStops[allStops.length - 1];
+                if (whData && whData.lat && whData.lon) {
+                  returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
+                }
+                const returnTravelMin = (returnDist / speed) * 60.0;
+                returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
+                totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
+              }
+
+              const totalDurationStr = allStops.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
+
+              return (
+                <div
+                  key={routeName}
+                  className="bg-zinc-950/80 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl transition-all"
+                  style={{ borderLeft: `6px solid ${color}` }}
+                >
+                  {/* VEHICLE CARD HEADER */}
+                  <div className="p-4 bg-zinc-900/80 border-b border-zinc-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Left: Info */}
                     <div
-                      key={routeName}
-                      className="bg-zinc-950/40 border border-zinc-800 rounded-xl overflow-hidden transition-all shadow-sm"
-                      style={{ borderLeft: `4px solid ${color}` }}
+                      onClick={() => toggleRouteExpand(routeName)}
+                      className="flex items-center space-x-3.5 cursor-pointer flex-1 min-w-0"
                     >
-                      {/* VEHICLE CARD HEADER */}
-                      <div className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2.5 hover:bg-zinc-850/20 transition-colors">
-                        <div
-                          onClick={() => setExpandedRoute(isExpanded ? null : routeName)}
-                          className="flex-1 min-w-0 cursor-pointer flex items-center space-x-2.5"
-                        >
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center space-x-1.5 flex-wrap">
-                              <p className={`text-xs font-bold ${isPending ? "text-amber-400" : "text-zinc-200"}`}>
-                                {isPending ? "⚠️ Por Distribuir" : routeName}
-                              </p>
-                              {!isPending && (
-                                <span className="text-[10px] text-zinc-400 font-normal truncate">
-                                  ({whData.name})
-                                </span>
-                              )}
-                              {isEmptyVehicle && (
-                                <span className="text-[9px] uppercase px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded font-semibold border border-zinc-700">
-                                  Vazio
-                                </span>
-                              )}
-                            </div>
+                      <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-md" style={{ backgroundColor: color }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center space-x-2 flex-wrap">
+                          <h2 className={`text-base font-black ${isPending ? "text-amber-400" : "text-zinc-100"}`}>
+                            {isPending ? "⚠️ Por Distribuir" : routeName}
+                          </h2>
 
-                            <p className="text-[10px] text-zinc-400 mt-0.5 font-mono">
-                              {isPending ? (
-                                `${items.length} encomendas não atribuídas`
-                              ) : isEmptyVehicle ? (
-                                "0 paragens • 0.0 km (Disponível)"
-                              ) : (
-                                <>
-                                  <span className="text-emerald-400 font-semibold">
-                                    🛫 {startTimeStr} ➔ 🏁 {returnArrivalTimeStr} ({totalDurationStr})
-                                  </span>
-                                  <br />
-                                  <span>{items.length} paragens • {totalRouteKm.toFixed(1)} km • {totalKg.toFixed(0)} kg</span>
-                                </>
-                              )}
-                            </p>
+                          {!isPending && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold border border-zinc-700">
+                              🏠 {whData.name}
+                            </span>
+                          )}
+
+                          {isEmptyVehicle && (
+                            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-zinc-800/90 text-zinc-400 rounded-full font-bold border border-zinc-700">
+                              Disponível • 0 Paragens
+                            </span>
+                          )}
+
+                          {isPending && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 font-bold border border-amber-800/60">
+                              {allStops.length} Encomendas Pendentes
+                            </span>
+                          )}
+                        </div>
+
+                        {!isPending && !isEmptyVehicle && (
+                          <div className="flex items-center space-x-3 text-xs text-zinc-400 mt-1 font-mono flex-wrap">
+                            <span className="text-emerald-400 font-bold">
+                              🛫 {startTimeStr} ➔ 🏁 {returnArrivalTimeStr} ({totalDurationStr})
+                            </span>
+                            <span>•</span>
+                            <span className="text-zinc-200 font-semibold">{allStops.length} paragens</span>
+                            <span>•</span>
+                            <span className="text-indigo-300 font-semibold">{totalRouteKm.toFixed(1)} km totais</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Middle: Capacity Bars (if assigned vehicle) */}
+                    {!isPending && !isEmptyVehicle && (
+                      <div className="flex items-center space-x-4 shrink-0 bg-zinc-950/80 px-4 py-2 rounded-xl border border-zinc-800">
+                        {/* Weight capacity */}
+                        <div className="w-32">
+                          <div className="flex justify-between text-[10px] font-mono mb-1">
+                            <span className="text-zinc-400">Peso: {totalKg.toFixed(0)}/{maxKg}kg</span>
+                            <span className={`font-bold ${kgPct > 100 ? "text-rose-400" : kgPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                              {kgPct}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                kgPct > 100 ? "bg-rose-500" : kgPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${Math.min(kgPct, 100)}%` }}
+                            />
                           </div>
                         </div>
 
-                        {/* Actions container stacked vertically on the right (compact 1/4 width) */}
-                        <div className="flex items-center space-x-1.5 shrink-0">
-                          <div className="flex flex-col items-end gap-1 w-24 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            {!isPending && items.length > 1 && (
-                              <button
-                                onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
-                                className="w-full justify-center bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-1.5 py-0.5 rounded-lg text-[9px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm truncate"
-                                title="Ordenar sequência pelo trajeto mais curto"
-                              >
-                                <svg className="w-2.5 h-2.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                                <span>Ordenar</span>
-                              </button>
-                            )}
-                            {items.length > 0 && (
-                              <div className="w-full">
-                                <select
-                                  defaultValue=""
-                                  disabled={loading}
-                                  onChange={(e) => {
-                                    const tgt = e.target.value;
-                                    if (!tgt) return;
-                                    handleTransferEntireRoute(routeName, tgt);
-                                    e.target.value = "";
-                                  }}
-                                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 text-[9px] rounded-lg px-1.5 py-0.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-sans truncate"
-                                  title="Transferir todas as paragens desta rota para outro carro ou para Por Distribuir"
-                                >
-                                  <option value="" disabled>
-                                    ⇄ Mover ({items.length})
-                                  </option>
-                                  {!isPending && (
-                                    <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
-                                      📦 Esvaziar
-                                    </option>
-                                  )}
-                                  {vehicles
-                                    .filter((v) => v !== routeName)
-                                    .map((v) => (
-                                      <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
-                                        🚚 {v}
-                                      </option>
-                                    ))}
-                                </select>
-                              </div>
-                            )}
+                        {/* Volume capacity */}
+                        <div className="w-32">
+                          <div className="flex justify-between text-[10px] font-mono mb-1">
+                            <span className="text-zinc-400">Vol: {totalVol.toFixed(1)}/{maxVol}m³</span>
+                            <span className={`font-bold ${volPct > 100 ? "text-rose-400" : volPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                              {volPct}%
+                            </span>
                           </div>
-
-                          <button
-                            onClick={() => setExpandedRoute(isExpanded ? null : routeName)}
-                            className="p-1 text-zinc-400 hover:text-zinc-200 cursor-pointer"
-                          >
-                            <svg
-                              className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
+                          <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                volPct > 100 ? "bg-rose-500" : volPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${Math.min(volPct, 100)}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
+                    )}
 
-                      {/* VEHICLE EXPANDED STOPS LIST */}
-                      {isExpanded && (
-                        <div className="border-t border-zinc-800 p-3 space-y-2 bg-zinc-950/20">
-                          {isEmptyVehicle ? (
-                            <div className="p-3 bg-zinc-900/50 border border-zinc-800/80 rounded-lg text-center text-zinc-400 text-xs font-mono space-y-1">
-                              <p className="text-zinc-300 font-semibold">Viatura Livre (0 paragens • 0.0 km • 0 kg)</p>
-                              <p className="text-[11px] text-emerald-400">Turno: {startTimeStr} às {vConfig?.horario_fim || "18:00"} (Cap: {vConfig?.capacidade_kg || 1000} kg)</p>
-                              <p className="text-[10px] text-zinc-300 mt-1">
-                                Pode reatribuir clientes de outras rotas diretamente para este carro.
-                              </p>
-                            </div>
-                          ) : (
-                            <>
-                              {/* 1ª LINHA: ARMAZÉM DE ORIGEM (PARTIDA) */}
-                              {!isPending && (
-                                <div className="p-2.5 bg-indigo-950/30 border border-indigo-800/50 rounded-xl text-xs space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900 text-indigo-300 border border-indigo-700/60">
-                                        🛫 Partida
+                    {/* Right: Actions */}
+                    <div className="flex items-center space-x-2 shrink-0">
+                      {!isPending && allStops.length > 1 && (
+                        <button
+                          onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
+                          disabled={actionLoading === `opt_${routeName}`}
+                          className="bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                          title="Ordenar sequência pelo menor trajeto"
+                        >
+                          <span>{actionLoading === `opt_${routeName}` ? "A ordenar..." : "⚡ Ordenar Trajeto"}</span>
+                        </button>
+                      )}
+
+                      {allStops.length > 0 && (
+                        <select
+                          defaultValue=""
+                          onChange={(e) => {
+                            const tgt = e.target.value;
+                            if (!tgt) return;
+                            handleTransferEntireRoute(routeName, tgt);
+                            e.target.value = "";
+                          }}
+                          className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-semibold"
+                          title="Transferir todas as paragens desta rota em lote"
+                        >
+                          <option value="" disabled>
+                            ⇄ Mover Toda a Rota ({allStops.length})
+                          </option>
+                          {!isPending && (
+                            <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
+                              📦 Esvaziar para Por Distribuir
+                            </option>
+                          )}
+                          {vehicles
+                            .filter((v) => v !== routeName)
+                            .map((v) => (
+                              <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
+                                🚚 Transferir para {v}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+
+                      <button
+                        onClick={() => toggleRouteExpand(routeName)}
+                        className="p-1.5 text-zinc-400 hover:text-zinc-200 bg-zinc-950 rounded-xl border border-zinc-800 cursor-pointer transition-colors"
+                        title={isExpanded ? "Colapsar rota" : "Expandir rota"}
+                      >
+                        <svg
+                          className={`w-4 h-4 transform transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* EXPANDED STOPS TABLE */}
+                  {isExpanded && (
+                    <div className="overflow-x-auto">
+                      {filteredStops.length === 0 ? (
+                        <div className="p-8 text-center text-zinc-500 text-xs italic">
+                          {isEmptyVehicle
+                            ? "Viatura disponível e sem paragens atribuídas. Pode transferir encomendas para esta viatura usando os seletores de paragens."
+                            : "Nenhuma paragem corresponde à pesquisa efetuada."}
+                        </div>
+                      ) : (
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead>
+                            <tr className="bg-zinc-950/90 border-b border-zinc-800 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
+                              <th className="py-2.5 px-3.5 text-center w-16"># Ordem</th>
+                              <th className="py-2.5 px-4 min-w-[200px]">Cliente / Código</th>
+                              <th className="py-2.5 px-4 min-w-[240px]">Morada & Localidade</th>
+                              <th className="py-2.5 px-3 min-w-[110px]">Janela Horária</th>
+                              <th className="py-2.5 px-3 min-w-[130px]">Previsão Turno</th>
+                              <th className="py-2.5 px-3 min-w-[100px]">Carga (kg)</th>
+                              <th className="py-2.5 px-3 min-w-[90px]">Distância</th>
+                              <th className="py-2.5 px-4 text-center min-w-[180px]">Mover / Reatribuir</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-850">
+                            {filteredStops.map((stop, idx) => {
+                              const isLate = !isPending && isDeliveryLate(stop.Chegada, stop.Janela_Horaria);
+                              const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
+                              const isRowLoading = actionLoading === actKey;
+
+                              return (
+                                <tr
+                                  key={`${stop.Cliente}-${stop.id || idx}`}
+                                  className={`hover:bg-zinc-850/40 transition-colors ${
+                                    isLate ? "bg-rose-950/20" : ""
+                                  }`}
+                                >
+                                  {/* # Ordem with Reorder Arrows */}
+                                  <td className="py-2.5 px-3.5 text-center">
+                                    <div className="flex items-center justify-center space-x-1">
+                                      <span className="w-6 h-6 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center font-mono font-bold text-zinc-200 text-xs shadow-inner">
+                                        {stop.Ordem}
                                       </span>
-                                      <span className="font-bold text-indigo-300">{whData.name}</span>
-                                    </div>
-                                    <span className="font-mono font-bold text-emerald-400">
-                                      Saída: {startTimeStr}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-zinc-400 truncate">{whData.address} • {whData.cp}</p>
-                                  <div className="flex items-center justify-between text-[10px] text-zinc-300 font-mono pt-0.5">
-                                    <span>Ponto de Origem</span>
-                                    <span>Carga: {totalKg.toFixed(0)} kg</span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* LINHAS INTERMÉDIAS: PARAGENS DE CLIENTES E TEMPOS DE ESPERA */}
-                              {items.map((node, index) => {
-                                const isFirst = index === 0;
-                                const isLast = index === items.length - 1;
-                                const travelTimeMin = Math.round(((node.KM_Anterior || 0) / speed) * 60);
-                                const hasWait = !isPending && Number(node.Tempo_Espera || 0) > 0;
-                                const serviceStartTime = hasWait
-                                  ? addMinutesToTime(node.Chegada, node.Tempo_Espera || 0)
-                                  : node.Chegada;
-
-                                return (
-                                  <React.Fragment key={node.Cliente + index}>
-                                    {/* CARD DEDICADO DE TEMPO DE ESPERA */}
-                                    {hasWait && (
-                                      <div className="p-2.5 rounded-xl border bg-amber-950/25 border-amber-800/60 text-xs space-y-1.5 font-mono shadow-sm">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center space-x-2">
-                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-900 text-amber-300 border border-amber-700/60">
-                                              ⏳ Espera
-                                            </span>
-                                            <div>
-                                                    <div className="font-bold text-amber-300">{node.Nome_Cliente || node.Cliente}</div>
-                                                    {node.Nome_Cliente && node.Nome_Cliente !== node.Cliente && (
-                                                      <div className="text-[10px] text-amber-400/60 font-mono">{node.Cliente}</div>
-                                                    )}
-                                                   </div>
-                                          </div>
-                                          <div className="flex items-center space-x-2 text-[11px]">
-                                            <span className="text-zinc-200 font-semibold">Chegada: {node.Chegada}</span>
-                                            <span className="text-zinc-300">→</span>
-                                            <span className="text-emerald-400 font-semibold">Abertura: {serviceStartTime}</span>
-                                          </div>
-                                        </div>
-                                        <p className="text-[11px] text-amber-200/80 font-sans truncate">
-                                          Aguardar Abertura de Janela ({node.Morada})
-                                        </p>
-                                        <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-amber-900/40">
-                                          <span className="text-amber-300 font-medium">⏳ Aguarda Abertura</span>
-                                          <span>Espera: <b className="text-amber-400">{node.Tempo_Espera} min</b></span>
-                                          <span>Deslocação: <b className="text-zinc-300">{node.KM_Anterior.toFixed(1)} km</b></span>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    <div
-                                      className={`p-2.5 rounded-xl border text-xs space-y-1.5 ${
-                                        isPending
-                                          ? "bg-amber-950/20 border-amber-800/50"
-                                          : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700"
-                                      }`}
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center space-x-2">
-                                          <span className="font-mono font-bold text-zinc-400">
-                                            {isPending ? "⚠️" : `#${node.Ordem}`}
-                                          </span>
-                                          <div>
-                                                  <div className="font-bold text-zinc-200">{node.Nome_Cliente || node.Cliente}</div>
-                                                  {node.Nome_Cliente && node.Nome_Cliente !== node.Cliente && (
-                                                    <div className="text-[10px] text-zinc-300 font-mono">{node.Cliente}</div>
-                                                  )}
-                                                  </div>
-                                        </div>
-
-                                        {!isPending && (
-                                          <div className="flex items-center space-x-2 font-mono text-[11px]">
-                                            <span className="text-emerald-400 font-semibold">Início: {serviceStartTime}</span>
-                                            <span className="text-zinc-300">→</span>
-                                            <span className="text-zinc-300 font-semibold">Saída: {node.Saida}</span>
-                                          </div>
-                                        )}
-                                      </div>
-
-                                    <p className="text-[11px] text-zinc-300 truncate">{node.Morada}</p>
-
-                                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono pt-1 border-t border-zinc-800/60">
-                                      <span>
-                                        Janela: <b className="text-zinc-300">{node.Janela_Horaria || "Qualquer"}</b>
-                                      </span>
-                                      <span>
-                                        Deslocação: <b className="text-zinc-300">{node.KM_Anterior.toFixed(1)} km</b>
-                                        {travelTimeMin > 0 && <span className="text-zinc-300"> (+{travelTimeMin}m)</span>}
-                                      </span>
-                                      <span>
-                                        Carga: <b className="text-zinc-300">{node.Carga_Acum} kg</b>
-                                      </span>
-                                    </div>
-
-                                    <div className="flex items-center justify-between pt-1.5">
-                                      <select
-                                        value={isPending ? "Por Distribuir" : node.Rota}
-                                        onChange={(e) => handleMoveClientRoute(node.Cliente, e.target.value, node.id || (node as any).ID_Original, node.Morada)}
-                                        className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-indigo-500 cursor-pointer"
-                                      >
-                                        {reassignVehicleOptions.map((v) => (
-                                          <option key={v} value={v}>
-                                            {v === "Por Distribuir" ? "⚠️ Por Distribuir" : v}
-                                          </option>
-                                        ))}
-                                      </select>
-
                                       {!isPending && (
-                                        <div className="flex items-center space-x-1">
+                                        <div className="flex flex-col">
                                           <button
-                                            onClick={(e) => handleReorderStop(node.Rota, node.Cliente, node.Ordem, "up", e)}
-                                            disabled={isFirst}
-                                            className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-200 disabled:opacity-20 cursor-pointer text-xs"
-                                            title="Mover para cima"
+                                            onClick={() => handleReorder(routeName, stop.Cliente, stop.Ordem, "up", stop.id, stop.Morada)}
+                                            disabled={stop.Ordem === 1 || isRowLoading}
+                                            className="text-zinc-400 hover:text-indigo-400 disabled:opacity-20 cursor-pointer p-0.5 leading-none text-[10px]"
+                                            title="Subir na sequência"
                                           >
                                             ▲
                                           </button>
                                           <button
-                                            onClick={(e) => handleReorderStop(node.Rota, node.Cliente, node.Ordem, "down", e)}
-                                            disabled={isLast}
-                                            className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-200 disabled:opacity-20 cursor-pointer text-xs"
-                                            title="Mover para baixo"
+                                            onClick={() => handleReorder(routeName, stop.Cliente, stop.Ordem, "down", stop.id, stop.Morada)}
+                                            disabled={stop.Ordem === allStops.length || isRowLoading}
+                                            className="text-zinc-400 hover:text-indigo-400 disabled:opacity-20 cursor-pointer p-0.5 leading-none text-[10px]"
+                                            title="Descer na sequência"
                                           >
                                             ▼
                                           </button>
                                         </div>
                                       )}
                                     </div>
-                                  </div>
-                                </React.Fragment>
-                                );
-                              })}
+                                  </td>
 
-                              {/* ÚLTIMA LINHA: ARMAZÉM DE CHEGADA (REGRESSO) */}
-                              {!isPending && (
-                                <div className="p-2.5 bg-emerald-950/30 border border-emerald-800/50 rounded-xl text-xs space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-900 text-emerald-300 border border-emerald-700/60">
-                                        🏁 Regresso
-                                      </span>
-                                      <span className="font-bold text-emerald-300">{whData.name}</span>
+                                  {/* Cliente / Código */}
+                                  <td className="py-2.5 px-4">
+                                    <div className="font-bold text-zinc-100">{stop.Nome_Cliente || stop.Cliente}</div>
+                                    <div className="text-[10px] text-zinc-400 font-mono">{stop.Cliente}</div>
+                                  </td>
+
+                                  {/* Morada & Concelho */}
+                                  <td className="py-2.5 px-4">
+                                    <div className="text-zinc-200 truncate max-w-sm" title={stop.Morada}>
+                                      {stop.Morada}
                                     </div>
-                                    <span className="font-mono font-bold text-emerald-400">
-                                      Chegada: {returnArrivalTimeStr}
+                                    <div className="text-[10px] text-zinc-400 flex items-center space-x-1.5 mt-0.5">
+                                      <span className="font-mono text-indigo-400">{stop.CP}</span>
+                                      <span>•</span>
+                                      <span>{stop.Localidade}</span>
+                                    </div>
+                                  </td>
+
+                                  {/* Janela Horária */}
+                                  <td className="py-2.5 px-3">
+                                    <span className="font-mono text-zinc-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[11px] block text-center">
+                                      {stop.Janela_Horaria || "Qualquer"}
                                     </span>
-                                  </div>
-                                  <p className="text-[11px] text-zinc-400 truncate">{whData.address} • {whData.cp}</p>
-                                  <div className="flex items-center justify-between text-[10px] text-zinc-300 font-mono pt-0.5">
-                                    <span>
-                                      Troço Final: {returnDist.toFixed(1)} km (+{Math.round(returnTravelMin)}m)
-                                    </span>
-                                    <span>Total: {totalRouteKm.toFixed(1)} km</span>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
+                                  </td>
+
+                                  {/* Previsão Turno & Alerta de Atraso */}
+                                  <td className="py-2.5 px-3">
+                                    {!isPending ? (
+                                      <div>
+                                        <div className="font-mono text-xs font-bold text-zinc-100">
+                                          {stop.Chegada} ➔ {stop.Saida}
+                                        </div>
+                                        {isLate ? (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-950 text-rose-400 border border-rose-800 mt-0.5">
+                                            🚨 Fora da Janela
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 mt-0.5">
+                                            ✓ No Horário
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-zinc-500 font-mono text-xs">-- : --</span>
+                                    )}
+                                  </td>
+
+                                  {/* Carga KG */}
+                                  <td className="py-2.5 px-3 font-mono">
+                                    <div className="text-zinc-200 font-semibold">{(stop.Peso_KG || 50).toFixed(0)} kg</div>
+                                    {!isPending && (
+                                      <div className="text-[10px] text-zinc-400">Acum: {stop.Carga_Acum.toFixed(0)} kg</div>
+                                    )}
+                                  </td>
+
+                                  {/* Distância */}
+                                  <td className="py-2.5 px-3 font-mono">
+                                    {!isPending ? (
+                                      <div>
+                                        <div className="text-zinc-200 font-semibold">{(stop.KM_Anterior || 0).toFixed(1)} km</div>
+                                        <div className="text-[10px] text-zinc-400">Acum: {(stop.Dist_Acum || 0).toFixed(1)} km</div>
+                                      </div>
+                                    ) : (
+                                      <span className="text-zinc-500 text-xs">--</span>
+                                    )}
+                                  </td>
+
+                                  {/* Quick Reassign Dropdown */}
+                                  <td className="py-2.5 px-4 text-center">
+                                    <select
+                                      value={isPending ? "Por Distribuir" : routeName}
+                                      disabled={isRowLoading}
+                                      onChange={(e) => {
+                                        const newR = e.target.value;
+                                        if (newR === routeName) return;
+                                        handleReassign(stop.Cliente, newR, stop.id || stop.ID_Original, stop.Morada);
+                                      }}
+                                      className="bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 rounded-xl px-2.5 py-1 text-xs outline-none focus:border-indigo-500 cursor-pointer shadow-sm w-full max-w-[170px]"
+                                    >
+                                      {reassignOptions.map((opt) => (
+                                        <option key={opt} value={opt} className={isPendingRoute(opt) ? "text-amber-400 font-bold" : ""}>
+                                          {isPendingRoute(opt) ? "⚠️ Por Distribuir" : `🚚 ${opt}`}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       )}
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </DashboardLayout>

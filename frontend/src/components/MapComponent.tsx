@@ -502,8 +502,8 @@ export default function MapComponent({
                 <p className="font-bold text-xs flex items-center space-x-1">
                   <span>🏠</span> <span>{wh.name}</span>
                 </p>
-                <p className="text-[10px] text-zinc-300 mt-0.5">Armazém / Centro de Distribuição</p>
-                <p className="text-[9px] text-zinc-300 mt-1 font-mono">{wh.address}</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5 font-medium">Armazém / Centro de Distribuição</p>
+                <p className="text-[9px] text-zinc-600 mt-1 font-mono">{wh.address}</p>
               </div>
             </Popup>
           </Marker>
@@ -540,7 +540,7 @@ export default function MapComponent({
                         {isPending ? "Pendente" : `Paragem #${c.Ordem}`}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono bg-zinc-100 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-200">
+                    <span className="text-[10px] font-mono bg-zinc-100 text-zinc-700 font-bold px-1.5 py-0.5 rounded border border-zinc-200">
                       {c.Cliente}
                     </span>
                   </div>
@@ -551,9 +551,9 @@ export default function MapComponent({
                       <p className="font-bold text-zinc-800">{c.Nome_Cliente}</p>
                     )}
                     <p className="text-zinc-700 font-medium">{c.Morada}</p>
-                    <p className="text-zinc-300 text-[10px]">{c.CP} {c.Localidade}</p>
+                    <p className="text-zinc-600 text-[10px] font-medium">{c.CP} {c.Localidade}</p>
                     
-                    <div className="pt-1 flex items-center justify-between text-[11px] text-zinc-300 border-t border-zinc-100">
+                    <div className="pt-1 flex items-center justify-between text-[11px] text-zinc-700 border-t border-zinc-200">
                       <span>Janela: <b>{c.Janela_Horaria || "Qualquer"}</b></span>
                       <span>Carga: <b>{c.Carga_Acum || 0} kg</b></span>
                     </div>
@@ -562,7 +562,7 @@ export default function MapComponent({
                   {/* Route Reassignment Selector inside Popup */}
                   {onMoveClientRoute && (
                     <div className="mt-2.5 pt-2 border-t border-zinc-200 flex items-center justify-between">
-                      <label className="text-[10px] font-semibold text-zinc-300">Mover para:</label>
+                      <label className="text-[10px] font-semibold text-zinc-700">Mover para:</label>
                       <select
                         value={isPending ? "Por Distribuir" : c.Rota}
                         onChange={(e) => onMoveClientRoute(c.Cliente, e.target.value, c.id || c.ID_Original, c.Morada)}
