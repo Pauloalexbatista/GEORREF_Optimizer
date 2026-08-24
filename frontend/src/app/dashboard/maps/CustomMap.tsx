@@ -81,26 +81,74 @@ function CP4Layer({ mapeamentos }: { mapeamentos: Mapeamento[] }) {
 
 export default function CustomMap({ mapeamentos }: { mapeamentos: Mapeamento[] }) {
   const { theme } = useTheme();
+  const [mapLayer, setMapLayer] = React.useState<"standard" | "google_sat" | "google_hybrid">("standard");
 
-  // Clean white/light tiles for light mode, dark tiles for dark mode
-  const tileUrl = theme === "light"
+  let tileUrl = theme === "light"
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  let attribution = '&copy; OpenStreetMap &copy; CARTO';
+
+  if (mapLayer === "google_sat") {
+    tileUrl = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}";
+    attribution = '&copy; Google Satellite';
+  } else if (mapLayer === "google_hybrid") {
+    tileUrl = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
+    attribution = '&copy; Google Hybrid';
+  }
 
   return (
-    <MapContainer
-      key={theme}
-      center={[39.3999, -8.2245]}
-      zoom={6}
-      style={{ height: "100%", width: "100%", borderRadius: "0.75rem" }}
-      zoomControl={true}
-    >
-      <TileLayer
-        url={tileUrl}
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-      />
-      <MapResizer />
-      <CP4Layer mapeamentos={mapeamentos} />
-    </MapContainer>
+    <div className="relative w-full h-full">
+      {/* Layer selector overlay */}
+      <div className="absolute top-3 left-14 z-[2000] flex bg-white/90 dark:bg-zinc-900/90 backdrop-blur p-0.5 rounded-xl border border-zinc-300 dark:border-zinc-700 shadow-md text-xs font-semibold">
+        <button
+          type="button"
+          onClick={() => setMapLayer("standard")}
+          className={`px-2.5 py-1 rounded-lg transition-all ${
+            mapLayer === "standard"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900"
+          }`}
+        >
+          🗺️ Padrão
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapLayer("google_sat")}
+          className={`px-2.5 py-1 rounded-lg transition-all ${
+            mapLayer === "google_sat"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900"
+          }`}
+        >
+          🛰️ Satélite
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapLayer("google_hybrid")}
+          className={`px-2.5 py-1 rounded-lg transition-all ${
+            mapLayer === "google_hybrid"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900"
+          }`}
+        >
+          🏙️ Híbrido
+        </button>
+      </div>
+
+      <MapContainer
+        key={`${theme}_${mapLayer}`}
+        center={[39.3999, -8.2245]}
+        zoom={6}
+        style={{ height: "100%", width: "100%", borderRadius: "0.75rem" }}
+        zoomControl={true}
+      >
+        <TileLayer
+          url={tileUrl}
+          attribution={attribution}
+        />
+        <MapResizer />
+        <CP4Layer mapeamentos={mapeamentos} />
+      </MapContainer>
+    </div>
   );
 }

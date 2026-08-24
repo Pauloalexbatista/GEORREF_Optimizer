@@ -213,6 +213,7 @@ export default function MapComponent({
   const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "empty" | "pending">("all");
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
   const [showRoads, setShowRoads] = useState(true);
+  const [mapLayer, setMapLayer] = useState<"standard" | "google_sat" | "google_hybrid">("standard");
   const [fitTrigger, setFitTrigger] = useState("");
 
   useEffect(() => {
@@ -636,10 +637,22 @@ export default function MapComponent({
         </div>
       </div>
 
-      <MapContainer center={center} zoom={11} className="w-full h-full">
+      <MapContainer key={mapLayer} center={center} zoom={11} className="w-full h-full">
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={
+            mapLayer === "google_sat"
+              ? '&copy; Google Satellite'
+              : mapLayer === "google_hybrid"
+              ? '&copy; Google Hybrid'
+              : '&copy; OpenStreetMap contributors &copy; CARTO'
+          }
+          url={
+            mapLayer === "google_sat"
+              ? "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+              : mapLayer === "google_hybrid"
+              ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+              : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          }
         />
         <MapInitialController coords={center} />
         <MapBoundsFitter triggerKey={fitTrigger} points={visiblePoints} />
