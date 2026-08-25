@@ -9,6 +9,8 @@ import { useI18n } from "@/context/I18nContext";
 interface RouteNode {
   id?: number;
   ID_Original?: number;
+  Doc_ID?: string;
+  Codigo_Cliente?: string;
   Rota: string;
   Armazem: string;
   Ordem: number;
@@ -30,6 +32,9 @@ interface RouteNode {
   Volume_m3?: number;
   Carga_Acum: number;
   Carga_Vol_Acum: number;
+  Telefone?: string;
+  Telefone_Cliente?: string;
+  Observacoes?: string;
 }
 
 interface Delivery {
@@ -192,17 +197,62 @@ export default function TacticalPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      channelRef.current = new BroadcastChannel("georoute_map_sync");
+      const channel = new BroadcastChannel("georoute_map_sync");
+      channelRef.current = channel;
+
+      channel.onmessage = (event) => {
+        if (event.data?.type === "MAP_UPDATE" && event.data?.clients) {
+          const mapped: RouteNode[] = event.data.clients.map((r: any) => ({
+            ...r,
+            id: r.id || r.ID_Original,
+            ID_Original: r.id || r.ID_Original,
+            Doc_ID: r.Doc_ID || r.doc_id || "",
+            Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+            Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+            Nome_Cliente: r.Nome_Cliente || r.Cliente,
+            Telefone: r.Telefone || r.Telefone_Cliente || "",
+            Observacoes: r.Observacoes || "",
+          }));
+          setRoutes(mapped);
+        }
+      };
+
+      const handleStorage = (e: StorageEvent) => {
+        if (e.key === "georoute_map_state" && e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed.clients) {
+              const mapped: RouteNode[] = parsed.clients.map((r: any) => ({
+                ...r,
+                id: r.id || r.ID_Original,
+                ID_Original: r.id || r.ID_Original,
+                Doc_ID: r.Doc_ID || r.doc_id || "",
+                Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+                Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+                Nome_Cliente: r.Nome_Cliente || r.Cliente,
+                Telefone: r.Telefone || r.Telefone_Cliente || "",
+                Observacoes: r.Observacoes || "",
+              }));
+              setRoutes(mapped);
+            }
+          } catch (err) {}
+        }
+      };
+      window.addEventListener("storage", handleStorage);
+
+      return () => {
+        channel.close();
+        window.removeEventListener("storage", handleStorage);
+      };
     }
-    return () => {
-      channelRef.current?.close();
-    };
   }, []);
 
   const broadcastUpdate = (updatedRoutes: RouteNode[], vList: string[], wList: WarehouseData[], fList?: VehicleData[]) => {
     const mappedClients = updatedRoutes.map((r) => ({
       id: r.id || r.ID_Original,
       ID_Original: r.id || r.ID_Original,
+      Doc_ID: r.Doc_ID || (r as any).doc_id || "",
+      Codigo_Cliente: r.Codigo_Cliente || (r as any).codigo_cliente || "",
       Armazem: r.Armazem,
       Cliente: r.Cliente,
       Nome_Cliente: r.Nome_Cliente || r.Cliente,
@@ -218,7 +268,12 @@ export default function TacticalPage() {
       Saida: r.Saida,
       KM_Anterior: r.KM_Anterior,
       Dist_Acum: r.Dist_Acum,
+      Peso_KG: r.Peso_KG || 0,
+      Volume_m3: r.Volume_m3 || (r as any).Volume_M3 || 0,
       Carga_Acum: r.Carga_Acum,
+      Carga_Vol_Acum: r.Carga_Vol_Acum,
+      Telefone: r.Telefone || r.Telefone_Cliente || (r as any).telefone || "",
+      Observacoes: r.Observacoes || (r as any).observacoes || "",
     }));
 
     const payload = { type: "MAP_UPDATE", clients: mappedClients, warehouses: wList, vehicles: vList, fleet: fList || fleetList };

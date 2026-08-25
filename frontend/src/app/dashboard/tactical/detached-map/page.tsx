@@ -4,12 +4,21 @@ import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "@/context/ThemeContext";
 import { useI18n } from "@/context/I18nContext";
+import { useProjects } from "@/context/ProjectContext";
+import { apiRequest } from "@/utils/api";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
+
+function isPendingRoute(routeName?: string) {
+  if (!routeName) return true;
+  const s = String(routeName).toUpperCase();
+  return s.includes("PENDENTE") || s.includes("DISTRIBUIR");
+}
 
 export default function DetachedMapPage() {
   const { theme, toggleTheme } = useTheme();
   const { t } = useI18n();
+  const { selectedProject } = useProjects();
   const [clients, setClients] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
@@ -31,10 +40,10 @@ export default function DetachedMapPage() {
   };
 
   useEffect(() => {
-    // 1. Initial load
+    // 1. Initial load from localStorage
     loadLocalData();
 
-    // 2. BroadcastChannel listener
+    // 2. BroadcastChannel listener for live sync
     const channel = new BroadcastChannel("georoute_map_sync");
 
     channel.onmessage = (event) => {
@@ -50,8 +59,15 @@ export default function DetachedMapPage() {
 
     // 3. Storage event listener fallback (for multi-tab / popup sync)
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "georoute_map_state") {
-        loadLocalData();
+      if (e.key === "georoute_map_state" && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.clients) setClients(parsed.clients);
+          if (parsed.warehouses) setWarehouses(parsed.warehouses);
+          if (parsed.vehicles) setVehicles(parsed.vehicles);
+          if (parsed.fleet) setFleet(parsed.fleet);
+          setStatusMsg(`Sincronizado às ${new Date().toLocaleTimeString()}`);
+        } catch (err) {}
       }
     };
 
@@ -62,6 +78,160 @@ export default function DetachedMapPage() {
       window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
+
+  const handleMoveClientRoute = async (clientName: string, newRoute: string, delivId?: number, address?: string) => {
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
+
+    // Optimistic state update
+    const updated = clients.map((c) => {
+      if (c.Cliente === clientName || (delivId && (c.id === delivId || c.ID_Original === delivId))) {
+        return { ...c, Rota: targetRoute };
+      }
+      return c;
+    });
+    setClients(updated);
+    setStatusMsg(`A guardar reatribuição para ${targetRoute}...`);
+
+    if (!projId) {
+      // Local broadcast only if no project context
+      const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles, fleet };
+      try {
+        const ch = new BroadcastChannel("georoute_map_sync");
+        ch.postMessage(payload);
+        localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+        ch.close();
+      } catch (e) {}
+      return;
+    }
+
+    try {
+      const res = await apiRequest("/api/solver/reassign", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projId,
+          client_code: clientName,
+          delivery_id: delivId,
+          address: address,
+          new_route: targetRoute,
+        }),
+      });
+
+      if (res && res.routes) {
+        const mappedClients = res.routes.map((r: any) => ({
+          ...r,
+          id: r.id || r.ID_Original,
+          ID_Original: r.id || r.ID_Original,
+          Doc_ID: r.Doc_ID || r.doc_id || "",
+          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+          Nome_Cliente: r.Nome_Cliente || r.Cliente,
+          Telefone: r.Telefone || r.Telefone_Cliente || "",
+          Observacoes: r.Observacoes || "",
+        }));
+        setClients(mappedClients);
+        setStatusMsg(`Guardado às ${new Date().toLocaleTimeString()}`);
+
+        const payload = {
+          type: "MAP_UPDATE",
+          clients: mappedClients,
+          warehouses,
+          vehicles,
+          fleet,
+        };
+        try {
+          const ch = new BroadcastChannel("georoute_map_sync");
+          ch.postMessage(payload);
+          localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+          ch.close();
+        } catch (e) {}
+      }
+    } catch (err: any) {
+      console.error("Reassign error from map:", err);
+      setStatusMsg(`Erro ao guardar: ${err.message || "Tente novamente"}`);
+      loadLocalData();
+    }
+  };
+
+  const handleUpdateClientCoords = async (clientName: string, lat: number, lon: number) => {
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    const target = clients.find((c) => c.Cliente === clientName);
+    const delivId = target?.id || target?.ID_Original;
+
+    const updated = clients.map((c) => {
+      if (c.Cliente === clientName || (delivId && (c.id === delivId || c.ID_Original === delivId))) {
+        return { ...c, Latitude: lat, Longitude: lon, Rota: "Por Distribuir" };
+      }
+      return c;
+    });
+    setClients(updated);
+    setStatusMsg(`A atualizar coordenadas de ${clientName}...`);
+
+    if (!projId) return;
+
+    try {
+      if (delivId) {
+        try {
+          await apiRequest(`/api/geocoding/delivery/${delivId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              morada: target?.Morada || "",
+              codigo_postal: target?.CP || "",
+              concelho: target?.Localidade || "",
+              latitude: lat,
+              longitude: lon,
+            }),
+          });
+        } catch (e) {
+          console.warn("Geocoding correction update error:", e);
+        }
+      }
+
+      const res = await apiRequest("/api/solver/reassign", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projId,
+          client_code: clientName,
+          delivery_id: delivId,
+          address: target?.Morada,
+          new_route: "Por Distribuir",
+        }),
+      });
+
+      if (res && res.routes) {
+        const mappedClients = res.routes.map((r: any) => ({
+          ...r,
+          id: r.id || r.ID_Original,
+          ID_Original: r.id || r.ID_Original,
+          Doc_ID: r.Doc_ID || r.doc_id || "",
+          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+          Nome_Cliente: r.Nome_Cliente || r.Cliente,
+          Telefone: r.Telefone || r.Telefone_Cliente || "",
+          Observacoes: r.Observacoes || "",
+        }));
+        setClients(mappedClients);
+        setStatusMsg(`Coordenadas atualizadas (${new Date().toLocaleTimeString()})`);
+
+        const payload = {
+          type: "MAP_UPDATE",
+          clients: mappedClients,
+          warehouses,
+          vehicles,
+          fleet,
+        };
+        try {
+          const ch = new BroadcastChannel("georoute_map_sync");
+          ch.postMessage(payload);
+          localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+          ch.close();
+        } catch (e) {}
+      }
+    } catch (err: any) {
+      console.error("Coords update error:", err);
+      setStatusMsg(`Erro ao atualizar coordenadas: ${err.message || "Tente novamente"}`);
+    }
+  };
 
   return (
     <div className="w-screen h-screen bg-zinc-950 flex flex-col overflow-hidden">
@@ -130,38 +300,9 @@ export default function DetachedMapPage() {
           clients={clients}
           warehouses={warehouses}
           vehicles={vehicles}
-          onMoveClientRoute={(clientName, newRoute, delivId, addr) => {
-            const updated = clients.map((c) => {
-              if (c.Cliente === clientName || (delivId && c.id === delivId)) {
-                return { ...c, Rota: newRoute };
-              }
-              return c;
-            });
-            setClients(updated);
-            const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles };
-            try {
-              const ch = new BroadcastChannel("georoute_map_sync");
-              ch.postMessage(payload);
-              localStorage.setItem("georoute_map_state", JSON.stringify(payload));
-              ch.close();
-            } catch (e) {}
-          }}
-          onUpdateClientCoords={(clientName, lat, lon) => {
-            const updated = clients.map((c) => {
-              if (c.Cliente === clientName) {
-                return { ...c, Latitude: lat, Longitude: lon, Rota: "Por Distribuir" };
-              }
-              return c;
-            });
-            setClients(updated);
-            const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles };
-            try {
-              const ch = new BroadcastChannel("georoute_map_sync");
-              ch.postMessage(payload);
-              localStorage.setItem("georoute_map_state", JSON.stringify(payload));
-              ch.close();
-            } catch (e) {}
-          }}
+          fleet={fleet}
+          onMoveClientRoute={handleMoveClientRoute}
+          onUpdateClientCoords={handleUpdateClientCoords}
         />
       </div>
     </div>

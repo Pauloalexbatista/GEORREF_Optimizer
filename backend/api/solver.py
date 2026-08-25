@@ -1,3 +1,16 @@
+def _pick_first_valid(*candidates):
+    for c in candidates:
+        if c is not None:
+            if isinstance(c, pd.DataFrame):
+                if not c.empty:
+                    return c
+            elif isinstance(c, (dict, list, str)):
+                if len(c) > 0:
+                    return c
+            else:
+                return c
+    return None
+
 from utils.google_routes_engine import calculate_google_traffic_route, get_google_api_key
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, HTTPException, Depends
@@ -708,6 +721,13 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             # Match with db delivery to get fresh geocoded coordinates & info
                             match_deliv = valid_deliv_by_id.get(d_id) or valid_deliv_by_code.get(c_doc) or valid_deliv_by_code.get(c_cli) or valid_deliv_by_name.get(c_cli) or valid_deliv_by_name.get(c_doc)
                             
+                            doc_id_val = str(r.get("Doc_ID") or (match_deliv.get("codigo_cliente") if match_deliv else "") or r.get("Codigo_Cliente") or "")
+                            codigo_cliente_val = str((match_deliv.get("codigo_cliente") if match_deliv else "") or r.get("Codigo_Cliente") or r.get("Doc_ID") or "")
+                            tel_val = str((match_deliv.get("telefone") if match_deliv else "") or r.get("Telefone_Cliente") or r.get("Telefone") or "")
+                            obs_val = str((match_deliv.get("observacoes") if match_deliv else "") or r.get("Observacoes") or r.get("Regras") or "")
+                            peso_val = clean_num(r.get("Peso_KG") if pd.notna(r.get("Peso_KG")) else (match_deliv.get("peso_kg") if match_deliv else 50.0), 50.0)
+                            vol_val = clean_num(r.get("Volume_m3") if pd.notna(r.get("Volume_m3")) else (r.get("Volume_M3") if pd.notna(r.get("Volume_M3")) else (match_deliv.get("volume_m3") if match_deliv else 0.1)), 0.1)
+
                             if match_deliv:
                                 seen_deliv_ids.add(clean_int(match_deliv.get("id")))
                                 if match_deliv.get("codigo_cliente"):
@@ -741,14 +761,19 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             routes_list.append({
                                 "id": d_id,
                                 "ID_Original": d_id,
+                                "Doc_ID": doc_id_val,
+                                "Codigo_Cliente": codigo_cliente_val,
                                 "Rota": r_name,
                                 "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
                                 "Ordem": ordem_val,
-                                "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""),
+                                "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else nome_val),
                                 "Nome_Cliente": nome_val,
                                 "Morada": morada_val,
                                 "CP": cp_val,
                                 "Localidade": loc_val,
+                                "Telefone_Cliente": tel_val,
+                                "Telefone": tel_val,
+                                "Observacoes": obs_val,
                                 "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
                                 "Latitude": lat_val,
                                 "Longitude": lon_val,
@@ -759,9 +784,10 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                                 "Nivel_Qualidade": qual_val,
                                 "KM_Anterior": km_ant,
                                 "Dist_Acum": dist_acum,
-                                "Peso_KG": clean_num(r.get("Peso_KG"), 50.0),
-                                "Carga_Acum": clean_num(r.get("Carga_Acum"), 0.0),
-                                "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), 0.0)
+                                "Peso_KG": peso_val,
+                                "Volume_m3": vol_val,
+                                "Carga_Acum": clean_num(r.get("Carga_Acum"), peso_val),
+                                "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), vol_val)
                             })
             
             # 3. Synchronize only genuinely unassigned deliveries
@@ -780,6 +806,8 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                         routes_list.append({
                             "id": d_id,
                             "ID_Original": d_id,
+                            "Doc_ID": str(d.get("codigo_cliente", f"Doc_{d_id}")),
+                            "Codigo_Cliente": str(d.get("codigo_cliente", f"Cliente_{d_id}")),
                             "Rota": "Por Distribuir",
                             "Armazem": str(d.get("armazem", "N/A")),
                             "Ordem": pending_order,
@@ -788,6 +816,9 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             "Morada": str(d.get("morada", "N/A")),
                             "CP": str(d.get("codigo_postal", "N/A")),
                             "Localidade": str(d.get("_concelho") or d.get("concelho", "")),
+                            "Telefone_Cliente": str(d.get("telefone", "")),
+                            "Telefone": str(d.get("telefone", "")),
+                            "Observacoes": str(d.get("observacoes", "")),
                             "Janela_Horaria": combined_window,
                             "Latitude": clean_num(d.get("latitude")),
                             "Longitude": clean_num(d.get("longitude")),
@@ -799,6 +830,7 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             "KM_Anterior": 0.0,
                             "Dist_Acum": 0.0,
                             "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
+                            "Volume_m3": round(clean_num(d.get("volume_m3"), 0.1), 2),
                             "Carga_Acum": round(clean_num(d.get("peso_kg"), 50.0), 1),
                             "Carga_Vol_Acum": round(clean_num(d.get("volume_m3"), 0.1), 2)
                         })
@@ -886,7 +918,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
             warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
         fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
         
         updated_rows = []
@@ -982,7 +1014,7 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
             warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
         fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
         
         updated_rows = []
@@ -1083,7 +1115,7 @@ def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
             warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
         fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
         
         updated_rows = []
@@ -1167,7 +1199,7 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
             warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
         fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
         v_info = fleet_dict.get(req.route_name, {})
         
@@ -1405,7 +1437,7 @@ def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserR
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
             warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = state_dict.get("fleet_config") or state_dict.get("fleet_config_used", {})
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
         fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
         
         unique_routes = [r for r in df_routes["Rota"].dropna().unique() if str(r).strip() and "PENDENTE" not in str(r).upper() and "POR DISTRIBUIR" not in str(r).upper()]

@@ -92,15 +92,29 @@ export default function FleetPage() {
   const [editingWhIdx, setEditingWhIdx] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  const persistFleetAndWarehouses = async (nextFleet: Vehicle[], nextWh: Warehouse[], showAlert = false) => {
+    const persistFleetAndWarehouses = async (nextFleet: Vehicle[], nextWh: Warehouse[], showAlert = false) => {
     if (!selectedProject) return;
     setSaveStatus("saving");
     try {
+      let whToSend = nextWh;
+      if (whToSend.length === 0 && nextFleet.length > 0) {
+        whToSend = [{
+          name: "Armazém Principal",
+          address: "Base Central",
+          cp: "1000-001",
+          locality: "Lisboa",
+          lat: 38.7223,
+          lon: -9.1393,
+          quality: 1
+        }];
+        setWarehouses(whToSend);
+      }
+
       await apiRequest(`/api/fleet/${selectedProject.id}`, {
         method: "POST",
         body: JSON.stringify({
           fleet: nextFleet,
-          warehouses: nextWh,
+          warehouses: whToSend,
         }),
       });
       setSaveStatus("saved");
@@ -111,9 +125,7 @@ export default function FleetPage() {
     } catch (err: any) {
       setSaveStatus("error");
       console.error("Auto-save fleet error:", err);
-      if (showAlert) {
-        alert(err.message || "Erro ao guardar configurações.");
-      }
+      alert(`Aviso ao guardar frota: ${err.message || "Verifique a ligação"}`);
     }
   };
   const [editingVehIdx, setEditingVehIdx] = useState<number | null>(null);
@@ -292,26 +304,31 @@ export default function FleetPage() {
 
 
 
-  const handleAddVehicle = (e: React.FormEvent) => {
+    const handleAddVehicle = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vName.trim() || !vWarehouse) return;
+    const cleanName = vName.trim();
+    if (!cleanName) {
+      alert("Por favor introduza a identificação / matrícula da viatura.");
+      return;
+    }
+    const targetWh = vWarehouse.trim() || (warehouses.length > 0 ? warehouses[0].name : "Armazém Principal");
 
     const isEditing = editingVehIdx !== null;
 
-    if (fleet.some((v, idx) => (!isEditing || idx !== editingVehIdx) && v.veiculo.toLowerCase() === vName.toLowerCase())) {
+    if (fleet.some((v, idx) => (!isEditing || idx !== editingVehIdx) && v.veiculo.toLowerCase() === cleanName.toLowerCase())) {
       alert("Já existe um veículo com este nome na frota.");
       return;
     }
 
     const updatedVeh: Vehicle = {
-      veiculo: vName,
-      armazem: vWarehouse,
-      capacidade_kg: vCapKg,
-      capacidade_vol: vCapVol,
-      custo_km: vCostKm,
-      velocidade_media: vSpeed,
-      horario_inicio: vStart,
-      horario_fim: vEnd
+      veiculo: cleanName,
+      armazem: targetWh,
+      capacidade_kg: Number(vCapKg) || 1000,
+      capacidade_vol: Number(vCapVol) || 5.0,
+      custo_km: Number(vCostKm) || 0.5,
+      velocidade_media: Number(vSpeed) || 40,
+      horario_inicio: vStart || "08:00",
+      horario_fim: vEnd || "18:00"
     };
 
     const nextFleet = isEditing

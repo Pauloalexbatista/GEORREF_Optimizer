@@ -71,3 +71,5 @@ harvested_data.db
 cache_geoapi/
 
 backend/temp_uploads/
+
+~$*

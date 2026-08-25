@@ -230,12 +230,55 @@ export default function RoutesMatrixPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      channelRef.current = new BroadcastChannel("georoute_map_sync");
+      const channel = new BroadcastChannel("georoute_map_sync");
+      channelRef.current = channel;
+
+      channel.onmessage = (event) => {
+        if (event.data?.type === "MAP_UPDATE" && event.data?.clients) {
+          const mapped: RouteStop[] = event.data.clients.map((r: any) => ({
+            ...r,
+            id: r.id || r.ID_Original,
+            ID_Original: r.id || r.ID_Original,
+            Doc_ID: r.Doc_ID || r.doc_id || "",
+            Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+            Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+            Nome_Cliente: r.Nome_Cliente || r.Cliente,
+            Telefone: r.Telefone || r.Telefone_Cliente || "",
+            Observacoes: r.Observacoes || "",
+          }));
+          setRoutes(mapped);
+        }
+      };
+
+      const handleStorage = (e: StorageEvent) => {
+        if (e.key === "georoute_map_state" && e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed.clients) {
+              const mapped: RouteStop[] = parsed.clients.map((r: any) => ({
+                ...r,
+                id: r.id || r.ID_Original,
+                ID_Original: r.id || r.ID_Original,
+                Doc_ID: r.Doc_ID || r.doc_id || "",
+                Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+                Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+                Nome_Cliente: r.Nome_Cliente || r.Cliente,
+                Telefone: r.Telefone || r.Telefone_Cliente || "",
+                Observacoes: r.Observacoes || "",
+              }));
+              setRoutes(mapped);
+            }
+          } catch (err) {}
+        }
+      };
+      window.addEventListener("storage", handleStorage);
+
+      loadData();
+      return () => {
+        channel.close();
+        window.removeEventListener("storage", handleStorage);
+      };
     }
-    loadData();
-    return () => {
-      channelRef.current?.close();
-    };
   }, [selectedProject]);
 
   const toggleRoute = (routeName: string) => {

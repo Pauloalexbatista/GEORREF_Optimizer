@@ -121,6 +121,9 @@ def init_database():
         add_column_if_missing("frota", "capacidade_volume", "REAL DEFAULT 0.0")
         add_column_if_missing("frota", "armazem", "TEXT DEFAULT ''")
         add_column_if_missing("entregas", "armazem", "TEXT DEFAULT 'Armazém Principal'")
+        add_column_if_missing("entregas", "nome_cliente", "TEXT DEFAULT \'\'")
+        add_column_if_missing("entregas", "telefone", "TEXT DEFAULT \'\'")
+        add_column_if_missing("entregas", "observacoes", "TEXT DEFAULT \'\'")
         
         # Garantir privilégios SuperAdmin ao Paulo Batista se existir
         cursor.execute("""
@@ -331,12 +334,13 @@ def save_frota_projeto(projeto_id, frota_data):
             cursor.execute("""
                 INSERT INTO frota (
                     projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
-                    velocidade_media, horario_inicio, horario_fim
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    velocidade_media, horario_inicio, horario_fim, armazem
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                projeto_id, f.get('veiculo'), f.get('capacidade_kg'),
-                f.get('capacidade_volume', 0.0), f.get('custo_km'),
-                f.get('velocidade_media'), f.get('horario_inicio'), f.get('horario_fim')
+                projeto_id, f.get('veiculo'), float(f.get('capacidade_kg') or 1000.0),
+                float(f.get('capacidade_volume') or f.get('capacidade_vol') or 5.0), float(f.get('custo_km') or 0.5),
+                float(f.get('velocidade_media') or 40.0), str(f.get('horario_inicio') or '08:00'), str(f.get('horario_fim') or '18:00'),
+                str(f.get('armazem') or '')
             ))
         
         conn.commit()

@@ -9,6 +9,11 @@ import "leaflet/dist/leaflet.css";
 interface MapClient {
   id?: number;
   ID_Original?: number;
+  Doc_ID?: string;
+  doc_id?: string;
+  numero_doc?: string;
+  Codigo_Cliente?: string;
+  codigo_cliente?: string;
   Armazem?: string;
   Cliente: string;
   Nome_Cliente?: string;
@@ -20,7 +25,19 @@ interface MapClient {
   Longitude: number;
   Rota: string;
   Ordem: number;
+  Chegada?: string;
+  Saida?: string;
+  Peso_KG?: number;
+  Volume_m3?: number;
+  Volume_M3?: number;
   Carga_Acum?: number;
+  Carga_Vol_Acum?: number;
+  Telefone?: string;
+  Telefone_Cliente?: string;
+  telefone?: string;
+  Observacoes?: string;
+  observacoes?: string;
+  Regras?: string;
 }
 
 interface MapWarehouse {
@@ -767,6 +784,17 @@ export default function MapComponent({
           const isPending = isPendingRoute(c.Rota);
           const color = getRouteColor(c.Rota, vehicles);
 
+          const clientName = c.Nome_Cliente || c.Cliente || "Cliente";
+          const clientCode = c.Codigo_Cliente || (c.Cliente !== clientName ? c.Cliente : "") || "";
+          const docNumber = c.Doc_ID || c.doc_id || c.numero_doc || "";
+          const phone = c.Telefone || c.Telefone_Cliente || c.telefone || "";
+          const observations = c.Observacoes || c.observacoes || c.Regras || "";
+          const stopWeight = c.Peso_KG !== undefined && c.Peso_KG !== null ? c.Peso_KG : (c.Carga_Acum || 0);
+          const stopVolume = c.Volume_m3 !== undefined && c.Volume_m3 !== null ? c.Volume_m3 : (c.Volume_M3 || 0);
+          const windowFormatted = formatTimeWindow(c.Janela_Horaria);
+          const arrivalTime = c.Chegada && c.Chegada !== "00:00" ? c.Chegada : "";
+          const departureTime = c.Saida && c.Saida !== "00:00" ? c.Saida : "";
+
           return (
             <Marker
               key={"marker-" + String(c.Cliente) + "-" + String(c.ID_Original || c.id || idx)}
@@ -784,47 +812,115 @@ export default function MapComponent({
               }}
             >
               <Popup>
-                <div className="text-zinc-900 min-w-[230px] p-1 font-sans">
-                  {/* Header */}
-                  <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5 mb-2">
-                    <div className="flex items-center space-x-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                      <span className="font-bold text-xs">
+                <div className="text-zinc-900 min-w-[280px] max-w-[340px] p-1 font-sans">
+                  {/* 1. Header: Paragem # / Rota & Status */}
+                  <div className="flex items-center justify-between border-b border-zinc-200 pb-2 mb-2">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: color }} />
+                      <span className="font-extrabold text-sm text-zinc-900">
                         {isPending ? "Pendente" : `Paragem #${c.Ordem}`}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono bg-zinc-100 text-zinc-700 font-bold px-1.5 py-0.5 rounded border border-zinc-200">
-                      {c.Cliente}
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-full"
+                      style={{
+                        backgroundColor: isPending ? "#fef3c7" : `${color}20`,
+                        color: isPending ? "#b45309" : color,
+                        border: `1px solid ${isPending ? "#fde68a" : `${color}40`}`,
+                      }}
+                    >
+                      {isPending ? "Por Distribuir" : c.Rota}
                     </span>
                   </div>
 
-                  {/* Body */}
-                  <div className="space-y-1 text-xs">
-                    {c.Nome_Cliente && c.Nome_Cliente !== c.Cliente && (
-                      <p className="font-bold text-zinc-800">{c.Nome_Cliente}</p>
-                    )}
-                    <p className="text-zinc-700 font-medium">{c.Morada}</p>
-                    <p className="text-zinc-600 text-[10px] font-medium">{c.CP} {c.Localidade}</p>
+                  {/* 2. Client Name Header & Identification Chips */}
+                  <div className="mb-2">
+                    <p className="font-bold text-zinc-900 text-xs leading-snug">
+                      {clientName}
+                    </p>
                     
-                    <div className="pt-1 flex items-center justify-between text-[11px] text-zinc-700 border-t border-zinc-200">
-                      <span>Janela: <b>{formatTimeWindow(c.Janela_Horaria)}</b></span>
-                      <span>Carga: <b>{c.Carga_Acum || 0} kg</b></span>
+                    {/* Identification Chips: Código Cliente, Nº Doc, Telefone */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      {clientCode && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-100 border border-zinc-300 text-[10px] font-mono text-zinc-700 font-semibold" title="Código do Cliente">
+                          <span className="text-zinc-400 mr-1 font-sans">Cód:</span> {clientCode}
+                        </span>
+                      )}
+                      {docNumber && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-[10px] font-mono text-indigo-700 font-bold" title="Número do Documento / Encomenda">
+                          <span className="text-indigo-400 mr-1 font-sans">Doc:</span> {docNumber}
+                        </span>
+                      )}
+                      {phone && (
+                        <a
+                          href={`tel:${phone}`}
+                          className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-mono text-emerald-700 font-bold hover:underline"
+                          title="Ligar para cliente"
+                        >
+                          <span className="mr-1">📞</span> {phone}
+                        </a>
+                      )}
                     </div>
                   </div>
 
-                  {/* Route Reassignment Selector inside Popup */}
+                  {/* 3. Address */}
+                  <div className="text-xs text-zinc-600 bg-zinc-50 rounded-lg p-2 border border-zinc-200 mb-2 space-y-0.5">
+                    <p className="font-medium text-zinc-800 leading-tight">📍 {c.Morada || "Morada não especificada"}</p>
+                    <p className="text-[10px] text-zinc-500 font-mono pl-4">{c.CP} {c.Localidade}</p>
+                  </div>
+
+                  {/* 4. Operational Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px] mb-2">
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
+                      <span className="text-[9px] text-zinc-400 uppercase font-semibold block">Janela Horária</span>
+                      <span className="font-bold text-zinc-800 text-[11px]">{windowFormatted}</span>
+                    </div>
+
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
+                      <span className="text-[9px] text-zinc-400 uppercase font-semibold block">
+                        {arrivalTime ? "Chegada Prevista" : "Carga / Peso"}
+                      </span>
+                      {arrivalTime ? (
+                        <span className="font-bold text-indigo-600 text-[11px]">
+                          {arrivalTime} {departureTime ? `→ ${departureTime}` : ""}
+                        </span>
+                      ) : (
+                        <span className="font-bold text-zinc-800 text-[11px]">{stopWeight} kg</span>
+                      )}
+                    </div>
+
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
+                      <span className="text-[9px] text-zinc-400 uppercase font-semibold block">Peso da Paragem</span>
+                      <span className="font-bold text-zinc-800 text-[11px]">{stopWeight} kg</span>
+                    </div>
+
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
+                      <span className="text-[9px] text-zinc-400 uppercase font-semibold block">Volume</span>
+                      <span className="font-bold text-zinc-800 text-[11px]">{Number(stopVolume).toFixed(2)} m³</span>
+                    </div>
+                  </div>
+
+                  {/* 5. Observações (if present) */}
+                  {observations && (
+                    <div className="mb-2 p-1.5 bg-amber-50 border border-amber-200 rounded-md text-[10px] text-amber-900">
+                      <span className="font-bold uppercase tracking-wider block text-[9px] text-amber-700 mb-0.5">⚠️ Observações:</span>
+                      <p className="leading-tight italic">{observations}</p>
+                    </div>
+                  )}
+
+                  {/* 6. Route Reassignment Selector inside Popup */}
                   {onMoveClientRoute && (
-                    <div className="mt-2.5 pt-2 border-t border-zinc-200 flex items-center justify-between">
-                      <label className="text-[10px] font-semibold text-zinc-700">Mover para:</label>
+                    <div className="pt-2 border-t border-zinc-200 flex items-center justify-between gap-2">
+                      <label className="text-[10px] font-bold text-zinc-600 shrink-0">Mover para:</label>
                       <select
                         value={isPending ? "Por Distribuir" : c.Rota}
                         onChange={(e) => onMoveClientRoute(c.Cliente, e.target.value, c.id || c.ID_Original, c.Morada)}
-                        className="text-[10px] bg-zinc-50 border border-zinc-300 rounded px-1.5 py-0.5 font-medium text-zinc-800 outline-none focus:border-indigo-500 cursor-pointer"
+                        className="w-full text-[11px] bg-white border border-zinc-300 rounded-lg px-2 py-1 font-semibold text-zinc-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
                       >
-                        <option value="Por Distribuir">⚠️ Por Distribuir</option>
+                        <option value="Por Distribuir">🟡 Por Distribuir</option>
                         {vehicles.map((v) => (
                           <option key={v} value={v}>
-                            {v}
+                            🚚 {v}
                           </option>
                         ))}
                       </select>

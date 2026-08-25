@@ -75,118 +75,33 @@ router = APIRouter(prefix="/fleet", tags=["fleet"])
 
 
 class WarehouseItem(BaseModel):
-
-
-
     name: str
-
-
-
     address: str
-
-
-
-    cp: str
-
-
-
-    locality: str
-
-
-
-
-
-
+    cp: Optional[str] = ""
+    locality: Optional[str] = ""
 
 class WarehouseGeocoded(BaseModel):
-
-
-
     name: str
-
-
-
     address: str
-
-
-
-    cp: str
-
-
-
-    locality: str
-
-
-
-    lat: float
-
-
-
-    lon: float
-
-
-
-    quality: int
-
-
-
-
-
-
+    cp: Optional[str] = ""
+    locality: Optional[str] = ""
+    lat: Optional[float] = 0.0
+    lon: Optional[float] = 0.0
+    quality: Optional[int] = 1
 
 class VehicleItem(BaseModel):
-
-
-
     veiculo: str
-
-
-
-    armazem: str
-
-
-
-    capacidade_kg: float
-
-
-
-    capacidade_vol: float
-
-
-
-    custo_km: float
-
-
-
-    velocidade_media: float
-
-
-
-    horario_inicio: str
-
-
-
-    horario_fim: str
-
-
-
-
-
-
+    armazem: Optional[str] = ""
+    capacidade_kg: Optional[float] = 1000.0
+    capacidade_vol: Optional[float] = 5.0
+    custo_km: Optional[float] = 0.5
+    velocidade_media: Optional[float] = 40.0
+    horario_inicio: Optional[str] = "08:00"
+    horario_fim: Optional[str] = "18:00"
 
 class FleetSaveRequest(BaseModel):
-
-
-
-    fleet: List[VehicleItem]
-
-
-
-    warehouses: List[WarehouseGeocoded]
-
-
-
-
+    fleet: List[VehicleItem] = []
+    warehouses: List[WarehouseGeocoded] = []
 
 
 
@@ -343,525 +258,223 @@ def download_unified_template(current_user: UserResponse = Depends(get_current_u
     )
 
 
+def _pick_first_valid(*candidates):
+    for c in candidates:
+        if c is not None:
+            if isinstance(c, pd.DataFrame):
+                if not c.empty:
+                    return c
+            elif isinstance(c, (dict, list, str)):
+                if len(c) > 0:
+                    return c
+            else:
+                return c
+    return None
+
 @router.get("/{project_id}")
-
-
-
 def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_current_user)):
-
-
-
     proj = get_projeto(project_id)
-
-
-
     if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-
-
-
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-
-
-
         
-
-
-
     try:
-
-
-
         with get_db() as conn:
-
-
-
             cursor = conn.cursor()
-
-
-
             cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
-
-
-
             row = cursor.fetchone()
-
-
-
             
-
-
-
-            if not row:
-
-
-
-                return {"fleet": [], "warehouses": []}
-
-
-
+            state_dict = {}
+            if row and row["payload_json"]:
+                state_dict = deserialize_state(row["payload_json"])
                 
-
-
-
-            state_dict = deserialize_state(row["payload_json"])
-
-
-
-            
-
-
-
-            raw_wh = state_dict.get("warehouses_geocoded")
-
-
-
+            raw_wh = _pick_first_valid(
+                state_dict.get("warehouses_geocoded"),
+                state_dict.get("warehouses_used"),
+                state_dict.get("warehouses"),
+                state_dict.get("df_warehouses")
+            )
             warehouses_res = []
-
-
-
             if raw_wh is not None:
-
-
-
                 if isinstance(raw_wh, pd.DataFrame):
-
-
-
                     df_wh = raw_wh
-
-
-
-                else:
-
-
-
+                elif isinstance(raw_wh, list):
                     df_wh = pd.DataFrame(raw_wh)
-
-
-
+                elif isinstance(raw_wh, dict):
+                    df_wh = pd.DataFrame.from_dict(raw_wh)
+                else:
+                    df_wh = pd.DataFrame()
                     
-
-
-
                 if not df_wh.empty:
-
-
-
                     for idx, r in df_wh.iterrows():
-
-
-
                         warehouses_res.append({
-
-
-
-                            "name": r.get("Nome_Armazem", r.get("name", "")),
-
-
-
-                            "address": r.get("Morada", r.get("address", "")),
-
-
-
-                            "cp": r.get("CP", r.get("cp", "")),
-
-
-
-                            "locality": r.get("Localidade", r.get("locality", "")),
-
-
-
-                            "lat": float(r.get("Latitude", r.get("lat", 0.0))),
-
-
-
-                            "lon": float(r.get("Longitude", r.get("lon", 0.0))),
-
-
-
-                            "quality": int(r.get("Nivel_Qualidade", r.get("quality", 1)))
-
-
-
+                            "name": str(r.get("Nome_Armazem", r.get("name", ""))),
+                            "address": str(r.get("Morada", r.get("address", ""))),
+                            "cp": str(r.get("CP", r.get("cp", ""))),
+                            "locality": str(r.get("Localidade", r.get("locality", ""))),
+                            "lat": float(r.get("Latitude", r.get("lat", 0.0)) or 0.0),
+                            "lon": float(r.get("Longitude", r.get("lon", 0.0)) or 0.0),
+                            "quality": int(r.get("Nivel_Qualidade", r.get("quality", 1)) or 1)
                         })
-
-
-
             
-
-
-
-            raw_fleet = state_dict.get("fleet_config")
-
-
-
+            raw_fleet = _pick_first_valid(
+                state_dict.get("fleet_config"),
+                state_dict.get("fleet_config_used")
+            )
             fleet_res = []
-
-
-
             if raw_fleet is not None:
-
-
-
-                for veh_name, veh in raw_fleet.items():
-
-
-
-                    if hasattr(veh, "capacidade_kg"):
-
-
-
-                        fleet_res.append({
-
-
-
-                            "veiculo": veh_name,
-
-
-
-                            "armazem": getattr(veh, "armazem", ""),
-
-
-
-                            "capacidade_kg": getattr(veh, "capacidade_kg", 0.0),
-
-
-
-                            "capacidade_vol": getattr(veh, "capacidade_vol", 0.0),
-
-
-
-                            "custo_km": getattr(veh, "custo_km", 0.0),
-
-
-
-                            "velocidade_media": getattr(veh, "velocidade_media", 0.0),
-
-
-
-                            "horario_inicio": getattr(veh, "horario_inicio", "08:00"),
-
-
-
-                            "horario_fim": getattr(veh, "horario_fim", "18:00")
-
-
-
-                        })
-
-
-
-                    elif isinstance(veh, dict):
-
-
-
-                        fleet_res.append({
-
-
-
-                            "veiculo": veh_name,
-
-
-
-                            "armazem": veh.get("armazem", ""),
-
-
-
-                            "capacidade_kg": veh.get("capacidade_kg", 0.0),
-
-
-
-                            "capacidade_vol": veh.get("capacidade_vol", 0.0),
-
-
-
-                            "custo_km": veh.get("custo_km", 0.0),
-
-
-
-                            "velocidade_media": veh.get("velocidade_media", 0.0),
-
-
-
-                            "horario_inicio": veh.get("horario_inicio", "08:00"),
-
-
-
-                            "horario_fim": veh.get("horario_fim", "18:00")
-
-
-
-                        })
-
-
-
-                        
-
-
+                if isinstance(raw_fleet, dict):
+                    for veh_name, veh in raw_fleet.items():
+                        if hasattr(veh, "capacidade_kg"):
+                            fleet_res.append({
+                                "veiculo": str(veh_name),
+                                "armazem": str(getattr(veh, "armazem", "") or ""),
+                                "capacidade_kg": float(getattr(veh, "capacidade_kg", 1000.0) or 1000.0),
+                                "capacidade_vol": float(getattr(veh, "capacidade_vol", 5.0) or 5.0),
+                                "custo_km": float(getattr(veh, "custo_km", 0.5) or 0.5),
+                                "velocidade_media": float(getattr(veh, "velocidade_media", 40.0) or 40.0),
+                                "horario_inicio": str(getattr(veh, "horario_inicio", "08:00") or "08:00"),
+                                "horario_fim": str(getattr(veh, "horario_fim", "18:00") or "18:00")
+                            })
+                        elif isinstance(veh, dict):
+                            fleet_res.append({
+                                "veiculo": str(veh_name),
+                                "armazem": str(veh.get("armazem", "") or ""),
+                                "capacidade_kg": float(veh.get("capacidade_kg", 1000.0) or 1000.0),
+                                "capacidade_vol": float(veh.get("capacidade_vol", veh.get("capacidade_volume", 5.0)) or 5.0),
+                                "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
+                                "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
+                                "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
+                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00")
+                            })
+                elif isinstance(raw_fleet, pd.DataFrame):
+                    for _, veh in raw_fleet.iterrows():
+                        v_name = str(veh.get("veiculo", veh.get("Nome_Veiculo", "")))
+                        if v_name:
+                            fleet_res.append({
+                                "veiculo": v_name,
+                                "armazem": str(veh.get("armazem", veh.get("Nome_Armazem", "")) or ""),
+                                "capacidade_kg": float(veh.get("capacidade_kg", 1000.0) or 1000.0),
+                                "capacidade_vol": float(veh.get("capacidade_volume", veh.get("capacidade_vol", 5.0)) or 5.0),
+                                "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
+                                "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
+                                "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
+                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00")
+                            })
+                elif isinstance(raw_fleet, list):
+                    for veh in raw_fleet:
+                        if isinstance(veh, dict):
+                            fleet_res.append({
+                                "veiculo": str(veh.get("veiculo", "")),
+                                "armazem": str(veh.get("armazem", "") or ""),
+                                "capacidade_kg": float(veh.get("capacidade_kg", 1000.0) or 1000.0),
+                                "capacidade_vol": float(veh.get("capacidade_vol", veh.get("capacidade_volume", 5.0)) or 5.0),
+                                "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
+                                "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
+                                "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
+                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00")
+                            })
+
+            # If snapshot has no fleet, fallback to SQLite frota table
+            if not fleet_res:
+                from database import get_frota_projeto
+                db_frota = get_frota_projeto(project_id)
+                for f in db_frota:
+                    fleet_res.append({
+                        "veiculo": str(f["veiculo"]),
+                        "armazem": str(f["armazem"]) if "armazem" in f.keys() and f["armazem"] else "",
+                        "capacidade_kg": float(f["capacidade_kg"] or 1000.0),
+                        "capacidade_vol": float(f["capacidade_volume"] if "capacidade_volume" in f.keys() and f["capacidade_volume"] is not None else 5.0),
+                        "custo_km": float(f["custo_km"] or 0.5),
+                        "velocidade_media": float(f["velocidade_media"] or 40.0),
+                        "horario_inicio": str(f["horario_inicio"] or "08:00"),
+                        "horario_fim": str(f["horario_fim"] or "18:00")
+                    })
 
             return {"fleet": fleet_res, "warehouses": warehouses_res}
-
-
-
     except Exception as e:
-
-
-
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
-
-
-
 @router.post("/{project_id}")
-
-
-
 def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: UserResponse = Depends(get_current_user)):
-
-
-
     proj = get_projeto(project_id)
-
-
-
     if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-
-
-
         raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
-
-
-
         
-
-
-
     try:
-
-
-
         with get_db() as conn:
-
-
-
             cursor = conn.cursor()
-
-
-
             cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
-
-
-
             row = cursor.fetchone()
-
-
-
             
-
-
-
-            if row:
-
-
-
+            if row and row["payload_json"]:
                 state_dict = deserialize_state(row["payload_json"])
-
-
-
             else:
-
-
-
                 state_dict = {}
-
-
-
                 
-
-
-
         wh_rows = []
-
-
-
         for wh in req.warehouses:
-
-
-
             wh_rows.append({
-
-
-
                 "Nome_Armazem": wh.name,
-
-
-
                 "Morada": wh.address,
-
-
-
-                "CP": wh.cp,
-
-
-
-                "Localidade": wh.locality,
-
-
-
-                "Latitude": wh.lat,
-
-
-
-                "Longitude": wh.lon,
-
-
-
-                "Nivel_Qualidade": wh.quality
-
-
-
+                "CP": wh.cp or "",
+                "Localidade": wh.locality or "",
+                "Latitude": float(wh.lat or 0.0),
+                "Longitude": float(wh.lon or 0.0),
+                "Nivel_Qualidade": int(wh.quality or 1)
             })
-
-
-
         df_wh = pd.DataFrame(wh_rows)
 
         state_dict["warehouses_geocoded"] = df_wh
         state_dict["df_warehouses"] = df_wh
 
-
-
-        
-
-
-
-        from core.session_state import FleetVehicle
-
-
-
         from core.session_state import FleetVehicle
         fleet_dict = {}
-
-
-
+        fleet_rows_for_db = []
         for veh in req.fleet:
-
-
-
+            if not veh.veiculo or not veh.veiculo.strip():
+                continue
             fleet_dict[veh.veiculo] = FleetVehicle(
-
-
-
-                capacidade_kg=veh.capacidade_kg,
-
-
-
-                capacidade_vol=veh.capacidade_vol,
-
-
-
-                custo_km=veh.custo_km,
-
-
-
-                velocidade_media=veh.velocidade_media,
-
-
-
-                horario_inicio=veh.horario_inicio,
-
-
-
-                horario_fim=veh.horario_fim,
-
-
-
-                armazem=veh.armazem
-
-
-
+                capacidade_kg=float(veh.capacidade_kg or 1000.0),
+                capacidade_vol=float(veh.capacidade_vol or 5.0),
+                custo_km=float(veh.custo_km or 0.5),
+                velocidade_media=float(veh.velocidade_media or 40.0),
+                horario_inicio=str(veh.horario_inicio or "08:00"),
+                horario_fim=str(veh.horario_fim or "18:00"),
+                armazem=str(veh.armazem or "")
             )
-
-
+            fleet_rows_for_db.append({
+                "veiculo": veh.veiculo,
+                "capacidade_kg": float(veh.capacidade_kg or 1000.0),
+                "capacidade_volume": float(veh.capacidade_vol or 5.0),
+                "custo_km": float(veh.custo_km or 0.5),
+                "velocidade_media": float(veh.velocidade_media or 40.0),
+                "horario_inicio": str(veh.horario_inicio or "08:00"),
+                "horario_fim": str(veh.horario_fim or "18:00"),
+                "armazem": str(veh.armazem or "")
+            })
 
         state_dict["fleet_config"] = fleet_dict
-
-
-
         state_dict["phase_2_complete"] = True
 
+        # Save to SQLite frota table
+        from database import save_frota_projeto
+        save_frota_projeto(project_id, fleet_rows_for_db)
 
-
-        
-
-
-
+        # Save to snapshots table
         payload = serialize_state(state_dict)
-
-
-
-        
-
-
-
         from datetime import datetime
-
-
-
         snapshot_name = f"Config Frota/Armazéns ({datetime.now().strftime('%H:%M:%S')})"
-
-
-
         user_id = current_user.id
-
-
-
         
-
-
-
         with get_db() as conn:
-
-
-
             cursor = conn.cursor()
-
-
-
             cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)", (project_id, user_id, 2, snapshot_name, payload))
-
-
-
             conn.commit()
-
-
-
             
-
-
-
         return {"status": "success", "message": "Configuração da frota e armazéns guardada com sucesso."}
-
-
-
     except Exception as e:
-
-
-
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-
-
-
-
-
-
 
 @router.post("/import/{project_id}")
 async def import_fleet_warehouses(
