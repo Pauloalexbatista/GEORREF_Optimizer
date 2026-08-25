@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "@/context/ThemeContext";
 import { useI18n } from "@/context/I18nContext";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
+import { MapFilterState } from "@/components/MapComponent";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
@@ -25,6 +26,24 @@ export default function DetachedMapPage() {
   const [fleet, setFleet] = useState<any[]>([]);
   const [statusMsg, setStatusMsg] = useState("A aguardar sincronização...");
 
+  // Synchronized Filter State (Bidirectional with 1st Screen)
+  const [filters, setFilters] = useState<MapFilterState>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_active_filters");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+    }
+    return {
+      searchQuery: "",
+      selectedWarehouse: "all",
+      statusFilter: "all",
+      selectedRoutes: [],
+    };
+  });
+
+  const channelRef = useRef<BroadcastChannel | null>(null);
+
   const loadLocalData = () => {
     const storedState = localStorage.getItem("georoute_map_state");
     if (storedState) {
@@ -37,14 +56,21 @@ export default function DetachedMapPage() {
         setStatusMsg(`Atualizado às ${new Date().toLocaleTimeString()}`);
       } catch (e) {}
     }
+    try {
+      const storedFilters = localStorage.getItem("georoute_active_filters");
+      if (storedFilters) {
+        setFilters(JSON.parse(storedFilters));
+      }
+    } catch (e) {}
   };
 
   useEffect(() => {
     // 1. Initial load from localStorage
     loadLocalData();
 
-    // 2. BroadcastChannel listener for live sync
+    // 2. BroadcastChannel listener for live data & filter sync
     const channel = new BroadcastChannel("georoute_map_sync");
+    channelRef.current = channel;
 
     channel.onmessage = (event) => {
       if (event.data?.type === "MAP_UPDATE") {
@@ -54,6 +80,11 @@ export default function DetachedMapPage() {
         if (v) setVehicles(v);
         if (f) setFleet(f);
         setStatusMsg(`Sincronizado em tempo real (${new Date().toLocaleTimeString()})`);
+      } else if (event.data?.type === "FILTER_SYNC" && event.data?.sender !== "DETACHED_MAP") {
+        if (event.data?.filters) {
+          setFilters(event.data.filters);
+          setStatusMsg(`Filtros sincronizados (${new Date().toLocaleTimeString()})`);
+        }
       }
     };
 
@@ -68,6 +99,10 @@ export default function DetachedMapPage() {
           if (parsed.fleet) setFleet(parsed.fleet);
           setStatusMsg(`Sincronizado às ${new Date().toLocaleTimeString()}`);
         } catch (err) {}
+      } else if (e.key === "georoute_active_filters" && e.newValue) {
+        try {
+          setFilters(JSON.parse(e.newValue));
+        } catch (err) {}
       }
     };
 
@@ -78,6 +113,19 @@ export default function DetachedMapPage() {
       window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
+
+  const handleFilterChange = (newFilters: MapFilterState) => {
+    setFilters(newFilters);
+    try {
+      localStorage.setItem("georoute_active_filters", JSON.stringify(newFilters));
+      channelRef.current?.postMessage({
+        type: "FILTER_SYNC",
+        sender: "DETACHED_MAP",
+        filters: newFilters,
+        timestamp: Date.now(),
+      });
+    } catch (e) {}
+  };
 
   const handleMoveClientRoute = async (clientName: string, newRoute: string, delivId?: number, address?: string) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
@@ -94,13 +142,10 @@ export default function DetachedMapPage() {
     setStatusMsg(`A guardar reatribuição para ${targetRoute}...`);
 
     if (!projId) {
-      // Local broadcast only if no project context
       const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles, fleet };
       try {
-        const ch = new BroadcastChannel("georoute_map_sync");
-        ch.postMessage(payload);
+        channelRef.current?.postMessage(payload);
         localStorage.setItem("georoute_map_state", JSON.stringify(payload));
-        ch.close();
       } catch (e) {}
       return;
     }
@@ -140,10 +185,8 @@ export default function DetachedMapPage() {
           fleet,
         };
         try {
-          const ch = new BroadcastChannel("georoute_map_sync");
-          ch.postMessage(payload);
+          channelRef.current?.postMessage(payload);
           localStorage.setItem("georoute_map_state", JSON.stringify(payload));
-          ch.close();
         } catch (e) {}
       }
     } catch (err: any) {
@@ -221,10 +264,8 @@ export default function DetachedMapPage() {
           fleet,
         };
         try {
-          const ch = new BroadcastChannel("georoute_map_sync");
-          ch.postMessage(payload);
+          channelRef.current?.postMessage(payload);
           localStorage.setItem("georoute_map_state", JSON.stringify(payload));
-          ch.close();
         } catch (e) {}
       }
     } catch (err: any) {
@@ -263,18 +304,6 @@ export default function DetachedMapPage() {
           <span className="text-[10px] text-zinc-400 font-mono bg-zinc-850 px-2.5 py-1 rounded-full border border-zinc-800">
             {statusMsg}
           </span>
-          <button
-            onClick={() => {
-              window.open("/dashboard/tactical/routes-matrix", "GeoRouteMatrixWindow", "width=1400,height=900,menubar=no,toolbar=no,location=no,status=no");
-            }}
-            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-indigo-400 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1.5"
-            title="Abrir a Matriz de Rotas no 3º Monitor"
-          >
-            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-            </svg>
-            <span>🖥️ {t.navigation.routesMatrix}</span>
-          </button>
           <a
             href="/dashboard/tactical"
             className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold border border-zinc-700 cursor-pointer transition-colors flex items-center space-x-1"
@@ -294,13 +323,15 @@ export default function DetachedMapPage() {
         </div>
       </div>
 
-      {/* Main Fullscreen Map Container */}
+      {/* Main Fullscreen Map Container with live synchronized filter state */}
       <div className="flex-1 w-full h-full relative">
         <MapComponent
           clients={clients}
           warehouses={warehouses}
           vehicles={vehicles}
           fleet={fleet}
+          filterState={filters}
+          onFilterChange={handleFilterChange}
           onMoveClientRoute={handleMoveClientRoute}
           onUpdateClientCoords={handleUpdateClientCoords}
         />

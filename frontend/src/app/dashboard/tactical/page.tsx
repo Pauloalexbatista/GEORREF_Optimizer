@@ -181,10 +181,57 @@ export default function TacticalPage() {
     "Por Distribuir": true,
   });
 
-  // Filter & Search states
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState("all");
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<"all" | "active" | "empty" | "pending" | "late">("all");
+  // Filter & Search states (Bidirectional with Detached Map)
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_active_filters");
+        if (stored) return JSON.parse(stored).searchQuery || "";
+      } catch (e) {}
+    }
+    return "";
+  });
+
+  const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_active_filters");
+        if (stored) return JSON.parse(stored).selectedWarehouse || "all";
+      } catch (e) {}
+    }
+    return "all";
+  });
+
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<"all" | "active" | "empty" | "pending" | "late">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_active_filters");
+        if (stored) {
+          const st = JSON.parse(stored).statusFilter;
+          if (st === "with_cargo") return "active";
+          return st || "all";
+        }
+      } catch (e) {}
+    }
+    return "all";
+  });
+
+  const broadcastFilterSync = (q: string, wh: string, st: string) => {
+    try {
+      const payload = {
+        type: "FILTER_SYNC",
+        sender: "TACTICAL_PAGE",
+        filters: {
+          searchQuery: q,
+          selectedWarehouse: wh,
+          statusFilter: st === "active" ? "with_cargo" : st,
+        },
+        timestamp: Date.now(),
+      };
+      channelRef.current?.postMessage(payload);
+      localStorage.setItem("georoute_active_filters", JSON.stringify(payload.filters));
+    } catch (e) {}
+  };
 
   // Strategy Config Drawer
   const [showConfig, setShowConfig] = useState(false);
@@ -214,6 +261,15 @@ export default function TacticalPage() {
             Observacoes: r.Observacoes || "",
           }));
           setRoutes(mapped);
+        } else if (event.data?.type === "FILTER_SYNC" && event.data?.sender !== "TACTICAL_PAGE") {
+          const f = event.data?.filters;
+          if (f) {
+            if (f.searchQuery !== undefined) setSearchQuery(f.searchQuery);
+            if (f.selectedWarehouse !== undefined) setSelectedWarehouseFilter(f.selectedWarehouse);
+            if (f.statusFilter !== undefined) {
+              setSelectedStatusFilter(f.statusFilter === "with_cargo" ? "active" : f.statusFilter);
+            }
+          }
         }
       };
 
@@ -234,6 +290,15 @@ export default function TacticalPage() {
                 Observacoes: r.Observacoes || "",
               }));
               setRoutes(mapped);
+            }
+          } catch (err) {}
+        } else if (e.key === "georoute_active_filters" && e.newValue) {
+          try {
+            const f = JSON.parse(e.newValue);
+            if (f.searchQuery !== undefined) setSearchQuery(f.searchQuery);
+            if (f.selectedWarehouse !== undefined) setSelectedWarehouseFilter(f.selectedWarehouse);
+            if (f.statusFilter !== undefined) {
+              setSelectedStatusFilter(f.statusFilter === "with_cargo" ? "active" : f.statusFilter);
             }
           } catch (err) {}
         }
@@ -289,11 +354,6 @@ export default function TacticalPage() {
     }
   };
 
-  const handleOpenRoutesMatrix = () => {
-    if (typeof window !== "undefined") {
-      window.open("/dashboard/tactical/routes-matrix", "GeoRouteMatrix3", "width=1400,height=900,menubar=no,toolbar=no");
-    }
-  };
 
   const loadTacticalData = async () => {
     if (!selectedProject) return;
@@ -760,14 +820,7 @@ export default function TacticalPage() {
               <span>🖥️ 2.º Monitor — Abrir Mapa Dedicado</span>
             </button>
 
-            {/* Temporary Monitor 3 Link */}
-            <button
-              onClick={handleOpenRoutesMatrix}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-indigo-400 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-semibold transition-all flex items-center space-x-1.5"
-              title="Abrir Matriz Flutuante em Janela Extra"
-            >
-              <span>🖥️ 3.º Monitor</span>
-            </button>
+
 
             {/* Config Strategy */}
             <button
@@ -988,7 +1041,7 @@ export default function TacticalPage() {
                 type="text"
                 placeholder="Pesquisar cliente, código, morada, CP..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { const v = e.target.value; setSearchQuery(v); broadcastFilterSync(v, selectedWarehouseFilter, selectedStatusFilter); }}
                 className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-zinc-200 outline-none placeholder-zinc-500 transition-all pl-9"
               />
               <svg className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -996,7 +1049,7 @@ export default function TacticalPage() {
               </svg>
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => { setSearchQuery(""); broadcastFilterSync("", selectedWarehouseFilter, selectedStatusFilter); }}
                   className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-200 text-xs"
                 >
                   ✕
@@ -1008,7 +1061,7 @@ export default function TacticalPage() {
             {uniqueWarehouseNames.length > 0 && (
               <select
                 value={selectedWarehouseFilter}
-                onChange={(e) => setSelectedWarehouseFilter(e.target.value)}
+                onChange={(e) => { const v = e.target.value; setSelectedWarehouseFilter(v); broadcastFilterSync(searchQuery, v, selectedStatusFilter); }}
                 className="bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer"
               >
                 <option value="all">🏠 Todos os Armazéns ({uniqueWarehouseNames.length})</option>
@@ -1023,7 +1076,7 @@ export default function TacticalPage() {
             {/* Vehicle Status Filter */}
             <div className="flex items-center space-x-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[11px] font-semibold">
               <button
-                onClick={() => setSelectedStatusFilter("all")}
+                onClick={() => { setSelectedStatusFilter("all"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "all"); }}
                 className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
                   selectedStatusFilter === "all" ? "bg-indigo-600 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
                 }`}
@@ -1031,7 +1084,7 @@ export default function TacticalPage() {
                 Todos ({vehicles.length})
               </button>
               <button
-                onClick={() => setSelectedStatusFilter("active")}
+                onClick={() => { setSelectedStatusFilter("active"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "active"); }}
                 className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
                   selectedStatusFilter === "active" ? "bg-emerald-600 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
                 }`}
@@ -1039,7 +1092,7 @@ export default function TacticalPage() {
                 🚚 Com Carga ({globalKpis.activeVehiclesCount})
               </button>
               <button
-                onClick={() => setSelectedStatusFilter("empty")}
+                onClick={() => { setSelectedStatusFilter("empty"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "empty"); }}
                 className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
                   selectedStatusFilter === "empty" ? "bg-zinc-800 text-zinc-200 shadow-sm" : "text-zinc-400 hover:text-zinc-200"
                 }`}
@@ -1048,7 +1101,7 @@ export default function TacticalPage() {
               </button>
               {hasPending && (
                 <button
-                  onClick={() => setSelectedStatusFilter("pending")}
+                  onClick={() => { setSelectedStatusFilter("pending"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "pending"); }}
                   className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
                     selectedStatusFilter === "pending" ? "bg-amber-600 text-white shadow-sm" : "text-amber-400 hover:text-amber-300"
                   }`}

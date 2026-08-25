@@ -47,13 +47,22 @@ interface MapWarehouse {
   lon: number;
 }
 
-interface MapComponentProps {
+export interface MapFilterState {
+  searchQuery?: string;
+  selectedWarehouse?: string;
+  statusFilter?: "all" | "active" | "with_cargo" | "empty" | "pending" | "late";
+  selectedRoutes?: string[];
+}
+
+export interface MapComponentProps {
   clients: MapClient[];
   warehouses: MapWarehouse[];
   vehicles: string[];
   fleet?: any[];
   onMoveClientRoute?: (clientName: string, newRoute: string, deliveryId?: number, address?: string) => void;
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
+  filterState?: MapFilterState;
+  onFilterChange?: (filters: MapFilterState) => void;
 }
 
 function formatTimeWindow(winStr?: string): string {
@@ -219,6 +228,8 @@ export default function MapComponent({
   fleet = [],
   onMoveClientRoute,
   onUpdateClientCoords,
+  filterState,
+  onFilterChange,
 }: MapComponentProps) {
   const { t } = useI18n();
 
@@ -227,13 +238,77 @@ export default function MapComponent({
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({});
   
   // Interactive Filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedWarehouse, setSelectedWarehouse] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "empty" | "pending">("all");
-  const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState(filterState?.searchQuery || "");
+  const [selectedWarehouse, setSelectedWarehouse] = useState(filterState?.selectedWarehouse || "all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "empty" | "pending" | "late">(() => {
+    if (filterState?.statusFilter === "active") return "with_cargo";
+    return (filterState?.statusFilter as any) || "all";
+  });
+  const [selectedRoutes, setSelectedRoutes] = useState<string[]>(filterState?.selectedRoutes || []);
   const [showRoads, setShowRoads] = useState(true);
   const [mapLayer, setMapLayer] = useState<"standard" | "google_sat" | "google_hybrid">("standard");
   const [fitTrigger, setFitTrigger] = useState("");
+
+  // Sync when external controlled filterState changes
+  useEffect(() => {
+    if (filterState) {
+      if (filterState.searchQuery !== undefined && filterState.searchQuery !== searchQuery) {
+        setSearchQuery(filterState.searchQuery);
+      }
+      if (filterState.selectedWarehouse !== undefined && filterState.selectedWarehouse !== selectedWarehouse) {
+        setSelectedWarehouse(filterState.selectedWarehouse);
+      }
+      if (filterState.statusFilter !== undefined) {
+        const mapped = filterState.statusFilter === "active" ? "with_cargo" : (filterState.statusFilter as any);
+        if (mapped !== statusFilter) {
+          setStatusFilter(mapped);
+        }
+      }
+      if (filterState.selectedRoutes !== undefined && JSON.stringify(filterState.selectedRoutes) !== JSON.stringify(selectedRoutes)) {
+        setSelectedRoutes(filterState.selectedRoutes);
+      }
+    }
+  }, [filterState]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    onFilterChange?.({
+      searchQuery: val,
+      selectedWarehouse,
+      statusFilter: statusFilter === "with_cargo" ? "active" : statusFilter,
+      selectedRoutes,
+    });
+  };
+
+  const handleWarehouseChange = (val: string) => {
+    setSelectedWarehouse(val);
+    onFilterChange?.({
+      searchQuery,
+      selectedWarehouse: val,
+      statusFilter: statusFilter === "with_cargo" ? "active" : statusFilter,
+      selectedRoutes,
+    });
+  };
+
+  const handleStatusChange = (val: "all" | "with_cargo" | "empty" | "pending" | "late") => {
+    setStatusFilter(val);
+    onFilterChange?.({
+      searchQuery,
+      selectedWarehouse,
+      statusFilter: val === "with_cargo" ? "active" : val,
+      selectedRoutes,
+    });
+  };
+
+  const handleRoutesChange = (newRoutes: string[]) => {
+    setSelectedRoutes(newRoutes);
+    onFilterChange?.({
+      searchQuery,
+      selectedWarehouse,
+      statusFilter: statusFilter === "with_cargo" ? "active" : statusFilter,
+      selectedRoutes: newRoutes,
+    });
+  };
 
   useEffect(() => {
     setIsMounted(true);
@@ -512,13 +587,13 @@ export default function MapComponent({
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Pesquisar cliente, código, morada, CP..."
                 className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 focus:border-indigo-500 rounded-xl pl-8 pr-7 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 outline-none transition-all"
               />
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => handleSearchChange("")}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xs font-bold"
                 >
                   ✕
@@ -530,7 +605,7 @@ export default function MapComponent({
             {warehouseOptions.length > 0 && (
               <select
                 value={selectedWarehouse}
-                onChange={(e) => setSelectedWarehouse(e.target.value)}
+                onChange={(e) => handleWarehouseChange(e.target.value)}
                 className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 focus:border-indigo-500 rounded-xl px-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer font-medium shadow-sm"
               >
                 <option value="all">🏠 Todos os Armazéns ({warehouseOptions.length})</option>
@@ -545,7 +620,7 @@ export default function MapComponent({
             {/* Status Segmented Pills Filter */}
             <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-xl border border-zinc-300 dark:border-zinc-800 text-[11px] font-semibold">
               <button
-                onClick={() => setStatusFilter("all")}
+                onClick={() => handleStatusChange("all")}
                 className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                   statusFilter === "all"
                     ? "bg-indigo-600 text-white shadow-sm font-bold"
@@ -555,7 +630,7 @@ export default function MapComponent({
                 Todos ({totalVehiclesCount})
               </button>
               <button
-                onClick={() => setStatusFilter("with_cargo")}
+                onClick={() => handleStatusChange("with_cargo")}
                 className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
                   statusFilter === "with_cargo"
                     ? "bg-emerald-600 text-white shadow-sm font-bold"
@@ -565,7 +640,7 @@ export default function MapComponent({
                 <span>🚚 Com Carga ({activeVehiclesCount})</span>
               </button>
               <button
-                onClick={() => setStatusFilter("empty")}
+                onClick={() => handleStatusChange("empty")}
                 className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
                   statusFilter === "empty"
                     ? "bg-zinc-700 text-white shadow-sm font-bold"
@@ -576,7 +651,7 @@ export default function MapComponent({
               </button>
               {pendingStopsCount > 0 && (
                 <button
-                  onClick={() => setStatusFilter("pending")}
+                  onClick={() => handleStatusChange("pending")}
                   className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
                     statusFilter === "pending"
                       ? "bg-amber-600 text-white shadow-sm font-bold"
@@ -656,7 +731,7 @@ export default function MapComponent({
         <div className="flex items-center flex-wrap gap-1 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl pointer-events-auto max-h-24 overflow-y-auto">
           {/* Todas button */}
           <button
-            onClick={() => setSelectedRoutes([])}
+            onClick={() => handleRoutesChange([])}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
               selectedRoutes.length === 0
                 ? "bg-indigo-600 text-white shadow-sm"
