@@ -288,6 +288,56 @@ export default function MapComponent({
     fetchRoads();
   }, [clients, warehouses, isMounted]);
 
+  // Helper: check if a vehicle belongs to target warehouse
+  const isVehicleInWarehouse = (v: string, targetWh: string): boolean => {
+    if (!targetWh || targetWh === "all") return true;
+    const selWh = targetWh.toLowerCase().trim();
+
+    // A. Check from fleet configuration
+    const vData = fleet.find((f: any) => (f.veiculo || "").trim().toLowerCase() === v.trim().toLowerCase());
+    if (vData && vData.armazem) {
+      const vWh = vData.armazem.trim().toLowerCase();
+      return vWh === selWh || selWh.includes(vWh) || vWh.includes(selWh);
+    }
+
+    // B. Check if vehicle name or prefix matches (e.g. "Portimão_3" vs "Auchan Portimão")
+    const vClean = v.toLowerCase().trim();
+    const vPrefix = (v.includes("_") ? v.split("_")[0] : v).trim().toLowerCase();
+    if (selWh.includes(vClean) || vClean.includes(selWh)) return true;
+    if (vPrefix.length >= 3 && (selWh.includes(vPrefix) || vPrefix.includes(selWh))) return true;
+
+    // C. Check if clients on this route have this warehouse
+    const routeClients = clients.filter(c => c.Rota === v);
+    if (routeClients.length > 0) {
+      return routeClients.some(c => {
+        const cWh = (c.Armazem || "").trim().toLowerCase();
+        return cWh === selWh || (cWh.length >= 3 && selWh.includes(cWh));
+      });
+    }
+
+    return false;
+  };
+
+  // Helper: check if a client belongs to target warehouse
+  const isClientInWarehouse = (c: MapClient, targetWh: string): boolean => {
+    if (!targetWh || targetWh === "all") return true;
+    const selWh = targetWh.toLowerCase().trim();
+    const cWh = (c.Armazem || "").trim().toLowerCase();
+
+    // If client has explicit warehouse
+    if (cWh && cWh !== "n/a" && cWh !== "armazém principal" && cWh !== "base central") {
+      if (cWh === selWh || selWh.includes(cWh) || cWh.includes(selWh)) return true;
+      return false;
+    }
+
+    // If assigned to a vehicle, check vehicle's warehouse
+    if (!isPendingRoute(c.Rota)) {
+      return isVehicleInWarehouse(c.Rota, targetWh);
+    }
+
+    return true;
+  };
+
   // Extract unique warehouses
   const warehouseOptions = useMemo(() => {
     const set = new Set<string>();
@@ -297,43 +347,36 @@ export default function MapComponent({
     clients.forEach(c => {
       if (c.Armazem && c.Armazem !== "N/A") set.add(c.Armazem);
     });
+    fleet.forEach(f => {
+      if (f.armazem && f.armazem !== "N/A") set.add(f.armazem);
+    });
     return Array.from(set);
-  }, [warehouses, clients]);
+  }, [warehouses, clients, fleet]);
 
-  // Vehicle stats for badges
-  const { activeVehiclesCount, emptyVehiclesCount, pendingStopsCount } = useMemo(() => {
-    const withCargo = vehicles.filter(v => clients.some(c => c.Rota === v)).length;
-    const empty = Math.max(0, vehicles.length - withCargo);
-    const pending = clients.filter(c => isPendingRoute(c.Rota)).length;
-    return { activeVehiclesCount: withCargo, emptyVehiclesCount: empty, pendingStopsCount: pending };
-  }, [vehicles, clients]);
+  // List of vehicles scoped to the currently selected warehouse
+  const warehouseVehicles = useMemo(() => {
+    return vehicles.filter(v => isVehicleInWarehouse(v, selectedWarehouse));
+  }, [vehicles, selectedWarehouse, fleet, clients]);
+
+  // Vehicle stats for badges (accurately scoped to selected warehouse!)
+  const { totalVehiclesCount, activeVehiclesCount, emptyVehiclesCount, pendingStopsCount } = useMemo(() => {
+    const vList = warehouseVehicles;
+    const withCargo = vList.filter(v => clients.some(c => c.Rota === v)).length;
+    const empty = Math.max(0, vList.length - withCargo);
+    const pending = clients.filter(c => isPendingRoute(c.Rota) && isClientInWarehouse(c, selectedWarehouse)).length;
+    return {
+      totalVehiclesCount: vList.length,
+      activeVehiclesCount: withCargo,
+      emptyVehiclesCount: empty,
+      pendingStopsCount: pending
+    };
+  }, [warehouseVehicles, clients, selectedWarehouse]);
 
   // Filtered vehicles list based on active warehouse & status filter
   const filteredVehiclesList = useMemo(() => {
-    let list = [...vehicles];
+    let list = warehouseVehicles;
 
-    // 1. Warehouse Filter
-    if (selectedWarehouse !== "all") {
-      const selWh = selectedWarehouse.toLowerCase().trim();
-      list = list.filter(v => {
-        // A. Match from fleet configuration
-        const vData = fleet.find((f: any) => (f.veiculo || "").trim().toLowerCase() === v.trim().toLowerCase());
-        if (vData && (vData.armazem || "").trim().toLowerCase() === selWh) return true;
-
-        // B. Match from vehicle name or prefix (e.g. "Portimão_3" -> "Auchan Portimão")
-        const vClean = v.toLowerCase().trim();
-        const vPrefix = (v.includes("_") ? v.split("_")[0] : v).trim().toLowerCase();
-        if (selWh.includes(vClean) || vClean.includes(selWh) || selWh.includes(vPrefix) || vPrefix.includes(selWh)) return true;
-
-        // C. Match if any client assigned to this vehicle belongs to the warehouse
-        return clients.some(c => c.Rota === v && (
-          (c.Armazem || "").toLowerCase().trim() === selWh ||
-          ((c.Armazem || "").toLowerCase().trim().includes(vPrefix) && vPrefix.length > 2)
-        ));
-      });
-    }
-
-    // 2. Status Filter
+    // Status Filter
     if (statusFilter === "with_cargo") {
       list = list.filter(v => clients.some(c => c.Rota === v));
     } else if (statusFilter === "empty") {
@@ -352,11 +395,12 @@ export default function MapComponent({
       if (countA !== countB) return countB - countA;
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     });
-  }, [vehicles, clients, selectedWarehouse, statusFilter]);
+  }, [warehouseVehicles, statusFilter, clients]);
 
   // Filter visible clients
   const visibleClients = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
+
     return clients.filter(c => {
       if (c.Latitude === 0 || c.Longitude === 0) return false;
 
@@ -373,26 +417,9 @@ export default function MapComponent({
         }
       }
 
-      // 2. Warehouse Filter
-      if (selectedWarehouse !== "all") {
-        const selWh = selectedWarehouse.toLowerCase().trim();
-        const cWh = (c.Armazem || "").toLowerCase().trim();
-        const isPending = isPendingRoute(c.Rota);
-
-        if (isPending) {
-          if (cWh && cWh !== "n/a" && cWh !== selWh) return false;
-        } else {
-          // Assigned to a vehicle: check if vehicle belongs to this warehouse
-          const vData = fleet.find((f: any) => (f.veiculo || "").trim().toLowerCase() === (c.Rota || "").trim().toLowerCase());
-          if (vData && vData.armazem) {
-            if (vData.armazem.trim().toLowerCase() !== selWh) return false;
-          } else {
-            const rName = (c.Rota || "").toLowerCase();
-            const vPrefix = (c.Rota.includes("_") ? c.Rota.split("_")[0] : c.Rota).trim().toLowerCase();
-            const matchesWarehouse = (cWh === selWh) || selWh.includes(rName) || rName.includes(selWh) || selWh.includes(vPrefix) || vPrefix.includes(selWh);
-            if (!matchesWarehouse) return false;
-          }
-        }
+      // 2. Warehouse Filter (Strict & Synchronized)
+      if (!isClientInWarehouse(c, selectedWarehouse)) {
+        return false;
       }
 
       // 3. Status Filter
@@ -408,8 +435,7 @@ export default function MapComponent({
       }
       return selectedRoutes.includes(c.Rota);
     });
-  }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes]);
-
+  }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes, fleet]);
   // Points for auto fit bounds
   const visiblePoints: [number, number][] = useMemo(() => {
     const pts: [number, number][] = [];
@@ -509,7 +535,7 @@ export default function MapComponent({
                     : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
                 }`}
               >
-                Todos ({vehicles.length})
+                Todos ({totalVehiclesCount})
               </button>
               <button
                 onClick={() => setStatusFilter("with_cargo")}
