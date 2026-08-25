@@ -36,9 +36,13 @@ interface MapClient {
   Telefone_Cliente?: string;
   telefone?: string;
   Observacoes?: string;
+  observacoes?: string;
+  Notas_Motorista?: string;
+  notas_motorista?: string;
+  Notas?: string;
+  notas?: string;
   Vendedor?: string;
   vendedor?: string;
-  observacoes?: string;
   Regras?: string;
 }
 
@@ -1028,7 +1032,7 @@ export default function MapComponent({
           const clientCode = c.Codigo_Cliente || (c.Cliente !== clientName ? c.Cliente : "") || "";
           const docNumber = c.Doc_ID || c.doc_id || c.numero_doc || "";
           const phone = c.Telefone || c.Telefone_Cliente || c.telefone || "";
-          const observations = c.Observacoes || c.observacoes || c.Regras || "";
+          const driverNotes = c.Notas_Motorista || c.notas_motorista || c.Notas || c.notas || c.Observacoes || c.observacoes || "";
           const vendedor = c.Vendedor || c.vendedor || "";
           const stopWeight = c.Peso_KG !== undefined && c.Peso_KG !== null ? c.Peso_KG : (c.Carga_Acum || 0);
           const stopVolume = c.Volume_m3 !== undefined && c.Volume_m3 !== null ? c.Volume_m3 : (c.Volume_M3 || 0);
@@ -1147,19 +1151,28 @@ export default function MapComponent({
                     </div>
                   </div>
 
-                  {/* 5. Observações (if present) */}
-                  {observations && (
-                    <div className="mb-2 p-1.5 bg-amber-50 border border-amber-200 rounded-md text-[10px] text-amber-900">
-                      <span className="font-bold uppercase tracking-wider block text-[9px] text-amber-700 mb-0.5">⚠️ Observações:</span>
-                      <p className="leading-tight italic">{observations}</p>
-                    </div>
-                  )}
+                  {/* 5. Vendedor & Notas Motorista */}
+                  {(vendedor || driverNotes) && (
+                    <div className="space-y-1.5 mb-2">
+                      {vendedor && (
+                        <div className="p-1.5 bg-blue-50/80 border border-blue-200/80 rounded-md text-[10px] text-blue-950 flex items-center justify-between">
+                          <span className="font-bold uppercase tracking-wider text-[9px] text-blue-700 flex items-center space-x-1 shrink-0">
+                            <span>👤</span>
+                            <span>Vendedor:</span>
+                          </span>
+                          <span className="font-bold text-blue-900 truncate pl-1">{vendedor}</span>
+                        </div>
+                      )}
 
-                  {/* 5.1 Vendedor / Salesperson (if present) */}
-                  {vendedor && (
-                    <div className="mb-2 p-1.5 bg-blue-50 border border-blue-200 rounded-md text-[10px] text-blue-900 flex items-center space-x-1.5">
-                      <span className="font-bold uppercase tracking-wider block text-[9px] text-blue-700 shrink-0">👤 Vendedor:</span>
-                      <span className="font-semibold truncate">{vendedor}</span>
+                      {driverNotes && (
+                        <div className="p-1.5 bg-amber-50/90 border border-amber-200 rounded-md text-[10px] text-amber-950">
+                          <span className="font-bold uppercase tracking-wider block text-[9px] text-amber-700 flex items-center space-x-1 mb-0.5">
+                            <span>📝</span>
+                            <span>Notas Motorista:</span>
+                          </span>
+                          <p className="leading-tight text-amber-900 font-medium whitespace-pre-wrap">{driverNotes}</p>
+                        </div>
+                      )}
                     </div>
                   )}
 

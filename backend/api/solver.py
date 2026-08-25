@@ -580,11 +580,17 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     combined_window = format_time_window_display(win_s, win_e)
                     
                     deliv_id = int(client_row.get("id", client_idx + 1))
+                    doc_id_val = str(client_row.get("Doc_ID") or client_row.get("numero_doc") or client_row.get("doc_id") or "")
+                    tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
+                    obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
+                    vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
+                    
                     raw_stops.append({
                         "id": deliv_id,
                         "ID_Original": deliv_id,
                         "Rota": vehicle_name,
                         "Armazem": warehouse_origin,
+                        "Doc_ID": doc_id_val,
                         "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
                         "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
                         "Morada": str(client_row.get("Morada", "N/A")),
@@ -595,6 +601,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "Longitude": float(client_row["Longitude"]),
                         "Peso_KG": float(client_row.get("Peso_KG", 50.0)),
                         "Volume_m3": float(client_row.get("Volume_m3", 0.1)),
+                        "Telefone": tel_val,
+                        "Observacoes": obs_val,
+                        "Notas_Motorista": obs_val,
+                        "Vendedor": vend_val,
                         "Tempo_Entrega": 15,
                         "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0))
                     })
@@ -625,12 +635,18 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             combined_window = format_time_window_display(win_s, win_e)
             
             deliv_id = int(client_row.get("id", client_idx + 1))
+            doc_id_val = str(client_row.get("Doc_ID") or client_row.get("numero_doc") or client_row.get("doc_id") or "")
+            tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
+            obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
+            vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
+            
             routes_list.append({
                 "id": deliv_id,
                 "ID_Original": deliv_id,
                 "Rota": "Por Distribuir",
                 "Armazem": "N/A",
                 "Ordem": pending_order,
+                "Doc_ID": doc_id_val,
                 "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
                 "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
                 "Morada": str(client_row.get("Morada", "N/A")),
@@ -647,7 +663,11 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "KM_Anterior": 0.0,
                 "Dist_Acum": 0.0,
                 "Carga_Acum": round(float(client_row.get("Peso_KG", 50.0)), 1),
-                "Carga_Vol_Acum": round(float(client_row.get("Volume_m3", 0.1)), 2)
+                "Carga_Vol_Acum": round(float(client_row.get("Volume_m3", 0.1)), 2),
+                "Telefone": tel_val,
+                "Observacoes": obs_val,
+                "Notas_Motorista": obs_val,
+                "Vendedor": vend_val
             })
             pending_order += 1
             
