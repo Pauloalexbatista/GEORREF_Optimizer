@@ -51,6 +51,7 @@ export default function GeoreferencingPage() {
   const [colEndWindow, setColEndWindow] = useState("");
   const [colLat, setColLat] = useState("");
   const [colLon, setColLon] = useState("");
+  const [colVendedor, setColVendedor] = useState("");
 
   // Correction state
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null);
@@ -243,6 +244,7 @@ export default function GeoreferencingPage() {
           col_end_window: colEndWindow || null,
           col_lat: colLat || null,
           col_lon: colLon || null,
+          col_vendedor: colVendedor || null,
         }),
       });
 

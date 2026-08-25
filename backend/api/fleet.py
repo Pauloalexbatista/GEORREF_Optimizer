@@ -677,7 +677,8 @@ async def import_fleet_warehouses(
                 col_e_j1_end = next((c for c in ['Janela1_Fim', 'Janela_Fim', 'Slot1_Fim', 'Horário Fim'] if c in df_entregas_raw.columns), None)
                 col_e_lat = next((c for c in ['Latitude', 'Lat', 'lat', 'latitude'] if c in df_entregas_raw.columns), None)
                 col_e_lon = next((c for c in ['Longitude', 'Lon', 'lon', 'longitude', 'lng', 'Lng'] if c in df_entregas_raw.columns), None)
-                col_e_obs = next((c for c in ['Notas_Motorista', 'Observacoes', 'Notas', 'Obs'] if c in df_entregas_raw.columns), None)
+                col_e_obs = next((c for c in ['Notas_Motorista', 'Observacoes', 'Notas', 'Obs', 'notas_motorista', 'observacoes', 'Instrucoes', 'Notas de Entrega'] if c in df_entregas_raw.columns), None)
+                col_e_vend = next((c for c in ['Vendedor', 'vendedor', 'Comercial', 'comercial', 'Sales_Rep', 'sales_rep', 'Agente', 'agente', 'Salesperson'] if c in df_entregas_raw.columns), None)
                 col_e_unload = next((c for c in ['Tempo_Descarga_Min', 'Tempo_Descarga', 'Tempo Descarga'] if c in df_entregas_raw.columns), None)
                 col_e_op_type = next((c for c in ['Tipo_Operacao', 'Tipo', 'Operation'] if c in df_entregas_raw.columns), None)
                 col_e_rules = next((c for c in ['Regras', 'Tags', 'Restricoes'] if c in df_entregas_raw.columns), None)
@@ -719,6 +720,7 @@ async def import_fleet_warehouses(
                         except Exception:
                             pass
                             
+                    vend_val = str(row[col_e_vend]).strip() if col_e_vend and pd.notna(row[col_e_vend]) else ""
                     deliveries_list.append({
                         "Armazem": wh_val,
                         "Doc_ID": code,
@@ -745,7 +747,9 @@ async def import_fleet_warehouses(
                         "Regras": e_rules,
                         "Notas_Motorista": obs,
                         "Observacoes": obs,
-                        "Prioridade": prio_str
+                        "Prioridade": prio_str,
+                        "Vendedor": vend_val,
+                        "vendedor": vend_val
                     })
 
         # 5. Sheet: Rotas (Planeamento pré-definido)
@@ -780,6 +784,8 @@ async def import_fleet_warehouses(
                 col_rt_lat = next((c for c in ['Latitude', 'Lat', 'lat', 'latitude'] if c in df_rotas_raw.columns), None)
                 col_rt_lon = next((c for c in ['Longitude', 'Lon', 'lon', 'longitude', 'lng', 'Lng'] if c in df_rotas_raw.columns), None)
                 col_rt_status = next((c for c in ['Status', 'Estado'] if c in df_rotas_raw.columns), None)
+                col_rt_vend = next((c for c in ['Vendedor', 'vendedor', 'Comercial', 'comercial', 'Sales_Rep', 'sales_rep', 'Agente', 'agente', 'Salesperson'] if c in df_rotas_raw.columns), None)
+                col_rt_obs = next((c for c in ['Notas_Motorista', 'Observacoes', 'Notas', 'Obs', 'notas_motorista', 'observacoes', 'Instrucoes'] if c in df_rotas_raw.columns), None)
                 
                 # --- A. REVERSE ENGINEERING: WAREHOUSES FROM ROTAS ---
                 if not wh_rows:
@@ -881,6 +887,9 @@ async def import_fleet_warehouses(
                             pass
                             
                     # --- C. REVERSE ENGINEERING: DELIVERIES ---
+                    rt_vend = str(r_row[col_rt_vend]).strip() if col_rt_vend and pd.notna(r_row[col_rt_vend]) else ""
+                    rt_obs = str(r_row[col_rt_obs]).strip() if col_rt_obs and pd.notna(r_row[col_rt_obs]) else ""
+                    
                     deliveries_list.append({
                             "Armazem": wh_name,
                             "Doc_ID": doc_val,
@@ -902,8 +911,11 @@ async def import_fleet_warehouses(
                             "Tempo_Descarga_Min": 15,
                             "Tipo_Operacao": "ENTREGA",
                             "Regras": "",
-                            "Observacoes": "",
-                            "Prioridade": "Normal"
+                            "Notas_Motorista": rt_obs,
+                            "Observacoes": rt_obs,
+                            "Prioridade": "Normal",
+                            "Vendedor": rt_vend,
+                            "vendedor": rt_vend
                         })
                             
                     routes_solution_list.append({
@@ -933,7 +945,11 @@ async def import_fleet_warehouses(
                         "Tempo_Espera_Min": float(r_row[col_rt_t_esp]) if col_rt_t_esp and pd.notna(r_row[col_rt_t_esp]) else 0.0,
                         "Carga_Restante_KG": float(r_row[col_rt_cg_kg]) if col_rt_cg_kg and pd.notna(r_row[col_rt_cg_kg]) else p_kg,
                         "Carga_Restante_Vol": float(r_row[col_rt_cg_vol]) if col_rt_cg_vol and pd.notna(r_row[col_rt_cg_vol]) else v_m3,
-                        "Status": str(r_row[col_rt_status]).strip() if col_rt_status and pd.notna(r_row[col_rt_status]) else "Planeado"
+                        "Status": str(r_row[col_rt_status]).strip() if col_rt_status and pd.notna(r_row[col_rt_status]) else "Planeado",
+                        "Notas_Motorista": rt_obs,
+                        "Observacoes": rt_obs,
+                        "Vendedor": rt_vend,
+                        "vendedor": rt_vend
                     })
 
         # --- D. SAVE DELIVERIES TO SQLITE DB FOR PHASE 1 GEOREFERENCING ---
@@ -950,14 +966,18 @@ async def import_fleet_warehouses(
                         INSERT INTO entregas (
                             projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
                             peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
-                            latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem,
+                            telefone, observacoes, vendedor
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
                         d.get("CP", ""), d.get("Localidade", ""), float(d.get("Peso_KG", 50.0)),
                         float(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
                         d.get("Janela_Fim", "18:00"), lat_d, lon_d, qual_d, src_d,
-                        d.get("Morada", ""), d.get("Armazem", "Armazém Principal")
+                        d.get("Morada", ""), d.get("Armazem", "Armazém Principal"),
+                        d.get("Telefone_Cliente", d.get("Telefone", "")),
+                        d.get("Notas_Motorista", d.get("Observacoes", "")),
+                        d.get("Vendedor", d.get("vendedor", ""))
                     ))
                 conn.commit()
 
