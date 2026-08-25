@@ -143,7 +143,7 @@ class AdvancedRouteOptimizer:
             v_wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
 
             shift_span = v_end - v_start
-            allowed_duration = min(shift_span, max_shift_minutes) if shift_span > 0 else max_shift_minutes
+            allowed_duration = shift_span if shift_span > 0 else 840
 
             vehicle_data.append({
                 "id": v,
@@ -190,7 +190,7 @@ class AdvancedRouteOptimizer:
             cur_time += (d_ret / max(speed_kmh, 20.0)) * 60.0
 
             total_duration = int(round(cur_time - vd["start"]))
-            is_feasible = (late_count == 0) and (cur_time <= vd["end"] + 20) and (total_duration <= vd["max_duration"] + 30) and (len(route_nodes) <= 26)
+            is_feasible = (late_count == 0) and (cur_time <= vd["end"] + 30) and (total_duration <= vd["max_duration"] + 30) and (len(route_nodes) <= 35)
             return is_feasible, total_dist, total_duration, late_count, total_wait
 
         # 3. Chronological Wave & Polar Sector Sorting
