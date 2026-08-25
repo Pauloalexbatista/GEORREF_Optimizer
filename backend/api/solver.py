@@ -614,9 +614,37 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     
             if raw_stops:
                 v_start_str = str(v_info.get("start_time", "09:50"))
+                v_end_str = str(v_info.get("end_time", "18:00"))
+                v_end_min = parse_time_to_minutes(v_end_str, 1080)
                 v_speed = float(v_info.get("speed", 50.0))
+                
                 processed_stops = recalculate_route_stops(raw_stops, depot_lat, depot_lon, v_start_str, v_speed)
-                routes_list.extend(processed_stops)
+                
+                # Strict validation: filter out any stop that causes late delivery or shift overtime
+                valid_stops = []
+                for s in processed_stops:
+                    arr_min = parse_time_to_minutes(s.get("Chegada", "08:00"), 480)
+                    dep_min = parse_time_to_minutes(s.get("Saida", "08:15"), 495)
+                    w_s, w_e = parse_time_window_str(s.get("Janela_Horaria", ""))
+                    
+                    is_late = (w_e > 0 and w_e < 1440 and arr_min > w_e + 5)
+                    is_overtime = (dep_min > v_end_min + 15)
+                    
+                    if is_late or is_overtime:
+                        # Strip stop and leave for Por Distribuir
+                        pass
+                    else:
+                        valid_stops.append(s)
+                        
+                if valid_stops:
+                    for v_stop in valid_stops:
+                        # Find client index
+                        for c_i, c_r in enumerate(deliveries_df.iterrows()):
+                            if str(c_r[1].get("Codigo_Cliente")) == str(v_stop.get("Cliente")):
+                                visited_client_indices.add(c_i)
+                                break
+                    reindexed = recalculate_route_stops(valid_stops, depot_lat, depot_lon, v_start_str, v_speed)
+                    routes_list.extend(reindexed)
                     
         # 7. Process dropped nodes (unassigned deliveries -> Por Distribuir)
         dropped_nodes = result.get("dropped_nodes", [])
