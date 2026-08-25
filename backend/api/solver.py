@@ -283,6 +283,17 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         
     cur_time_min = parse_time_to_minutes(start_time_str, 590)
     
+    # Adapt vehicle departure time if all stops are in a later window (e.g. afternoon/evening shift)
+    if stops_list:
+        first_s = stops_list[0]
+        f_lat = float(first_s.get("Latitude", depot_lat))
+        f_lon = float(first_s.get("Longitude", depot_lon))
+        f_dist = haversine_distance(depot_lat, depot_lon, f_lat, f_lon)
+        f_travel = (f_dist / avg_speed) * 60.0
+        f_win_s, _ = parse_time_window_str(str(first_s.get("Janela_Horaria", "Qualquer")))
+        if f_win_s > 0 and (cur_time_min + f_travel) < (f_win_s - 15):
+            cur_time_min = max(cur_time_min, f_win_s - int(f_travel + 5))
+    
     # Attempt Google Routes with Live Traffic calculation
     g_legs = None
     try:
@@ -480,16 +491,25 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_start_times.append(s_min)
             vehicle_end_times.append(e_min)
 
-        # Parse client time windows
+        # Parse client time windows with multi-column fallback
         client_time_windows = []
         for idx, row in deliveries_df.iterrows():
-            win_s_str = str(row.get("Slot1_Inicio", "") or "").strip()
-            win_e_str = str(row.get("Slot1_Fim", "") or "").strip()
-            if win_s_str and win_e_str:
-                cs_min = parse_time_to_minutes(win_s_str, 0)
-                ce_min = parse_time_to_minutes(win_e_str, 1440)
-            else:
-                cs_min, ce_min = 0, 1440
+            cs_min, ce_min = 0, 1440
+            for col in ["Janela_Horaria", "janela_horaria", "Horario"]:
+                if col in row and pd.notna(row[col]) and str(row[col]).strip():
+                    ws, we = parse_time_window_str(str(row[col]))
+                    if ws != 0 or we != 1440:
+                        cs_min, ce_min = ws, we
+                        break
+            if cs_min == 0 and ce_min == 1440:
+                for s_col, e_col in [("janela_inicio", "janela_fim"), ("Janela1_Inicio", "Janela1_Fim"), ("Slot1_Inicio", "Slot1_Fim")]:
+                    if s_col in row and e_col in row and pd.notna(row[s_col]) and pd.notna(row[e_col]):
+                        s_val = str(row[s_col]).strip()
+                        e_val = str(row[e_col]).strip()
+                        if s_val and e_val:
+                            cs_min = parse_time_to_minutes(s_val, 0)
+                            ce_min = parse_time_to_minutes(e_val, 1440)
+                            break
             client_time_windows.append((cs_min, ce_min))
             
         # 5. Run solver

@@ -455,22 +455,45 @@ class AdvancedRouteOptimizer:
                 route_times.append(0.0)
                 continue
                 
-            # Nearest neighbor tour starting from depot
+            # Sort cluster stops chronologically by time window opening, then by nearest neighbor
+            sorted_by_window = sorted(
+                cluster,
+                key=lambda nd: (
+                    client_time_windows[nd - num_warehouses][0] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 0,
+                    client_time_windows[nd - num_warehouses][1] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 1440
+                )
+            )
+            
+            # Group by distinct window start time (e.g. 17:30 group before 20:30 group)
+            distinct_window_starts = sorted(list(set(
+                client_time_windows[nd - num_warehouses][0] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 0
+                for nd in sorted_by_window
+            )))
+            
             tour = []
-            pool = list(cluster)
             curr = depot
-            while pool:
-                pool.sort(key=lambda x: float(distance_matrix[curr][x]))
-                nxt = pool.pop(0)
-                tour.append(nxt)
-                curr = nxt
+            for ws_val in distinct_window_starts:
+                pool = [nd for nd in sorted_by_window if (client_time_windows[nd - num_warehouses][0] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 0) == ws_val]
+                while pool:
+                    pool.sort(key=lambda x: float(distance_matrix[curr][x]))
+                    nxt = pool.pop(0)
+                    tour.append(nxt)
+                    curr = nxt
                 
-            # 2-Opt TSP optimization
+            # 2-Opt TSP optimization (strictly preserving time window chronology)
             improved = True
             while improved:
                 improved = False
                 for i in range(len(tour) - 1):
                     for j in range(i + 2, len(tour)):
+                        # Check window compatibility: do not swap if it violates chronological windows
+                        c_idx_first = tour[i+1] - num_warehouses
+                        c_idx_last = tour[j] - num_warehouses
+                        w_first = client_time_windows[c_idx_first][0] if (client_time_windows and 0 <= c_idx_first < len(client_time_windows)) else 0
+                        w_last = client_time_windows[c_idx_last][0] if (client_time_windows and 0 <= c_idx_last < len(client_time_windows)) else 0
+                        if w_first != w_last:
+                            continue
+
                         a, b = tour[i], tour[i+1]
                         c, d = tour[j], tour[(j+1) % len(tour)] if j+1 < len(tour) else depot
                         d_cur = float(distance_matrix[a][b]) + (float(distance_matrix[c][d]) if d != depot else float(distance_matrix[c][depot]))
@@ -651,20 +674,43 @@ class AdvancedRouteOptimizer:
                 route_times.append(0.0)
                 continue
                 
+            # Sort cluster stops chronologically by time window opening, then by nearest neighbor
+            sorted_by_window = sorted(
+                cluster,
+                key=lambda nd: (
+                    client_time_windows[nd - num_warehouses][0] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 0,
+                    client_time_windows[nd - num_warehouses][1] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 1440
+                )
+            )
+            
+            distinct_window_starts = sorted(list(set(
+                client_time_windows[nd - num_warehouses][0] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 0
+                for nd in sorted_by_window
+            )))
+            
             tour = []
-            pool = list(cluster)
             curr = depot
-            while pool:
-                pool.sort(key=lambda x: float(distance_matrix[curr][x]))
-                nxt = pool.pop(0)
-                tour.append(nxt)
-                curr = nxt
-                
+            for ws_val in distinct_window_starts:
+                pool = [nd for nd in sorted_by_window if (client_time_windows[nd - num_warehouses][0] if (client_time_windows and 0 <= (nd - num_warehouses) < len(client_time_windows)) else 0) == ws_val]
+                while pool:
+                    pool.sort(key=lambda x: float(distance_matrix[curr][x]))
+                    nxt = pool.pop(0)
+                    tour.append(nxt)
+                    curr = nxt
+
+            # 2-Opt TSP optimization (strictly preserving time window chronology)
             improved = True
             while improved:
                 improved = False
                 for i in range(len(tour) - 1):
                     for j in range(i + 2, len(tour)):
+                        c_idx_first = tour[i+1] - num_warehouses
+                        c_idx_last = tour[j] - num_warehouses
+                        w_first = client_time_windows[c_idx_first][0] if (client_time_windows and 0 <= c_idx_first < len(client_time_windows)) else 0
+                        w_last = client_time_windows[c_idx_last][0] if (client_time_windows and 0 <= c_idx_last < len(client_time_windows)) else 0
+                        if w_first != w_last:
+                            continue
+
                         a, b = tour[i], tour[i+1]
                         c, d = tour[j], tour[(j+1) % len(tour)] if j+1 < len(tour) else depot
                         d_cur = float(distance_matrix[a][b]) + (float(distance_matrix[c][d]) if d != depot else float(distance_matrix[c][depot]))
