@@ -340,7 +340,8 @@ export default function TacticalPage() {
       Carga_Acum: r.Carga_Acum,
       Carga_Vol_Acum: r.Carga_Vol_Acum,
       Telefone: r.Telefone || r.Telefone_Cliente || (r as any).telefone || "",
-      Observacoes: r.Observacoes || (r as any).observacoes || "",
+      Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
+      Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
       Vendedor: r.Vendedor || (r as any).vendedor || "",
     }));
 

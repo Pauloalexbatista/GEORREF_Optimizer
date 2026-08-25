@@ -1151,30 +1151,30 @@ export default function MapComponent({
                     </div>
                   </div>
 
-                  {/* 5. Vendedor & Notas Motorista */}
-                  {(vendedor || driverNotes) && (
-                    <div className="space-y-1.5 mb-2">
-                      {vendedor && (
-                        <div className="p-1.5 bg-blue-50/80 border border-blue-200/80 rounded-md text-[10px] text-blue-950 flex items-center justify-between">
-                          <span className="font-bold uppercase tracking-wider text-[9px] text-blue-700 flex items-center space-x-1 shrink-0">
-                            <span>👤</span>
-                            <span>Vendedor:</span>
-                          </span>
-                          <span className="font-bold text-blue-900 truncate pl-1">{vendedor}</span>
-                        </div>
-                      )}
-
-                      {driverNotes && (
-                        <div className="p-1.5 bg-amber-50/90 border border-amber-200 rounded-md text-[10px] text-amber-950">
-                          <span className="font-bold uppercase tracking-wider block text-[9px] text-amber-700 flex items-center space-x-1 mb-0.5">
-                            <span>📝</span>
-                            <span>Notas Motorista:</span>
-                          </span>
-                          <p className="leading-tight text-amber-900 font-medium whitespace-pre-wrap">{driverNotes}</p>
-                        </div>
-                      )}
+                  {/* 5. Vendedor & Notas Motorista (Sempre visíveis no cartão) */}
+                  <div className="space-y-1.5 mb-2">
+                    {/* Vendedor */}
+                    <div className="p-1.5 bg-blue-50/90 border border-blue-200/80 rounded-md text-[10px] text-blue-950 flex items-center justify-between">
+                      <span className="font-bold uppercase tracking-wider text-[9px] text-blue-700 flex items-center space-x-1 shrink-0">
+                        <span>👤</span>
+                        <span>Vendedor:</span>
+                      </span>
+                      <span className={`font-semibold truncate pl-1 ${vendedor ? "text-blue-900 font-bold" : "text-zinc-400 italic"}`}>
+                        {vendedor || "Não atribuído"}
+                      </span>
                     </div>
-                  )}
+
+                    {/* Notas Motorista */}
+                    <div className="p-1.5 bg-amber-50/90 border border-amber-200/90 rounded-md text-[10px] text-amber-950">
+                      <span className="font-bold uppercase tracking-wider block text-[9px] text-amber-700 flex items-center space-x-1 mb-0.5">
+                        <span>📝</span>
+                        <span>Notas Motorista:</span>
+                      </span>
+                      <p className={`leading-tight ${driverNotes ? "text-amber-950 font-medium whitespace-pre-wrap" : "text-zinc-400 italic text-[9.5px]"}`}>
+                        {driverNotes || "Sem notas registadas para esta paragem"}
+                      </p>
+                    </div>
+                  </div>
 
                   {/* 6. Route Reassignment Selector inside Popup */}
                   {onMoveClientRoute && (
