@@ -294,6 +294,7 @@ def generate_full_project_excel(
         ('Carga_Restante_KG', COLOR_REC),
         ('Carga_Restante_Vol', COLOR_REC),
         ('Status', COLOR_REC),
+        ('Notas_Motorista', COLOR_OPT),
         ('Vendedor', COLOR_OPT)
     ]
     apply_sheet_headers_tiered(ws_rotas, rotas_headers_spec)
@@ -323,10 +324,12 @@ def generate_full_project_excel(
             carga_vol = safe_float(r.get('Carga_Restante_Vol', 0.0))
             status = str(r.get('Status', 'Pendente'))
             
+            driver_notes = str(r.get('Notas_Motorista', r.get('Observacoes', r.get('observacoes', ''))))
             vendedor_name = str(r.get('Vendedor', r.get('vendedor', '')))
             rotas_rows.append([
                 wh_name, veh_name, ordem, doc_id, cliente, morada, cp, loc, tel, janela,
-                chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status, vendedor_name
+                chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status,
+                driver_notes, vendedor_name
             ])
             
             if veh_name not in manifest_map:

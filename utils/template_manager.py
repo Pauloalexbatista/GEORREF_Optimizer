@@ -313,6 +313,7 @@ def build_sheet_rotas(wb):
         ('Carga_Restante_KG', COLOR_REC),
         ('Carga_Restante_Vol', COLOR_REC),
         ('Status', COLOR_REC),
+        ('Notas_Motorista', COLOR_OPT),
         ('Vendedor', COLOR_OPT)
     ]
     num_cols = len(headers_spec)
