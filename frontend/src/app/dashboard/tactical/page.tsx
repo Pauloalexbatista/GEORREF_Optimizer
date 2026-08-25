@@ -1176,10 +1176,14 @@ export default function TacticalPage() {
                   setSearchQuery("");
                   setSelectedWarehouseFilter("all");
                   setSelectedStatusFilter("all");
+                  try {
+                    localStorage.removeItem("georoute_active_filters");
+                    broadcastFilterSync("", "all", "all");
+                  } catch (e) {}
                 }}
-                className="text-xs text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+                className="inline-flex items-center px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-500/20 transition-all cursor-pointer"
               >
-                Limpar Todos os Filtros
+                🔄 Limpar Todos os Filtros & Ver Todas as Rotas
               </button>
             </div>
           ) : (
