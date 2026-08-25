@@ -281,18 +281,8 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
     if avg_speed <= 0:
         avg_speed = 50.0
         
-    cur_time_min = parse_time_to_minutes(start_time_str, 590)
-    
-    # Adapt vehicle departure time if all stops are in a later window (e.g. afternoon/evening shift)
-    if stops_list:
-        first_s = stops_list[0]
-        f_lat = float(first_s.get("Latitude", depot_lat))
-        f_lon = float(first_s.get("Longitude", depot_lon))
-        f_dist = haversine_distance(depot_lat, depot_lon, f_lat, f_lon)
-        f_travel = (f_dist / avg_speed) * 60.0
-        f_win_s, _ = parse_time_window_str(str(first_s.get("Janela_Horaria", "Qualquer")))
-        if f_win_s > 0 and (cur_time_min + f_travel) < (f_win_s - 15):
-            cur_time_min = max(cur_time_min, f_win_s - int(f_travel + 5))
+    # STRICT: Vehicle departure time is EXACTLY its configured driver shift start time
+    cur_time_min = parse_time_to_minutes(start_time_str, 480)
     
     # Attempt Google Routes with Live Traffic calculation
     g_legs = None
