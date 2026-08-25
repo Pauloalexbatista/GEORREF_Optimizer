@@ -37,7 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from database import get_db, get_projeto
+from database import get_db, get_projeto, ensure_entregas_columns
 
 from utils.geocoder_engine import WaterfallGeocoder
 
@@ -302,6 +302,7 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
         
 
+        ensure_entregas_columns()
         for idx, row in df.iterrows():
 
             code = str(row[mapping.col_code])

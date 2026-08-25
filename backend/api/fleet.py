@@ -46,7 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 
 
-from database import get_db, get_projeto
+from database import get_db, get_projeto, ensure_entregas_columns
 
 
 
@@ -954,6 +954,7 @@ async def import_fleet_warehouses(
 
         # --- D. SAVE DELIVERIES TO SQLITE DB FOR PHASE 1 GEOREFERENCING ---
         if deliveries_list:
+            ensure_entregas_columns()
             with get_db() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
