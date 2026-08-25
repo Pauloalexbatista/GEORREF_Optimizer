@@ -199,10 +199,11 @@ export default function TacticalPage() {
     };
   }, []);
 
-  const broadcastUpdate = (updatedRoutes: RouteNode[], vList: string[], wList: WarehouseData[]) => {
+  const broadcastUpdate = (updatedRoutes: RouteNode[], vList: string[], wList: WarehouseData[], fList?: VehicleData[]) => {
     const mappedClients = updatedRoutes.map((r) => ({
       id: r.id || r.ID_Original,
       ID_Original: r.id || r.ID_Original,
+      Armazem: r.Armazem,
       Cliente: r.Cliente,
       Nome_Cliente: r.Nome_Cliente || r.Cliente,
       Morada: r.Morada,
@@ -220,7 +221,7 @@ export default function TacticalPage() {
       Carga_Acum: r.Carga_Acum,
     }));
 
-    const payload = { type: "MAP_UPDATE", clients: mappedClients, warehouses: wList, vehicles: vList };
+    const payload = { type: "MAP_UPDATE", clients: mappedClients, warehouses: wList, vehicles: vList, fleet: fList || fleetList };
     try {
       channelRef.current?.postMessage(payload);
       localStorage.setItem("georoute_map_state", JSON.stringify(payload));
@@ -271,7 +272,7 @@ export default function TacticalPage() {
 
       const assignedCount = loadedRoutes.filter((r) => !isPendingRoute(r.Rota)).length;
       setStatusMsg(`Carregadas ${loadedRoutes.length} paragens (${assignedCount} atribuídas, ${vList.length} viaturas).`);
-      broadcastUpdate(loadedRoutes, vList, rawWh);
+      broadcastUpdate(loadedRoutes, vList, rawWh, rawFleet);
     } catch (e: any) {
       console.error("Failed to load tactical data:", e);
       setError("Erro ao carregar dados táticos. Certifique-se de que a frota e os clientes estão configurados.");
@@ -331,7 +332,7 @@ export default function TacticalPage() {
         : `Otimização concluída com sucesso: Todas as ${assignedCount} paragens foram distribuídas pelas ${vehicles.length} viaturas.`;
 
       alert(alertMsg);
-      broadcastUpdate(updatedRoutes, vehicles, warehouses);
+      broadcastUpdate(updatedRoutes, vehicles, warehouses, fleetList);
     } catch (e: any) {
       console.error("Solver error:", e);
       alert(e.message || "Erro ao calcular otimização de rotas.");
@@ -353,7 +354,7 @@ export default function TacticalPage() {
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
       setRoutes(updatedRoutes);
-      broadcastUpdate(updatedRoutes, vehicles, warehouses);
+      broadcastUpdate(updatedRoutes, vehicles, warehouses, fleetList);
       alert("Sequência de todas as rotas otimizada com sucesso!");
     } catch (e: any) {
       alert("Erro ao otimizar sequências: " + (e.message || "Erro desconhecido"));
@@ -379,7 +380,7 @@ export default function TacticalPage() {
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
       setRoutes(updatedRoutes);
-      broadcastUpdate(updatedRoutes, vehicles, warehouses);
+      broadcastUpdate(updatedRoutes, vehicles, warehouses, fleetList);
     } catch (e: any) {
       alert("Erro ao ordenar trajeto: " + (e.message || "Erro desconhecido"));
     } finally {

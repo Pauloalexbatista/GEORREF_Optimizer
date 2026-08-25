@@ -13,6 +13,7 @@ export default function DetachedMapPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
+  const [fleet, setFleet] = useState<any[]>([]);
   const [statusMsg, setStatusMsg] = useState("A aguardar sincronização...");
 
   const loadLocalData = () => {
@@ -23,6 +24,7 @@ export default function DetachedMapPage() {
         if (parsed.clients) setClients(parsed.clients);
         if (parsed.warehouses) setWarehouses(parsed.warehouses);
         if (parsed.vehicles) setVehicles(parsed.vehicles);
+        if (parsed.fleet) setFleet(parsed.fleet);
         setStatusMsg(`Atualizado às ${new Date().toLocaleTimeString()}`);
       } catch (e) {}
     }
@@ -37,10 +39,11 @@ export default function DetachedMapPage() {
 
     channel.onmessage = (event) => {
       if (event.data?.type === "MAP_UPDATE") {
-        const { clients: c, warehouses: w, vehicles: v } = event.data;
+        const { clients: c, warehouses: w, vehicles: v, fleet: f } = event.data;
         if (c) setClients(c);
         if (w) setWarehouses(w);
         if (v) setVehicles(v);
+        if (f) setFleet(f);
         setStatusMsg(`Sincronizado em tempo real (${new Date().toLocaleTimeString()})`);
       }
     };

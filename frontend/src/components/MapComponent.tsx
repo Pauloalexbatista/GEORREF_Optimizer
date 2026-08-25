@@ -34,6 +34,7 @@ interface MapComponentProps {
   clients: MapClient[];
   warehouses: MapWarehouse[];
   vehicles: string[];
+  fleet?: any[];
   onMoveClientRoute?: (clientName: string, newRoute: string, deliveryId?: number, address?: string) => void;
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
 }
@@ -198,6 +199,7 @@ export default function MapComponent({
   clients,
   warehouses,
   vehicles,
+  fleet = [],
   onMoveClientRoute,
   onUpdateClientCoords,
 }: MapComponentProps) {
@@ -312,12 +314,22 @@ export default function MapComponent({
 
     // 1. Warehouse Filter
     if (selectedWarehouse !== "all") {
-      const selWh = selectedWarehouse.toLowerCase();
+      const selWh = selectedWarehouse.toLowerCase().trim();
       list = list.filter(v => {
-        const vWh = (v.includes("_") ? v.split("_")[0] : v).trim().toLowerCase();
-        if (vWh === selWh || v.toLowerCase().includes(selWh)) return true;
-        // Check if any clients in this vehicle belong to the warehouse
-        return clients.some(c => c.Rota === v && (c.Armazem || "").toLowerCase() === selWh);
+        // A. Match from fleet configuration
+        const vData = fleet.find((f: any) => (f.veiculo || "").trim().toLowerCase() === v.trim().toLowerCase());
+        if (vData && (vData.armazem || "").trim().toLowerCase() === selWh) return true;
+
+        // B. Match from vehicle name or prefix (e.g. "Portimão_3" -> "Auchan Portimão")
+        const vClean = v.toLowerCase().trim();
+        const vPrefix = (v.includes("_") ? v.split("_")[0] : v).trim().toLowerCase();
+        if (selWh.includes(vClean) || vClean.includes(selWh) || selWh.includes(vPrefix) || vPrefix.includes(selWh)) return true;
+
+        // C. Match if any client assigned to this vehicle belongs to the warehouse
+        return clients.some(c => c.Rota === v && (
+          (c.Armazem || "").toLowerCase().trim() === selWh ||
+          ((c.Armazem || "").toLowerCase().trim().includes(vPrefix) && vPrefix.length > 2)
+        ));
       });
     }
 
@@ -363,11 +375,23 @@ export default function MapComponent({
 
       // 2. Warehouse Filter
       if (selectedWarehouse !== "all") {
-        const cWh = (c.Armazem || "").toLowerCase();
-        const selWh = selectedWarehouse.toLowerCase();
-        if (cWh && cWh !== "n/a" && cWh !== selWh) {
-          const rName = (c.Rota || "").toLowerCase();
-          if (!rName.includes(selWh)) return false;
+        const selWh = selectedWarehouse.toLowerCase().trim();
+        const cWh = (c.Armazem || "").toLowerCase().trim();
+        const isPending = isPendingRoute(c.Rota);
+
+        if (isPending) {
+          if (cWh && cWh !== "n/a" && cWh !== selWh) return false;
+        } else {
+          // Assigned to a vehicle: check if vehicle belongs to this warehouse
+          const vData = fleet.find((f: any) => (f.veiculo || "").trim().toLowerCase() === (c.Rota || "").trim().toLowerCase());
+          if (vData && vData.armazem) {
+            if (vData.armazem.trim().toLowerCase() !== selWh) return false;
+          } else {
+            const rName = (c.Rota || "").toLowerCase();
+            const vPrefix = (c.Rota.includes("_") ? c.Rota.split("_")[0] : c.Rota).trim().toLowerCase();
+            const matchesWarehouse = (cWh === selWh) || selWh.includes(rName) || rName.includes(selWh) || selWh.includes(vPrefix) || vPrefix.includes(selWh);
+            if (!matchesWarehouse) return false;
+          }
         }
       }
 
