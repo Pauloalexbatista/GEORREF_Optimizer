@@ -43,6 +43,7 @@ export default function DetachedMapPage() {
   });
 
   const channelRef = useRef<BroadcastChannel | null>(null);
+  const lastMutationTimeRef = useRef<number>(0);
 
   const loadLocalData = () => {
     const storedState = localStorage.getItem("georoute_map_state");
@@ -74,6 +75,7 @@ export default function DetachedMapPage() {
 
     channel.onmessage = (event) => {
       if (event.data?.type === "MAP_UPDATE") {
+        if (event.data.timestamp && event.data.timestamp < lastMutationTimeRef.current) return;
         const { clients: c, warehouses: w, vehicles: v, fleet: f } = event.data;
         if (c) setClients(c);
         if (w) setWarehouses(w);
@@ -129,6 +131,7 @@ export default function DetachedMapPage() {
 
   const handleMoveClientRoute = async (clientName: string, newRoute: string, delivId?: number, address?: string) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    lastMutationTimeRef.current = Date.now();
     const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
 
     // Optimistic state update
@@ -142,7 +145,7 @@ export default function DetachedMapPage() {
     setStatusMsg(`A guardar reatribuição para ${targetRoute}...`);
 
     if (!projId) {
-      const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles, fleet };
+      const payload = { type: "MAP_UPDATE", clients: updated, warehouses, vehicles, fleet, timestamp: Date.now() };
       try {
         channelRef.current?.postMessage(payload);
         localStorage.setItem("georoute_map_state", JSON.stringify(payload));
@@ -183,6 +186,7 @@ export default function DetachedMapPage() {
           warehouses,
           vehicles,
           fleet,
+          timestamp: Date.now(),
         };
         try {
           channelRef.current?.postMessage(payload);
@@ -198,6 +202,7 @@ export default function DetachedMapPage() {
 
   const handleBulkReassign = async (items: { clientName: string; deliveryId?: number; address?: string }[], newRoute: string) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    lastMutationTimeRef.current = Date.now();
     const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
     if (!projId || items.length === 0) return;
 
@@ -237,6 +242,7 @@ export default function DetachedMapPage() {
           warehouses,
           vehicles,
           fleet,
+          timestamp: Date.now(),
         };
         try {
           channelRef.current?.postMessage(payload);
@@ -316,6 +322,7 @@ export default function DetachedMapPage() {
           warehouses,
           vehicles,
           fleet,
+          timestamp: Date.now(),
         };
         try {
           channelRef.current?.postMessage(payload);

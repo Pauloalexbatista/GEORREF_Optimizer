@@ -235,14 +235,16 @@ export default function TacticalPage() {
     } catch (e) {}
   };
 
-  // Strategy Config Drawer
+  // Strategy Config Drawer & Enterprise LNS Depth
   const [showConfig, setShowConfig] = useState(false);
   const [strategy, setStrategy] = useState("clusters");
-  const [loadMode, setLoadMode] = useState("balanced");
+  const [loadMode, setLoadMode] = useState("full");
+  const [solvingDepth, setSolvingDepth] = useState<"fast" | "balanced" | "deep">("balanced");
   const [maxTravelTime, setMaxTravelTime] = useState("09:00");
   const [respectWindows, setRespectWindows] = useState(true);
 
   const channelRef = useRef<BroadcastChannel | null>(null);
+  const lastMutationTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -251,6 +253,9 @@ export default function TacticalPage() {
 
       channel.onmessage = (event) => {
         if (event.data?.type === "MAP_UPDATE" && event.data?.clients) {
+          if (event.data.timestamp && event.data.timestamp < lastMutationTimeRef.current) {
+            return; // Ignore stale broadcast
+          }
           const mapped: RouteNode[] = event.data.clients.map((r: any) => ({
             ...r,
             id: r.id || r.ID_Original,
@@ -430,7 +435,8 @@ export default function TacticalPage() {
             balance_load: loadMode === "balanced",
             max_route_duration: maxTravelTime,
             respect_time_windows: respectWindows,
-            time_limit_seconds: 12,
+            solving_depth: solvingDepth,
+            time_limit_seconds: solvingDepth === "deep" ? 180 : solvingDepth === "fast" ? 15 : 60,
           },
         }),
       });
@@ -985,6 +991,59 @@ export default function TacticalPage() {
                 <p className="text-[11px] text-zinc-400">
                   Distribui o número de paragens e peso de forma equitativa por todos os carros disponíveis para empresas onde todos os motoristas saem em simultâneo.
                 </p>
+              </div>
+            </div>
+
+            {/* Depth / Computation Time Selector */}
+            <div className="border-t border-zinc-800 pt-3">
+              <label className="text-[11px] font-bold text-zinc-300 block mb-2 uppercase tracking-wider">
+                🧠 Profundidade do Cálculo e Metaheurística (LNS - Large Neighborhood Search):
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div
+                  onClick={() => setSolvingDepth("fast")}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center space-x-2.5 ${
+                    solvingDepth === "fast"
+                      ? "bg-amber-950/40 border-amber-500 text-amber-200 ring-1 ring-amber-500"
+                      : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                  }`}
+                >
+                  <span className="text-base">⚡</span>
+                  <div>
+                    <p className="font-bold text-xs">Modo Rápido (~15 seg)</p>
+                    <p className="text-[10px] opacity-80">Heurística rápida para validação e rascunho.</p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setSolvingDepth("balanced")}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center space-x-2.5 ${
+                    solvingDepth === "balanced"
+                      ? "bg-indigo-950/40 border-indigo-500 text-indigo-200 ring-1 ring-indigo-500"
+                      : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                  }`}
+                >
+                  <span className="text-base">⚖️</span>
+                  <div>
+                    <p className="font-bold text-xs">Modo Equilibrado (~1 min)</p>
+                    <p className="text-[10px] opacity-80">Decomposição Polar + 600 iterações LNS.</p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setSolvingDepth("deep")}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center space-x-2.5 ${
+                    solvingDepth === "deep"
+                      ? "bg-emerald-950/40 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500"
+                      : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                  }`}
+                >
+                  <span className="text-base">🧠</span>
+                  <div>
+                    <p className="font-bold text-xs">Produção Profunda (3 a 5 min)</p>
+                    <p className="text-[10px] opacity-80">2.500+ iterações LNS para 200+ clientes sem sobreposições.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

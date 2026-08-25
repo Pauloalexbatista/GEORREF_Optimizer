@@ -568,8 +568,11 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             depot_lat, depot_lon = get_depot_coords(warehouses_df, warehouse_origin)
             
             raw_stops = []
-            for i in range(1, len(route) - 1):
-                loc_idx = route[i]
+            loc_indices = route
+            if len(route) >= 2 and route[0] < client_start_idx and route[-1] < client_start_idx:
+                loc_indices = route[1:-1]
+
+            for loc_idx in loc_indices:
                 if loc_idx >= client_start_idx:
                     client_idx = loc_idx - client_start_idx
                     client_row = deliveries_df.iloc[client_idx]
