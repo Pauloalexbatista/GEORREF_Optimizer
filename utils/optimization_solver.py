@@ -158,32 +158,35 @@ class AdvancedRouteOptimizer:
                 "wh": v_wh
             })
 
-        # Helper: Route Schedule & Time Window Feasibility Evaluator
+        # Helper: Route Schedule & Time Window Feasibility Evaluator with Dynamic Departure
         def evaluate_route(route_nodes: List[int], v_idx: int, speed_kmh: float = 50.0) -> Tuple[bool, float, int, int]:
             if not route_nodes:
                 return True, 0.0, 0, 0
             vd = vehicle_data[v_idx]
-            cur_time = float(vd["start"])
+            ordered = sorted(route_nodes, key=lambda c: (client_data[c]["tw_start"], distance_matrix[0][c]))
+
+            first_c = ordered[0]
+            t_first_travel = (distance_matrix[0][first_c] / max(speed_kmh, 20.0)) * 60.0
+            actual_dep_time = max(vd["start"], client_data[first_c]["tw_start"] - t_first_travel)
+            actual_dep_time = min(actual_dep_time, vd["end"] - 60)
+
+            cur_time = actual_dep_time
             cur_loc = 0
             total_dist = 0.0
             late_count = 0
-
-            # Sort route by time window start to maintain chronological sequence
-            ordered = sorted(route_nodes, key=lambda c: (client_data[c]["tw_start"], distance_matrix[0][c]))
 
             for c_idx in ordered:
                 cd = client_data[c_idx]
                 d_km = distance_matrix[cur_loc][c_idx]
                 total_dist += d_km
-                t_travel = (d_km / max(speed_kmh, 20.0)) * 60.0
-                cur_time += t_travel
+                cur_time += (d_km / max(speed_kmh, 20.0)) * 60.0
 
                 if cur_time < cd["tw_start"]:
-                    cur_time = float(cd["tw_start"]) # early waiting
-                elif cur_time > cd["tw_end"]:
+                    cur_time = float(cd["tw_start"])
+                elif cur_time > cd["tw_end"] + 10:
                     late_count += 1
 
-                cur_time += 15.0 # unload duration
+                cur_time += 15.0
                 cur_loc = c_idx
 
             # Return to depot
@@ -191,8 +194,8 @@ class AdvancedRouteOptimizer:
             total_dist += d_ret
             cur_time += (d_ret / max(speed_kmh, 20.0)) * 60.0
 
-            total_duration = int(round(cur_time - vd["start"]))
-            is_feasible = (late_count == 0) and (total_duration <= vd["max_duration"]) and (len(route_nodes) <= 28)
+            total_duration = int(round(cur_time - actual_dep_time))
+            is_feasible = (late_count == 0) and (cur_time <= vd["end"] + 20) and (total_duration <= vd["max_duration"] + 30) and (len(route_nodes) <= 25)
             return is_feasible, total_dist, total_duration, late_count
 
         # 3. Initial Partitioning: Polar Sector Sweeping + Strict Shift Limits
