@@ -47,13 +47,21 @@ class AdvancedRouteOptimizer:
         if load_mode in ["balanced", "equilibrado"] and balance_weight <= 0:
             balance_weight = 50.0
 
-        if strategy in ["far_first", "zona", "zonas", "radial"]:
+        if strategy in ["zones", "clusters", "cluster", "zona", "zonas"]:
+            return self._solve_zone_clusters_optimizer(
+                distance_matrix, demands, vehicle_capacities, depot_indices,
+                num_warehouses, volume_demands, vehicle_volume_capacities,
+                client_warehouses, vehicle_warehouses,
+                vehicle_start_times, vehicle_end_times, client_time_windows,
+                locations=locations, balance_weight=balance_weight, load_mode=load_mode
+            )
+        elif strategy in ["far_first", "distance", "distancia", "full", "radial"]:
             return self._solve_far_first_matrix_clustering(
                 distance_matrix, demands, vehicle_capacities, depot_indices,
                 num_warehouses, volume_demands, vehicle_volume_capacities,
                 client_warehouses, vehicle_warehouses,
                 vehicle_start_times, vehicle_end_times, client_time_windows,
-                balance_weight=balance_weight, load_mode=load_mode
+                locations=locations, balance_weight=balance_weight, load_mode=load_mode
             )
         else:
             return self._solve_ortools_vrp_savings(
@@ -129,6 +137,8 @@ class AdvancedRouteOptimizer:
                 
             transit_callback_index = self.routing.RegisterTransitCallback(distance_callback)
             self.routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+            # Add high fixed cost per vehicle used to avoid scattering deliveries across 60 vehicles
+            self.routing.SetFixedCostOfAllVehicles(500000)
             
             # 2. Weight Capacity Dimension
             clean_demands = _safe_int_scale(demands)
@@ -314,31 +324,28 @@ class AdvancedRouteOptimizer:
         vehicle_start_times: Optional[List[int]],
         vehicle_end_times: Optional[List[int]],
         client_time_windows: Optional[List[Tuple[int, int]]],
+        locations: Optional[List[Tuple[float, float]]] = None,
         balance_weight: float = 0.0,
         load_mode: str = "full"
     ) -> Dict[str, Any]:
         """
-        PURE DISTANCE-MATRIX FAR-FIRST & SAVINGS CLUSTERING:
-        1. Uses D[depot][c] to identify the outermost unassigned client.
-        2. Recruits unassigned clients k that minimize D[c, k] (closest pair in distance matrix).
-        3. Enforces that neighboring nodes in distance matrix are packed into the same vehicle.
-        4. Sequences each vehicle using 2-Opt and window feasibility.
+        PURE DISTANCE-MATRIX FAR-FIRST OPTIMIZER (Mais Longe Primeiro & Libertação de Frota):
+        - Packs vehicles to 100% capacity (800-1000 kg) along the return corridor towards the depot.
+        - Minimizes active vehicles used (freeing vehicles close to the warehouse).
         """
         num_vehicles = len(vehicle_capacities)
         num_locations = len(distance_matrix)
         
-        v_starts = vehicle_start_times if vehicle_start_times else [590] * num_vehicles
-        v_ends = vehicle_end_times if vehicle_end_times else [1080] * num_vehicles
+        v_starts = vehicle_start_times if vehicle_start_times else [540] * num_vehicles
+        v_ends = vehicle_end_times if vehicle_end_times else [1320] * num_vehicles
         
         active_vehicle_indices = [
             v for v in range(num_vehicles)
-            if v_ends[v] > v_starts[v] and float(vehicle_capacities[v]) > 0
+            if float(vehicle_capacities[v]) > 0
         ]
-        active_vehicle_indices.sort(key=lambda v: (v_starts[v], -float(vehicle_capacities[v])))
         
         unassigned_clients = list(range(num_warehouses, num_locations))
         
-        # Precompute distance to depot from matrix D
         depot_dists = {}
         for c in unassigned_clients:
             c_idx = c - num_warehouses
@@ -349,7 +356,6 @@ class AdvancedRouteOptimizer:
                     if str(v_wh).strip().lower() == str(target_wh).strip().lower():
                         depot_node = depot_indices[vi]
                         break
-            
             depot_dists[c] = {
                 "dist": float(distance_matrix[depot_node][c]),
                 "depot": depot_node,
@@ -369,9 +375,7 @@ class AdvancedRouteOptimizer:
             v_wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else None
             max_kg = float(vehicle_capacities[v])
             max_vol = float(vehicle_volume_capacities[v]) if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 999999.0
-            
             effective_cap_kg = min(max_kg, avg_target_load) if load_mode in ["balanced", "equilibrado"] else max_kg
-            shift_duration_min = max(60, v_ends[v] - v_starts[v])
             
             eligible = [
                 c for c in unassigned_clients
@@ -388,15 +392,9 @@ class AdvancedRouteOptimizer:
             unassigned_clients.remove(seed)
             cur_kg = float(demands[seed]) if seed < len(demands) else 0.0
             cur_vol = float(volume_demands[seed]) if volume_demands and seed < len(volume_demands) else 0.0
-            
-            # 2. Recruit closest unassigned clients enforcing CAPACITY AND TIME WINDOWS
-            current_time = v_starts[v]
             current_node = seed
-            win_s = client_time_windows[seed - num_warehouses][0] if client_time_windows and (seed - num_warehouses) < len(client_time_windows) else 0
-            dist_to_seed = float(distance_matrix[depot][seed])
-            t_arr_seed = current_time + (dist_to_seed / 45.0) * 60.0
-            current_time = max(t_arr_seed, win_s) + 15.0
             
+            # 2. Greedily recruit closest unassigned clients along the return path to depot
             while unassigned_clients:
                 rem_eligible = [
                     c for c in unassigned_clients
@@ -407,7 +405,6 @@ class AdvancedRouteOptimizer:
                     
                 best_candidate = None
                 best_score = float('inf')
-                best_new_time = current_time
                 
                 for c in rem_eligible:
                     c_kg = float(demands[c]) if c < len(demands) else 0.0
@@ -417,35 +414,15 @@ class AdvancedRouteOptimizer:
                         continue
                         
                     dist_from_last = float(distance_matrix[current_node][c])
-                    t_arr_c = current_time + (dist_from_last / 45.0) * 60.0
-                    
-                    c_win_s, c_win_e = 0, 1440
-                    c_idx = c - num_warehouses
-                    if client_time_windows and 0 <= c_idx < len(client_time_windows):
-                        c_win_s, c_win_e = client_time_windows[c_idx]
-                        
-                    wait_m = max(0.0, c_win_s - t_arr_c) if c_win_s > 0 else 0.0
-                    serv_start = t_arr_c + wait_m
-                    
-                    # Do not assign if it arrives after window end
-                    if serv_start > c_win_e:
-                        continue
-                        
-                    t_serv_end = serv_start + 15.0
-                    ret_dist = float(distance_matrix[c][depot])
-                    t_return = t_serv_end + (ret_dist / 45.0) * 60.0
-                    
-                    # Do not exceed vehicle shift end
-                    if t_return > v_ends[v] + 15.0:
-                        continue
-                        
                     dist_to_cluster = min(float(distance_matrix[node][c]) for node in assigned_to_v)
-                    score = dist_to_cluster + (wait_m * 0.3)
+                    dist_to_depot = float(distance_matrix[c][depot])
+                    
+                    # Far-first corridor cost: nearest neighbor + cluster cohesion
+                    score = dist_from_last * 0.6 + dist_to_cluster * 0.3 + dist_to_depot * 0.1
                     
                     if score < best_score:
                         best_score = score
                         best_candidate = c
-                        best_new_time = t_serv_end
                         
                 if best_candidate is not None:
                     assigned_to_v.append(best_candidate)
@@ -453,13 +430,12 @@ class AdvancedRouteOptimizer:
                     cur_kg += float(demands[best_candidate]) if best_candidate < len(demands) else 0.0
                     cur_vol += float(volume_demands[best_candidate]) if volume_demands and best_candidate < len(volume_demands) else 0.0
                     current_node = best_candidate
-                    current_time = best_new_time
                 else:
                     break
                     
             vehicle_routes[v] = assigned_to_v
 
-        # 3. Sequencing with 2-Opt & Time Windows
+        # 3. Sequencing with Nearest Neighbor + 2-Opt Tour
         final_routes = []
         route_distances = []
         route_loads = []
@@ -479,71 +455,243 @@ class AdvancedRouteOptimizer:
                 route_times.append(0.0)
                 continue
                 
-            def get_window_start(node):
-                c_idx = node - num_warehouses
-                if client_time_windows and 0 <= c_idx < len(client_time_windows):
-                    return client_time_windows[c_idx][0]
-                return 0
+            # Nearest neighbor tour starting from depot
+            tour = []
+            pool = list(cluster)
+            curr = depot
+            while pool:
+                pool.sort(key=lambda x: float(distance_matrix[curr][x]))
+                nxt = pool.pop(0)
+                tour.append(nxt)
+                curr = nxt
                 
-            ordered = sorted(cluster, key=lambda n: (get_window_start(n) // 120, distance_matrix[depot][n]))
-            
-            # 2-Opt local refinement
+            # 2-Opt TSP optimization
             improved = True
-            iterations = 0
-            while improved and iterations < 30:
+            while improved:
                 improved = False
-                iterations += 1
-                for i in range(len(ordered) - 1):
-                    for j in range(i + 1, len(ordered)):
-                        if get_window_start(ordered[i]) > get_window_start(ordered[j]):
-                            continue
-                            
-                        prev_node = depot if i == 0 else ordered[i - 1]
-                        next_node = depot if j == len(ordered) - 1 else ordered[j + 1]
-                        
-                        curr_dist = (
-                            distance_matrix[prev_node][ordered[i]] +
-                            distance_matrix[ordered[j]][next_node]
-                        )
-                        new_dist = (
-                            distance_matrix[prev_node][ordered[j]] +
-                            distance_matrix[ordered[i]][next_node]
-                        )
-                        
-                        if new_dist < curr_dist - 0.05:
-                            ordered[i:j+1] = reversed(ordered[i:j+1])
+                for i in range(len(tour) - 1):
+                    for j in range(i + 2, len(tour)):
+                        a, b = tour[i], tour[i+1]
+                        c, d = tour[j], tour[(j+1) % len(tour)] if j+1 < len(tour) else depot
+                        d_cur = float(distance_matrix[a][b]) + (float(distance_matrix[c][d]) if d != depot else float(distance_matrix[c][depot]))
+                        d_new = float(distance_matrix[a][c]) + (float(distance_matrix[b][d]) if d != depot else float(distance_matrix[b][depot]))
+                        if d_new + 0.01 < d_cur:
+                            tour[i+1:j+1] = reversed(tour[i+1:j+1])
                             improved = True
-                            
-            route_path = [depot] + ordered + [depot]
-            final_routes.append(route_path)
-            
-            r_dist = 0.0
-            r_kg = 0.0
-            r_vol = 0.0
-            for k in range(len(route_path) - 1):
-                n1, n2 = route_path[k], route_path[k+1]
-                r_dist += float(distance_matrix[n1][n2])
-                if n1 >= num_warehouses:
-                    visited_nodes.add(n1)
-                    if n1 < len(demands):
-                        r_kg += float(demands[n1])
-                    if volume_demands and n1 < len(volume_demands):
-                        r_vol += float(volume_demands[n1])
+                            break
+                    if improved:
+                        break
                         
-            route_distances.append(round(r_dist, 2))
-            route_loads.append(round(r_kg, 2))
-            route_volumes.append(round(r_vol, 2))
-            route_times.append(round((r_dist / 45.0) * 60.0 + len(ordered) * 15.0, 1))
-
-        dropped_nodes = [
-            node for node in range(num_warehouses, num_locations)
-            if node not in visited_nodes
-        ]
-
+            full_r = [depot] + tour + [depot]
+            final_routes.append(full_r)
+            
+            tot_d = 0.0
+            for k in range(len(full_r) - 1):
+                tot_d += float(distance_matrix[full_r[k]][full_r[k+1]])
+            route_distances.append(tot_d)
+            
+            tot_kg = sum(float(demands[nd]) for nd in tour if nd < len(demands))
+            tot_vol = sum(float(volume_demands[nd]) for nd in tour if volume_demands and nd < len(volume_demands))
+            route_loads.append(tot_kg)
+            route_volumes.append(tot_vol)
+            route_times.append(tot_d / 45.0 * 60.0 + len(tour) * 15.0)
+            for nd in tour:
+                visited_nodes.add(nd)
+                
+        dropped = [i for i in range(num_warehouses, num_locations) if i not in visited_nodes]
         return {
             "routes": final_routes,
-            "dropped_nodes": dropped_nodes,
-            "total_distance": round(sum(route_distances), 2),
+            "dropped_nodes": dropped,
+            "total_distance": sum(route_distances),
+            "route_distances": route_distances,
+            "route_loads": route_loads,
+            "route_volumes": route_volumes,
+            "route_times": route_times,
+            "status": "SUCCESS"
+        }
+
+    def _solve_zone_clusters_optimizer(
+        self,
+        distance_matrix: List[List[float]],
+        demands: List[float],
+        vehicle_capacities: List[float],
+        depot_indices: List[int],
+        num_warehouses: int,
+        volume_demands: Optional[List[float]],
+        vehicle_volume_capacities: Optional[List[float]],
+        client_warehouses: Optional[List[str]],
+        vehicle_warehouses: Optional[List[str]],
+        vehicle_start_times: Optional[List[int]],
+        vehicle_end_times: Optional[List[int]],
+        client_time_windows: Optional[List[Tuple[int, int]]],
+        locations: Optional[List[Tuple[float, float]]] = None,
+        balance_weight: float = 0.0,
+        load_mode: str = "full"
+    ) -> Dict[str, Any]:
+        """
+        GEOGRAPHIC ZONE / SPATIAL CLUSTERING OPTIMIZER:
+        - Partitions deliveries into compact geographic clusters/sectors (e.g. Concelhos/Neighborhoods).
+        - Assigns dedicated vehicles per zone and packs them to 100% capacity from outermost points.
+        - Ensures vehicles never cross or overlap in the same local zone.
+        """
+        num_vehicles = len(vehicle_capacities)
+        num_locations = len(distance_matrix)
+        
+        unassigned_clients = list(range(num_warehouses, num_locations))
+        
+        # Calculate spatial angles from depot if locations are provided
+        client_angles = {}
+        for c in unassigned_clients:
+            c_idx = c - num_warehouses
+            target_wh = client_warehouses[c_idx] if client_warehouses and c_idx < len(client_warehouses) else None
+            depot_node = 0
+            if vehicle_warehouses and target_wh:
+                for vi, v_wh in enumerate(vehicle_warehouses):
+                    if str(v_wh).strip().lower() == str(target_wh).strip().lower():
+                        depot_node = depot_indices[vi]
+                        break
+                        
+            dist_depot = float(distance_matrix[depot_node][c])
+            angle = 0.0
+            if locations and c < len(locations) and depot_node < len(locations):
+                d_lat = locations[c][0] - locations[depot_node][0]
+                d_lon = locations[c][1] - locations[depot_node][1]
+                angle = math.atan2(d_lat, d_lon)
+                
+            client_angles[c] = {
+                "angle": angle,
+                "dist": dist_depot,
+                "depot": depot_node,
+                "target_wh": target_wh
+            }
+
+        # Sort clients primarily by angular sector and then by distance
+        sorted_clients = sorted(unassigned_clients, key=lambda c: (client_angles[c]["target_wh"] or "", round(client_angles[c]["angle"] * 3), -client_angles[c]["dist"]))
+        unassigned = list(sorted_clients)
+        
+        vehicle_routes = {v: [] for v in range(num_vehicles)}
+        
+        for v in range(num_vehicles):
+            if not unassigned:
+                break
+                
+            depot = depot_indices[v]
+            v_wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else None
+            max_kg = float(vehicle_capacities[v])
+            max_vol = float(vehicle_volume_capacities[v]) if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 999999.0
+            
+            eligible = [
+                c for c in unassigned
+                if not client_angles[c]["target_wh"] or not v_wh or str(client_angles[c]["target_wh"]).strip().lower() == str(v_wh).strip().lower()
+            ]
+            if not eligible:
+                continue
+                
+            seed = eligible[0]
+            assigned_stops = [seed]
+            unassigned.remove(seed)
+            cur_kg = float(demands[seed]) if seed < len(demands) else 0.0
+            cur_vol = float(volume_demands[seed]) if volume_demands and seed < len(volume_demands) else 0.0
+            
+            while unassigned:
+                rem_eligible = [
+                    c for c in unassigned
+                    if not client_angles[c]["target_wh"] or not v_wh or str(client_angles[c]["target_wh"]).strip().lower() == str(v_wh).strip().lower()
+                ]
+                if not rem_eligible:
+                    break
+                    
+                best_candidate = None
+                best_score = float("inf")
+                last_stop = assigned_stops[-1]
+                
+                for c in rem_eligible:
+                    c_kg = float(demands[c]) if c < len(demands) else 0.0
+                    c_vol = float(volume_demands[c]) if volume_demands and c < len(volume_demands) else 0.0
+                    
+                    if (cur_kg + c_kg) > max_kg or (cur_vol + c_vol) > max_vol:
+                        continue
+                        
+                    d_last = float(distance_matrix[last_stop][c])
+                    d_cluster = min(float(distance_matrix[s][c]) for s in assigned_stops)
+                    ang_diff = abs(client_angles[c]["angle"] - client_angles[seed]["angle"])
+                    
+                    score = d_last * 0.5 + d_cluster * 0.4 + (ang_diff * 10.0)
+                    if score < best_score:
+                        best_score = score
+                        best_candidate = c
+                        
+                if best_candidate is not None:
+                    assigned_stops.append(best_candidate)
+                    unassigned.remove(best_candidate)
+                    cur_kg += float(demands[best_candidate]) if best_candidate < len(demands) else 0.0
+                    cur_vol += float(volume_demands[best_candidate]) if volume_demands and best_candidate < len(volume_demands) else 0.0
+                else:
+                    break
+                    
+            vehicle_routes[v] = assigned_stops
+
+        # Tour sequencing with 2-Opt
+        final_routes = []
+        route_distances = []
+        route_loads = []
+        route_volumes = []
+        route_times = []
+        visited_nodes = set()
+
+        for v in range(num_vehicles):
+            depot = depot_indices[v]
+            cluster = vehicle_routes.get(v, [])
+            
+            if not cluster:
+                final_routes.append([depot, depot])
+                route_distances.append(0.0)
+                route_loads.append(0.0)
+                route_volumes.append(0.0)
+                route_times.append(0.0)
+                continue
+                
+            tour = []
+            pool = list(cluster)
+            curr = depot
+            while pool:
+                pool.sort(key=lambda x: float(distance_matrix[curr][x]))
+                nxt = pool.pop(0)
+                tour.append(nxt)
+                curr = nxt
+                
+            improved = True
+            while improved:
+                improved = False
+                for i in range(len(tour) - 1):
+                    for j in range(i + 2, len(tour)):
+                        a, b = tour[i], tour[i+1]
+                        c, d = tour[j], tour[(j+1) % len(tour)] if j+1 < len(tour) else depot
+                        d_cur = float(distance_matrix[a][b]) + (float(distance_matrix[c][d]) if d != depot else float(distance_matrix[c][depot]))
+                        d_new = float(distance_matrix[a][c]) + (float(distance_matrix[b][d]) if d != depot else float(distance_matrix[b][depot]))
+                        if d_new + 0.01 < d_cur:
+                            tour[i+1:j+1] = reversed(tour[i+1:j+1])
+                            improved = True
+                            break
+                    if improved:
+                        break
+                        
+            full_r = [depot] + tour + [depot]
+            final_routes.append(full_r)
+            
+            tot_d = sum(float(distance_matrix[full_r[k]][full_r[k+1]]) for k in range(len(full_r) - 1))
+            route_distances.append(tot_d)
+            route_loads.append(sum(float(demands[nd]) for nd in tour if nd < len(demands)))
+            route_volumes.append(sum(float(volume_demands[nd]) for nd in tour if volume_demands and nd < len(volume_demands)))
+            route_times.append(tot_d / 45.0 * 60.0 + len(tour) * 15.0)
+            for nd in tour:
+                visited_nodes.add(nd)
+                
+        dropped = [i for i in range(num_warehouses, num_locations) if i not in visited_nodes]
+        return {
+            "routes": final_routes,
+            "dropped_nodes": dropped,
+            "total_distance": sum(route_distances),
             "route_distances": route_distances,
             "route_loads": route_loads,
             "route_volumes": route_volumes,

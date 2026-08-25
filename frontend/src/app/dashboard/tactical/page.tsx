@@ -237,7 +237,7 @@ export default function TacticalPage() {
 
   // Strategy Config Drawer
   const [showConfig, setShowConfig] = useState(false);
-  const [strategy, setStrategy] = useState("distance");
+  const [strategy, setStrategy] = useState("clusters");
   const [loadMode, setLoadMode] = useState("balanced");
   const [maxTravelTime, setMaxTravelTime] = useState("09:00");
   const [respectWindows, setRespectWindows] = useState(true);
@@ -937,18 +937,35 @@ export default function TacticalPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div
                 onClick={() => {
-                  setStrategy("distance");
-                  setLoadMode("cluster");
+                  setStrategy("clusters");
+                  setLoadMode("full");
                 }}
                 className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "distance" && loadMode === "cluster"
+                  strategy === "clusters"
                     ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
                     : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
                 }`}
               >
-                <p className="font-bold text-zinc-100 mb-1">🎯 Agrupamento por Zonas (Clusters)</p>
+                <p className="font-bold text-zinc-100 mb-1">🎯 Agrupamento por Zonas (Clusters Densos)</p>
                 <p className="text-[11px] text-zinc-400">
-                  Concentra cada viatura na sua zona geográfica principal para máxima densidade de entrega.
+                  Agrupa as entregas por concelhos/zonas contíguas e enche cada viatura ao máximo (800-1000 kg). Evita que múltiplos carros vão à mesma localidade.
+                </p>
+              </div>
+
+              <div
+                onClick={() => {
+                  setStrategy("far_first");
+                  setLoadMode("full");
+                }}
+                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  strategy === "far_first"
+                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
+                }`}
+              >
+                <p className="font-bold text-zinc-100 mb-1">🚚 Far-First por Distância (Mais Longe Primeiro)</p>
+                <p className="text-[11px] text-zinc-400">
+                  Identifica as entregas mais afastadas do armazém e preenche as viaturas no corredor de regresso à base, minimizando a frota ativa e libertando o máximo de carros perto da loja.
                 </p>
               </div>
 
@@ -965,24 +982,7 @@ export default function TacticalPage() {
               >
                 <p className="font-bold text-zinc-100 mb-1">⚖️ Equilíbrio Perfeito de Carga</p>
                 <p className="text-[11px] text-zinc-400">
-                  Distribui o número de paragens e peso de forma equitativa por todos os carros disponíveis.
-                </p>
-              </div>
-
-              <div
-                onClick={() => {
-                  setStrategy("distance");
-                  setLoadMode("balanced");
-                }}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "distance" && loadMode === "balanced"
-                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
-                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
-                }`}
-              >
-                <p className="font-bold text-zinc-100 mb-1">⚡ Mínima Quilometragem Total</p>
-                <p className="text-[11px] text-zinc-400">
-                  Reduz ao máximo a soma total de quilómetros percorridos por toda a frota.
+                  Distribui o número de paragens e peso de forma equitativa por todos os carros disponíveis para empresas onde todos os motoristas saem em simultâneo.
                 </p>
               </div>
             </div>
