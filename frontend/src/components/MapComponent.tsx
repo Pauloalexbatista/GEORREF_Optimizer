@@ -102,17 +102,19 @@ function MapInitialController({ coords }: { coords: [number, number] }) {
   return null;
 }
 
-// Auto Fit Bounds Controller (triggers on demand)
+// Auto Fit Bounds Controller (triggers ONLY when filter triggerKey explicitly changes, preserving user zoom/pan during reassignments)
 function MapBoundsFitter({ triggerKey, points }: { triggerKey: string; points: [number, number][] }) {
   const map = useMap();
+  const lastTriggerRef = useRef("");
 
   useEffect(() => {
-    if (!triggerKey || points.length === 0) return;
+    if (!triggerKey || triggerKey === lastTriggerRef.current || points.length === 0) return;
+    lastTriggerRef.current = triggerKey;
     try {
       const validPoints = points.filter(p => p[0] !== 0 && p[1] !== 0);
       if (validPoints.length > 0) {
         const bounds = L.latLngBounds(validPoints.map(p => L.latLng(p[0], p[1])));
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15, animate: true });
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15, animate: true });
       }
     } catch (e) {}
   }, [triggerKey, points, map]);
