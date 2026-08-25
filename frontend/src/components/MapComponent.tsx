@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useI18n } from "@/context/I18nContext";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Rectangle, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -60,6 +60,7 @@ export interface MapComponentProps {
   vehicles: string[];
   fleet?: any[];
   onMoveClientRoute?: (clientName: string, newRoute: string, deliveryId?: number, address?: string) => void;
+  onBulkReassign?: (items: { clientName: string; deliveryId?: number; address?: string }[], newRoute: string) => Promise<void>;
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
   filterState?: MapFilterState;
   onFilterChange?: (filters: MapFilterState) => void;
@@ -185,7 +186,8 @@ function createNumberedCircleIcon(
   order: number,
   color: string,
   isPending: boolean,
-  zoom: number
+  zoom: number,
+  isSelected: boolean = false
 ) {
   const size = isPending
     ? Math.max(18, Math.min(26, 16 + (zoom - 10) * 2))
@@ -194,24 +196,31 @@ function createNumberedCircleIcon(
   const displayText = isPending ? "⚠️" : String(order || 1);
   const fontSize = isPending ? Math.round(size * 0.55) : Math.round(size * 0.45);
 
+  const shadow = isSelected
+    ? "0 0 0 4px #4f46e5, 0 0 16px rgba(99, 102, 241, 0.9)"
+    : "0 2px 8px rgba(0,0,0,0.4)";
+  const border = isSelected ? "3px solid #ffffff" : "2px solid #ffffff";
+  const transform = isSelected ? "transform: scale(1.2); z-index: 100;" : "";
+
   return L.divIcon({
-    className: "custom-client-marker",
+    className: "custom-client-marker" + (isSelected ? " selected-marker" : ""),
     html: `
       <div style="
         width: ${size}px;
         height: ${size}px;
         background-color: ${color};
-        border: 2px solid #ffffff;
+        border: ${border};
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        box-shadow: ${shadow};
         color: #ffffff;
         font-weight: 900;
         font-family: monospace;
         font-size: ${fontSize}px;
         cursor: grab;
+        ${transform}
       ">
         ${displayText}
       </div>
@@ -221,12 +230,76 @@ function createNumberedCircleIcon(
   });
 }
 
+// Interactive Area Selection Component (Box / Rectangle Selection with Mouse)
+function MapAreaSelector({
+  isSelecting,
+  onSelectionComplete,
+}: {
+  isSelecting: boolean;
+  onSelectionComplete: (bounds: L.LatLngBounds) => void;
+}) {
+  const map = useMap();
+  const [dragStart, setDragStart] = useState<L.LatLng | null>(null);
+  const [dragEnd, setDragEnd] = useState<L.LatLng | null>(null);
+
+  useEffect(() => {
+    if (isSelecting) {
+      map.dragging.disable();
+      const container = map.getContainer();
+      if (container) container.style.cursor = "crosshair";
+    } else {
+      map.dragging.enable();
+      const container = map.getContainer();
+      if (container) container.style.cursor = "";
+      setDragStart(null);
+      setDragEnd(null);
+    }
+  }, [isSelecting, map]);
+
+  useMapEvents({
+    mousedown: (e) => {
+      if (!isSelecting) return;
+      setDragStart(e.latlng);
+      setDragEnd(e.latlng);
+    },
+    mousemove: (e) => {
+      if (!isSelecting || !dragStart) return;
+      setDragEnd(e.latlng);
+    },
+    mouseup: (e) => {
+      if (!isSelecting || !dragStart) return;
+      const endLatLng = e.latlng;
+      const bounds = L.latLngBounds(dragStart, endLatLng);
+      setDragStart(null);
+      setDragEnd(null);
+      onSelectionComplete(bounds);
+    },
+  });
+
+  if (!dragStart || !dragEnd) return null;
+
+  const bounds = L.latLngBounds(dragStart, dragEnd);
+  return (
+    <Rectangle
+      bounds={bounds}
+      pathOptions={{
+        color: "#4f46e5",
+        fillColor: "#6366f1",
+        fillOpacity: 0.25,
+        weight: 2,
+        dashArray: "4 4",
+      }}
+    />
+  );
+}
+
 export default function MapComponent({
   clients,
   warehouses,
   vehicles,
   fleet = [],
   onMoveClientRoute,
+  onBulkReassign,
   onUpdateClientCoords,
   filterState,
   onFilterChange,
@@ -248,6 +321,12 @@ export default function MapComponent({
   const [showRoads, setShowRoads] = useState(true);
   const [mapLayer, setMapLayer] = useState<"standard" | "google_sat" | "google_hybrid">("standard");
   const [fitTrigger, setFitTrigger] = useState("");
+
+  // Area Selection & Bulk Transfer State
+  const [isBoxSelecting, setIsBoxSelecting] = useState(false);
+  const [selectedClientKeys, setSelectedClientKeys] = useState<string[]>([]);
+  const [bulkTargetRoute, setBulkTargetRoute] = useState<string>("Por Distribuir");
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
 
   // Sync when external controlled filterState changes
   useEffect(() => {
@@ -272,6 +351,7 @@ export default function MapComponent({
 
   const handleSearchChange = (val: string) => {
     setSearchQuery(val);
+    setFitTrigger(`search_${val}_${Date.now()}`);
     onFilterChange?.({
       searchQuery: val,
       selectedWarehouse,
@@ -282,6 +362,7 @@ export default function MapComponent({
 
   const handleWarehouseChange = (val: string) => {
     setSelectedWarehouse(val);
+    setFitTrigger(`wh_${val}_${Date.now()}`);
     onFilterChange?.({
       searchQuery,
       selectedWarehouse: val,
@@ -292,6 +373,7 @@ export default function MapComponent({
 
   const handleStatusChange = (val: "all" | "with_cargo" | "empty" | "pending" | "late") => {
     setStatusFilter(val);
+    setFitTrigger(`status_${val}_${Date.now()}`);
     onFilterChange?.({
       searchQuery,
       selectedWarehouse,
@@ -302,12 +384,54 @@ export default function MapComponent({
 
   const handleRoutesChange = (newRoutes: string[]) => {
     setSelectedRoutes(newRoutes);
+    setFitTrigger(`routes_${newRoutes.join(",")}_${Date.now()}`);
     onFilterChange?.({
       searchQuery,
       selectedWarehouse,
       statusFilter: statusFilter === "with_cargo" ? "active" : statusFilter,
       selectedRoutes: newRoutes,
     });
+  };
+
+  const handleAreaSelectionComplete = (bounds: L.LatLngBounds) => {
+    setIsBoxSelecting(false);
+    const inside = visibleClients.filter((c) => {
+      if (!c.Latitude || !c.Longitude) return false;
+      return bounds.contains(L.latLng(c.Latitude, c.Longitude));
+    });
+    const keys = inside.map((c) => String(c.id || c.ID_Original || c.Cliente));
+    setSelectedClientKeys(keys);
+  };
+
+  const handleApplyBulkReassign = async () => {
+    if (selectedClientKeys.length === 0) return;
+    const selectedStops = visibleClients.filter((c) =>
+      selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente))
+    );
+    if (selectedStops.length === 0) return;
+
+    setIsBulkLoading(true);
+    try {
+      if (onBulkReassign) {
+        await onBulkReassign(
+          selectedStops.map((c) => ({
+            clientName: c.Cliente,
+            deliveryId: c.id || c.ID_Original,
+            address: c.Morada,
+          })),
+          bulkTargetRoute
+        );
+      } else if (onMoveClientRoute) {
+        for (const s of selectedStops) {
+          onMoveClientRoute(s.Cliente, bulkTargetRoute, s.id || s.ID_Original, s.Morada);
+        }
+      }
+      setSelectedClientKeys([]);
+    } catch (e: any) {
+      alert("Erro ao transferir paragens em massa: " + (e.message || "Erro"));
+    } finally {
+      setIsBulkLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -528,6 +652,25 @@ export default function MapComponent({
       return selectedRoutes.includes(c.Rota);
     });
   }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes, fleet]);
+
+  // Scoped routes set for strictly cleaning road geometry polylines
+  const visibleRouteNames = useMemo(() => {
+    return new Set(visibleClients.map(c => c.Rota));
+  }, [visibleClients]);
+
+  // Bulk Selected Stops Metrics
+  const { selectedStopsTotalKg, selectedStopsTotalVol } = useMemo(() => {
+    const selectedStops = visibleClients.filter(c =>
+      selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente))
+    );
+    let kg = 0;
+    let vol = 0;
+    selectedStops.forEach(s => {
+      kg += s.Peso_KG || s.Carga_Acum || 0;
+      vol += s.Volume_m3 || s.Volume_M3 || 0.1;
+    });
+    return { selectedStopsTotalKg: Math.round(kg), selectedStopsTotalVol: vol };
+  }, [visibleClients, selectedClientKeys]);
   // Points for auto fit bounds
   const visiblePoints: [number, number][] = useMemo(() => {
     const pts: [number, number][] = [];
@@ -664,8 +807,25 @@ export default function MapComponent({
             </div>
           </div>
 
-          {/* Right: Actions (Layer Switcher, Fit Bounds & Toggle OSRM Roads) */}
+          {/* Right: Actions (Area Selection, Layer Switcher, Fit Bounds & Toggle Roads) */}
           <div className="flex items-center space-x-2">
+            {/* Box / Area Selection Button */}
+            <button
+              onClick={() => {
+                setIsBoxSelecting(!isBoxSelecting);
+                if (!isBoxSelecting) setSelectedClientKeys([]);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow-sm ${
+                isBoxSelecting
+                  ? "bg-amber-600 text-white ring-2 ring-amber-400 animate-pulse"
+                  : selectedClientKeys.length > 0
+                  ? "bg-indigo-600 text-white"
+                  : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-700"
+              }`}
+              title={isBoxSelecting ? "Modo de seleção ativo: clique e arraste no mapa para desenhar um retângulo" : "Desenhar área com o rato para selecionar e transferir paragens"}
+            >
+              <span>{isBoxSelecting ? "✏️ A Desenhar..." : "🔲 Selecionar Área"}</span>
+            </button>
             {/* Google Layer Switcher */}
             <div className="flex items-center space-x-1 bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-xl border border-zinc-300 dark:border-zinc-800 text-[11px] font-semibold">
               <button
@@ -874,7 +1034,13 @@ export default function MapComponent({
             <Marker
               key={"marker-" + String(c.Cliente) + "-" + String(c.ID_Original || c.id || idx)}
               position={[c.Latitude, c.Longitude]}
-              icon={createNumberedCircleIcon(c.Ordem, color, isPending, zoomLevel)}
+              icon={createNumberedCircleIcon(
+                c.Ordem,
+                color,
+                isPending,
+                zoomLevel,
+                selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente))
+              )}
               draggable={true}
               eventHandlers={{
                 dragend: (e) => {
@@ -1007,11 +1173,16 @@ export default function MapComponent({
           );
         })}
 
-        {/* Real OSRM Road Geometry Polylines */}
+        {/* Area Selection Box Overlay */}
+        <MapAreaSelector
+          isSelecting={isBoxSelecting}
+          onSelectionComplete={handleAreaSelectionComplete}
+        />
+
+        {/* Real OSRM Road Geometry Polylines (Strictly filtered to visible routes only) */}
         {showRoads && Object.entries(roadGeometries).map(([rName, coords]) => {
-          if (selectedRoutes.length > 0 && !selectedRoutes.includes(rName)) {
-            return null;
-          }
+          if (!visibleRouteNames.has(rName)) return null;
+          if (selectedRoutes.length > 0 && !selectedRoutes.includes(rName)) return null;
           const color = getRouteColor(rName, vehicles);
 
           return (
@@ -1029,6 +1200,55 @@ export default function MapComponent({
           );
         })}
       </MapContainer>
+      {/* FLOATING BOTTOM BULK REASSIGN ACTION BAR */}
+      {selectedClientKeys.length > 0 && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-zinc-950/95 dark:bg-zinc-900/95 backdrop-blur-md border border-indigo-500/60 shadow-2xl rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 min-w-[320px] max-w-[95%] animate-in fade-in slide-in-from-bottom-4 pointer-events-auto">
+          <div className="flex items-center space-x-2 text-white">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
+            <div>
+              <span className="text-xs font-black tracking-wide text-zinc-100 block">
+                🔲 {selectedClientKeys.length} paragens selecionadas
+              </span>
+              <span className="text-[10px] text-zinc-400 font-medium font-mono">
+                Total: {selectedStopsTotalKg} kg | {selectedStopsTotalVol.toFixed(2)} m³
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <label className="text-[10px] uppercase font-bold text-zinc-400 shrink-0">Mover para:</label>
+            <select
+              value={bulkTargetRoute}
+              onChange={(e) => setBulkTargetRoute(e.target.value)}
+              className="bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1 text-xs text-zinc-200 font-semibold outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
+            >
+              <option value="Por Distribuir">🟡 Por Distribuir</option>
+              {vehicles.map((v) => (
+                <option key={v} value={v}>
+                  🚚 {v}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={handleApplyBulkReassign}
+              disabled={isBulkLoading}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 cursor-pointer transition-all flex items-center space-x-1.5 disabled:opacity-50"
+            >
+              <span>{isBulkLoading ? "A Transferir..." : "⚡ Transferir em Massa"}</span>
+            </button>
+            <button
+              onClick={() => setSelectedClientKeys([])}
+              className="text-zinc-400 hover:text-zinc-200 px-2 py-1 text-xs font-bold cursor-pointer rounded-lg hover:bg-zinc-800"
+              title="Cancelar Seleção"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

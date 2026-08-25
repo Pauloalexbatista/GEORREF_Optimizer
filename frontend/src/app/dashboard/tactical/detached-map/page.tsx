@@ -196,6 +196,60 @@ export default function DetachedMapPage() {
     }
   };
 
+  const handleBulkReassign = async (items: { clientName: string; deliveryId?: number; address?: string }[], newRoute: string) => {
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
+    if (!projId || items.length === 0) return;
+
+    setStatusMsg(`A transferir ${items.length} paragens para ${targetRoute}...`);
+    try {
+      const res = await apiRequest("/api/solver/reassign-bulk", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projId,
+          items: items.map(it => ({
+            client_code: it.clientName,
+            delivery_id: it.deliveryId,
+            address: it.address,
+          })),
+          new_route: targetRoute,
+        }),
+      });
+
+      if (res && res.routes) {
+        const mappedClients = res.routes.map((r: any) => ({
+          ...r,
+          id: r.id || r.ID_Original,
+          ID_Original: r.id || r.ID_Original,
+          Doc_ID: r.Doc_ID || r.doc_id || "",
+          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+          Nome_Cliente: r.Nome_Cliente || r.Cliente,
+          Telefone: r.Telefone || r.Telefone_Cliente || "",
+          Observacoes: r.Observacoes || "",
+        }));
+        setClients(mappedClients);
+        setStatusMsg(`Transferidas ${items.length} paragens às ${new Date().toLocaleTimeString()}`);
+
+        const payload = {
+          type: "MAP_UPDATE",
+          clients: mappedClients,
+          warehouses,
+          vehicles,
+          fleet,
+        };
+        try {
+          channelRef.current?.postMessage(payload);
+          localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+        } catch (e) {}
+      }
+    } catch (err: any) {
+      console.error("Bulk reassign error:", err);
+      setStatusMsg(`Erro ao transferir em massa: ${err.message || "Tente novamente"}`);
+      loadLocalData();
+    }
+  };
+
   const handleUpdateClientCoords = async (clientName: string, lat: number, lon: number) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
     const target = clients.find((c) => c.Cliente === clientName);
@@ -333,6 +387,7 @@ export default function DetachedMapPage() {
           filterState={filters}
           onFilterChange={handleFilterChange}
           onMoveClientRoute={handleMoveClientRoute}
+          onBulkReassign={handleBulkReassign}
           onUpdateClientCoords={handleUpdateClientCoords}
         />
       </div>
