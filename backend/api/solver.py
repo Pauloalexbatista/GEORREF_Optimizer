@@ -735,6 +735,7 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             codigo_cliente_val = str((match_deliv.get("codigo_cliente") if match_deliv else "") or r.get("Codigo_Cliente") or r.get("Doc_ID") or "")
                             tel_val = str((match_deliv.get("telefone") if match_deliv else "") or r.get("Telefone_Cliente") or r.get("Telefone") or "")
                             obs_val = str((match_deliv.get("observacoes") if match_deliv else "") or r.get("Observacoes") or r.get("Regras") or "")
+                            vendedor_val = str((match_deliv.get("vendedor") if match_deliv else "") or r.get("Vendedor") or r.get("vendedor") or "")
                             peso_val = clean_num(r.get("Peso_KG") if pd.notna(r.get("Peso_KG")) else (match_deliv.get("peso_kg") if match_deliv else 50.0), 50.0)
                             vol_val = clean_num(r.get("Volume_m3") if pd.notna(r.get("Volume_m3")) else (r.get("Volume_M3") if pd.notna(r.get("Volume_M3")) else (match_deliv.get("volume_m3") if match_deliv else 0.1)), 0.1)
 
@@ -784,6 +785,7 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                                 "Telefone_Cliente": tel_val,
                                 "Telefone": tel_val,
                                 "Observacoes": obs_val,
+                                "Vendedor": vendedor_val,
                                 "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
                                 "Latitude": lat_val,
                                 "Longitude": lon_val,
@@ -829,6 +831,7 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
                             "Telefone_Cliente": str(d.get("telefone", "")),
                             "Telefone": str(d.get("telefone", "")),
                             "Observacoes": str(d.get("observacoes", "")),
+                            "Vendedor": str(d.get("vendedor", "")),
                             "Janela_Horaria": combined_window,
                             "Latitude": clean_num(d.get("latitude")),
                             "Longitude": clean_num(d.get("longitude")),

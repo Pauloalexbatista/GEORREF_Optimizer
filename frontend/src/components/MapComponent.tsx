@@ -36,6 +36,8 @@ interface MapClient {
   Telefone_Cliente?: string;
   telefone?: string;
   Observacoes?: string;
+  Vendedor?: string;
+  vendedor?: string;
   observacoes?: string;
   Regras?: string;
 }
@@ -630,7 +632,8 @@ export default function MapComponent({
         const matchCP = String(c.CP || "").toLowerCase().includes(q);
         const matchLoc = String(c.Localidade || "").toLowerCase().includes(q);
         const matchRoute = String(c.Rota || "").toLowerCase().includes(q);
-        if (!matchCode && !matchName && !matchAddr && !matchCP && !matchLoc && !matchRoute) {
+        const matchVendedor = String(c.Vendedor || c.vendedor || "").toLowerCase().includes(q);
+        if (!matchCode && !matchName && !matchAddr && !matchCP && !matchLoc && !matchRoute && !matchVendedor) {
           return false;
         }
       }
@@ -1026,6 +1029,7 @@ export default function MapComponent({
           const docNumber = c.Doc_ID || c.doc_id || c.numero_doc || "";
           const phone = c.Telefone || c.Telefone_Cliente || c.telefone || "";
           const observations = c.Observacoes || c.observacoes || c.Regras || "";
+          const vendedor = c.Vendedor || c.vendedor || "";
           const stopWeight = c.Peso_KG !== undefined && c.Peso_KG !== null ? c.Peso_KG : (c.Carga_Acum || 0);
           const stopVolume = c.Volume_m3 !== undefined && c.Volume_m3 !== null ? c.Volume_m3 : (c.Volume_M3 || 0);
           const windowFormatted = formatTimeWindow(c.Janela_Horaria);
@@ -1148,6 +1152,14 @@ export default function MapComponent({
                     <div className="mb-2 p-1.5 bg-amber-50 border border-amber-200 rounded-md text-[10px] text-amber-900">
                       <span className="font-bold uppercase tracking-wider block text-[9px] text-amber-700 mb-0.5">⚠️ Observações:</span>
                       <p className="leading-tight italic">{observations}</p>
+                    </div>
+                  )}
+
+                  {/* 5.1 Vendedor / Salesperson (if present) */}
+                  {vendedor && (
+                    <div className="mb-2 p-1.5 bg-blue-50 border border-blue-200 rounded-md text-[10px] text-blue-900 flex items-center space-x-1.5">
+                      <span className="font-bold uppercase tracking-wider block text-[9px] text-blue-700 shrink-0">👤 Vendedor:</span>
+                      <span className="font-semibold truncate">{vendedor}</span>
                     </div>
                   )}
 

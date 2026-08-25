@@ -203,7 +203,8 @@ def build_sheet_entregas(wb):
         ('Tipo_Operacao', COLOR_REC),
         ('Regras', COLOR_OPT),
         ('Notas_Motorista', COLOR_OPT),
-        ('Prioridade', COLOR_REC)
+        ('Prioridade', COLOR_REC),
+        ('Vendedor', COLOR_OPT)
     ]
     num_cols = len(headers_spec)
     apply_sheet_headers_tiered(ws, headers_spec)
@@ -214,35 +215,35 @@ def build_sheet_entregas(wb):
             'Rua de São Tomé 14', '1100-563', 'Lisboa',
             38.71350, -9.13010, '919111222', 45.0, 0.4,
             '09:00:00', '12:00:00', '15:00:00', '17:30:00', '', '',
-            15, 'Entrega', '[PEQUENO]', 'Rua muito estreita - entrar pela Sé', 'Alta'
+            15, 'Entrega', '[PEQUENO]', 'Rua muito estreita - entrar pela Sé', 'Alta', 'Carlos Vendedor'
         ],
         [
             'Armazém Lisboa Central', 'FT 2026/102', 'Supermercado Vila Franca',
             'Estrada Nacional 1, Km 28', '2600-012', 'Vila Franca de Xira',
             38.95510, -8.99120, '918222333', 320.0, 3.2,
             '08:30:00', '18:00:00', '', '', '', '',
-            25, 'Entrega', '[ALARGADO]', 'Cais traseiro de descargas', 'Normal'
+            25, 'Entrega', '[ALARGADO]', 'Cais traseiro de descargas', 'Normal', 'Ana Vendas'
         ],
         [
             'Armazém Lisboa Central', 'EXP 2026/01', 'Clínica Saldanha Urgente',
             'Avenida da República 45', '1050-187', 'Lisboa',
             38.73890, -9.14470, '917333444', 8.5, 0.08,
             '10:00:00', '12:00:00', '14:00:00', '16:00:00', '18:00:00', '20:00:00',
-            10, 'Entrega', '[EXPRESSO]', 'Entrega urgente ao balcão 2º andar', 'Urgente'
+            10, 'Entrega', '[EXPRESSO]', 'Entrega urgente ao balcão 2º andar', 'Urgente', 'Rui Comercial'
         ],
         [
             'Armazém Lisboa Central', 'FT 2026/104', 'Hotel Chiado Lux',
             'Rua Garrett 108', '1200-273', 'Lisboa',
             38.71080, -9.14150, '916444555', 85.0, 0.8,
             '09:00:00', '13:00:00', '14:30:00', '18:00:00', '', '',
-            15, 'Entrega', '[PEQUENO]', 'Entregar pela porta de serviço', 'Normal'
+            15, 'Entrega', '[PEQUENO]', 'Entregar pela porta de serviço', 'Normal', 'Carlos Vendedor'
         ],
         [
             'Armazém Norte Maia', 'FT 2026/201', 'Confeitaria Maia Centro',
             'Avenida António Santos Leite 120', '4470-142', 'Maia',
             41.23350, -8.62140, '929555666', 60.0, 0.6,
             '08:30:00', '12:30:00', '14:00:00', '17:00:00', '', '',
-            12, 'Entrega', '', 'Recebe até às 17h impreterivelmente', 'Normal'
+            12, 'Entrega', '', 'Recebe até às 17h impreterivelmente', 'Normal', 'Sofia Vendedora'
         ],
         [
             'Armazém Coimbra', 'FT 2026/301', 'Livraria Universitária Coimbra',
@@ -311,7 +312,8 @@ def build_sheet_rotas(wb):
         ('Tempo_Espera_Min', COLOR_REC),
         ('Carga_Restante_KG', COLOR_REC),
         ('Carga_Restante_Vol', COLOR_REC),
-        ('Status', COLOR_REC)
+        ('Status', COLOR_REC),
+        ('Vendedor', COLOR_OPT)
     ]
     num_cols = len(headers_spec)
     apply_sheet_headers_tiered(ws, headers_spec)
@@ -321,25 +323,25 @@ def build_sheet_rotas(wb):
             'Armazém Lisboa Central', 'Carrinha Pequena 01', 0, 'PARTIDA',
             'Armazém Lisboa Central (Partida)', 'Avenida Severiano Falcão 16A', '2685-379', 'Prior Velho',
             '912345678', '08:00 - 18:00', '08:00:00', '08:30:00',
-            0.0, 0.0, 0, 0, 130.0, 1.2, 'Partida'
+            0.0, 0.0, 0, 0, 130.0, 1.2, 'Partida', ''
         ],
         [
             'Armazém Lisboa Central', 'Carrinha Pequena 01', 1, 'FT 2026/101',
             'Restaurante Alfama Antiga', 'Rua de São Tomé 14', '1100-563', 'Lisboa',
             '919111222', '09:00 - 12:00', '09:05:00', '09:20:00',
-            12.4, 12.4, 35, 0, 85.0, 0.8, 'Pendente'
+            12.4, 12.4, 35, 0, 85.0, 0.8, 'Pendente', 'Carlos Vendedor'
         ],
         [
             'Armazém Lisboa Central', 'Carrinha Pequena 01', 2, 'FT 2026/104',
             'Hotel Chiado Lux', 'Rua Garrett 108', '1200-273', 'Lisboa',
             '916444555', '09:00 - 13:00', '09:32:00', '09:47:00',
-            2.1, 14.5, 12, 0, 0.0, 0.0, 'Pendente'
+            2.1, 14.5, 12, 0, 0.0, 0.0, 'Pendente', 'Carlos Vendedor'
         ],
         [
             'Armazém Lisboa Central', 'Carrinha Pequena 01', 3, 'RETORNO',
             'Armazém Lisboa Central (Fim de Turno)', 'Avenida Severiano Falcão 16A', '2685-379', 'Prior Velho',
             '912345678', '08:00 - 18:00', '10:25:00', '10:25:00',
-            13.2, 27.7, 38, 0, 0.0, 0.0, 'Retorno'
+            13.2, 27.7, 38, 0, 0.0, 0.0, 'Retorno', ''
         ]
     ]
     

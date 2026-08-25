@@ -35,6 +35,8 @@ interface RouteNode {
   Telefone?: string;
   Telefone_Cliente?: string;
   Observacoes?: string;
+  Vendedor?: string;
+  vendedor?: string;
 }
 
 interface Delivery {
@@ -339,6 +341,7 @@ export default function TacticalPage() {
       Carga_Vol_Acum: r.Carga_Vol_Acum,
       Telefone: r.Telefone || r.Telefone_Cliente || (r as any).telefone || "",
       Observacoes: r.Observacoes || (r as any).observacoes || "",
+      Vendedor: r.Vendedor || (r as any).vendedor || "",
     }));
 
     const payload = { type: "MAP_UPDATE", clients: mappedClients, warehouses: wList, vehicles: vList, fleet: fList || fleetList };
@@ -724,7 +727,9 @@ export default function TacticalPage() {
             (s.Doc_ID && s.Doc_ID.toLowerCase().includes(q)) ||
             (s.Morada && s.Morada.toLowerCase().includes(q)) ||
             (s.Localidade && s.Localidade.toLowerCase().includes(q)) ||
-            (s.CP && s.CP.toLowerCase().includes(q))
+            (s.CP && s.CP.toLowerCase().includes(q)) ||
+            (s.Vendedor && s.Vendedor.toLowerCase().includes(q)) ||
+            (s.vendedor && s.vendedor.toLowerCase().includes(q))
           );
         });
       });

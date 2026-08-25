@@ -292,16 +292,17 @@ def save_entregas_projeto(projeto_id, entregas_data):
                 INSERT INTO entregas (
                     projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, 
                     _concelho, peso_kg, volume_m3, prioridade, janela_inicio, 
-                    janela_fim, observacoes, latitude, longitude,
+                    janela_fim, observacoes, telefone, armazem, vendedor, latitude, longitude,
                     nivel_qualidade, fonte_match, morada_encontrada
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, e.get('codigo_cliente'), e.get('nome_cliente', e.get('codigo_cliente')), e.get('morada'),
                 e.get('codigo_postal'), e.get('concelho'), e.get('peso_kg'),
                 e.get('volume_m3', 0.0), e.get('prioridade'), e.get('janela_inicio'),
-                e.get('janela_fim'), e.get('observacoes'), e.get('latitude'),
-                e.get('longitude'), e.get('nivel_qualidade'), e.get('fonte_match'),
-                e.get('morada_encontrada')
+                e.get('janela_fim'), e.get('observacoes', ''), e.get('telefone', ''),
+                e.get('armazem', 'Armazém Principal'), e.get('vendedor', ''),
+                e.get('latitude'), e.get('longitude'), e.get('nivel_qualidade'),
+                e.get('fonte_match'), e.get('morada_encontrada')
             ))
         
         # Atualizar timestamp do projeto

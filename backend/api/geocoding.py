@@ -86,6 +86,7 @@ class ColumnMapping(BaseModel):
     col_lat: Optional[str] = None
 
     col_lon: Optional[str] = None
+    col_vendedor: Optional[str] = None
 
 
 
@@ -305,9 +306,18 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
             code = str(row[mapping.col_code])
 
-            name = str(row[mapping.col_name]) if (mapping.col_name and mapping.col_name in df.columns) else code if (mapping.col_name and mapping.col_name in df.columns) else code
+            name = str(row[mapping.col_name]) if (mapping.col_name and mapping.col_name in df.columns) else code
 
             addr = str(row[mapping.col_addr])
+
+            vendedor = ""
+            if mapping.col_vendedor and mapping.col_vendedor in df.columns and pd.notna(row[mapping.col_vendedor]):
+                vendedor = str(row[mapping.col_vendedor]).strip()
+            else:
+                for cand in ["vendedor", "Vendedor", "comercial", "Comercial", "agente", "Agente", "sales_rep", "salesperson"]:
+                    if cand in df.columns and pd.notna(row[cand]):
+                        vendedor = str(row[cand]).strip()
+                        break
 
             cp = str(row[mapping.col_cp]) if pd.notna(row[mapping.col_cp]) else ""
 
@@ -457,9 +467,9 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
                         peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
 
-                        latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada
+                        vendedor, latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada
 
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
                 """, (
 
@@ -467,7 +477,7 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
                     weight, volume, priority, start_window, end_window,
 
-                    lat, lon, quality, source, morada_encontrada
+                    vendedor, lat, lon, quality, source, morada_encontrada
 
                 ))
 
@@ -810,7 +820,9 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
 
                     "motivo_falha": reason,
 
-                    "armazem": r["armazem"] if "armazem" in r.keys() else None
+                    "armazem": r["armazem"] if "armazem" in r.keys() else None,
+
+                    "vendedor": r["vendedor"] if "vendedor" in r.keys() else "" 
 
                 })
 

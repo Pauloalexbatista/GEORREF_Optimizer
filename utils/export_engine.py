@@ -201,7 +201,8 @@ def generate_full_project_excel(
         ('Tipo_Operacao', COLOR_REC),
         ('Regras', COLOR_OPT),
         ('Notas_Motorista', COLOR_OPT),
-        ('Prioridade', COLOR_REC)
+        ('Prioridade', COLOR_REC),
+        ('Vendedor', COLOR_OPT)
     ]
     apply_sheet_headers_tiered(ws_entregas, deliv_headers_spec)
     
@@ -231,7 +232,8 @@ def generate_full_project_excel(
                 str(r.get('Tipo_Operacao', 'Entrega')),
                 str(r.get('Regras', '')),
                 str(r.get('Notas_Motorista', r.get('Observacoes', ''))),
-                str(r.get('Prioridade', 'Normal'))
+                str(r.get('Prioridade', 'Normal')),
+                str(r.get('Vendedor', r.get('vendedor', '')))
             ])
     
     if deliv_rows:
@@ -291,7 +293,8 @@ def generate_full_project_excel(
         ('Tempo_Espera_Min', COLOR_REC),
         ('Carga_Restante_KG', COLOR_REC),
         ('Carga_Restante_Vol', COLOR_REC),
-        ('Status', COLOR_REC)
+        ('Status', COLOR_REC),
+        ('Vendedor', COLOR_OPT)
     ]
     apply_sheet_headers_tiered(ws_rotas, rotas_headers_spec)
     
@@ -320,9 +323,10 @@ def generate_full_project_excel(
             carga_vol = safe_float(r.get('Carga_Restante_Vol', 0.0))
             status = str(r.get('Status', 'Pendente'))
             
+            vendedor_name = str(r.get('Vendedor', r.get('vendedor', '')))
             rotas_rows.append([
                 wh_name, veh_name, ordem, doc_id, cliente, morada, cp, loc, tel, janela,
-                chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status
+                chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status, vendedor_name
             ])
             
             if veh_name not in manifest_map:
