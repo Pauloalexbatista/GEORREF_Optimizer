@@ -4,8 +4,6 @@ import math
 import time
 import random
 from typing import List, Dict, Any, Tuple, Optional
-from ortools.constraint_solver import routing_enums_pb2
-from ortools.constraint_solver import pywrapcp
 
 def _safe_int_scale(arr, factor=100):
     if arr is None:
@@ -44,6 +42,10 @@ class AdvancedRouteOptimizer:
         solving_depth = str(params.get("solving_depth", "balanced") or "balanced").lower()
         time_limit = float(params.get("time_limit_seconds", 30) or 30)
 
+        # Max allowed shift duration in minutes (default 8.5h = 510 min, max 9h = 540 min)
+        max_shift_hours = float(params.get("max_travel_time_hours", 8.5) or 8.5)
+        max_shift_minutes = int(round(min(max_shift_hours, 9.0) * 60))
+
         if load_mode in ["balanced", "equilibrado"] and balance_weight <= 0:
             balance_weight = 50.0
 
@@ -53,7 +55,8 @@ class AdvancedRouteOptimizer:
             client_warehouses, vehicle_warehouses,
             vehicle_start_times, vehicle_end_times, client_time_windows,
             locations=locations, balance_weight=balance_weight, load_mode=load_mode,
-            strategy=strategy, solving_depth=solving_depth, time_limit_seconds=time_limit
+            strategy=strategy, solving_depth=solving_depth, time_limit_seconds=time_limit,
+            max_shift_minutes=max_shift_minutes
         )
 
     def _solve_enterprise_lns_optimizer(
@@ -75,7 +78,8 @@ class AdvancedRouteOptimizer:
         load_mode: str = "full",
         strategy: str = "clusters",
         solving_depth: str = "balanced",
-        time_limit_seconds: float = 30.0
+        time_limit_seconds: float = 30.0,
+        max_shift_minutes: int = 510
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_clients = len(demands) - num_warehouses
@@ -102,12 +106,10 @@ class AdvancedRouteOptimizer:
 
         client_data = {}
         for c_idx in range(num_warehouses, len(demands)):
-            c_loc_idx = c_idx
             lat, lon = depot_lat, depot_lon
             if locations and c_idx < len(locations):
                 lat, lon = locations[c_idx]
 
-            # Polar coordinates relative to depot
             dlat = lat - depot_lat
             dlon = lon - depot_lon
             angle = math.atan2(dlat, dlon)
@@ -132,7 +134,7 @@ class AdvancedRouteOptimizer:
                 "wh": c_wh
             }
 
-        # 2. Vehicle Shift Setup
+        # 2. Vehicle Shift Setup with Strict Duration Caps
         vehicle_data = []
         for v in range(num_vehicles):
             v_start = vehicle_start_times[v] if vehicle_start_times and v < len(vehicle_start_times) else 480
@@ -140,17 +142,60 @@ class AdvancedRouteOptimizer:
             v_cap_w = vehicle_capacities[v]
             v_cap_v = vehicle_volume_capacities[v] if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 1000.0
             v_wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
+
+            # Effective max duration: minimum of configured shift length or max_shift_minutes
+            v_allowed_shift_len = min(v_end - v_start, max_shift_minutes)
+            if v_allowed_shift_len <= 0:
+                v_allowed_shift_len = max_shift_minutes
+
             vehicle_data.append({
                 "id": v,
                 "start": v_start,
-                "end": v_end,
+                "end": v_start + v_allowed_shift_len,
+                "max_duration": v_allowed_shift_len,
                 "cap_w": v_cap_w,
                 "cap_v": v_cap_v,
                 "wh": v_wh
             })
 
-        # 3. Initial Partitioning: Polar Sector Sweeping + Far-First Seed
-        # Sort clients by (angle sector, then distance from depot descending)
+        # Helper: Route Schedule & Time Window Feasibility Evaluator
+        def evaluate_route(route_nodes: List[int], v_idx: int, speed_kmh: float = 50.0) -> Tuple[bool, float, int, int]:
+            if not route_nodes:
+                return True, 0.0, 0, 0
+            vd = vehicle_data[v_idx]
+            cur_time = float(vd["start"])
+            cur_loc = 0
+            total_dist = 0.0
+            late_count = 0
+
+            # Sort route by time window start to maintain chronological sequence
+            ordered = sorted(route_nodes, key=lambda c: (client_data[c]["tw_start"], distance_matrix[0][c]))
+
+            for c_idx in ordered:
+                cd = client_data[c_idx]
+                d_km = distance_matrix[cur_loc][c_idx]
+                total_dist += d_km
+                t_travel = (d_km / max(speed_kmh, 20.0)) * 60.0
+                cur_time += t_travel
+
+                if cur_time < cd["tw_start"]:
+                    cur_time = float(cd["tw_start"]) # early waiting
+                elif cur_time > cd["tw_end"]:
+                    late_count += 1
+
+                cur_time += 15.0 # unload duration
+                cur_loc = c_idx
+
+            # Return to depot
+            d_ret = distance_matrix[cur_loc][0]
+            total_dist += d_ret
+            cur_time += (d_ret / max(speed_kmh, 20.0)) * 60.0
+
+            total_duration = int(round(cur_time - vd["start"]))
+            is_feasible = (late_count == 0) and (total_duration <= vd["max_duration"]) and (len(route_nodes) <= 28)
+            return is_feasible, total_dist, total_duration, late_count
+
+        # 3. Initial Partitioning: Polar Sector Sweeping + Strict Shift Limits
         if strategy in ["far_first", "distance"]:
             sorted_clients = sorted(client_data.keys(), key=lambda c: (-client_data[c]["dist_to_depot"], client_data[c]["angle"]))
         else: # clusters / balanced
@@ -178,7 +223,13 @@ class AdvancedRouteOptimizer:
                 if vehicle_w[v] + cd["weight"] > vd["cap_w"] or vehicle_v[v] + cd["volume"] > vd["cap_v"]:
                     continue
 
-                # Insertion cost: distance from last stop in route (or depot) + angular disparity penalty
+                # Test route time feasibility
+                test_r = routes[v] + [c_idx]
+                is_feas, d_km, dur_min, late = evaluate_route(test_r, v)
+                if not is_feas and len(routes[v]) > 0:
+                    continue
+
+                # Cost metric: distance + angular alignment
                 if not routes[v]:
                     cost = cd["dist_to_depot"]
                 else:
@@ -187,9 +238,8 @@ class AdvancedRouteOptimizer:
                     angle_diff = abs(client_data[last_c]["angle"] - cd["angle"])
                     if angle_diff > math.pi:
                         angle_diff = 2 * math.pi - angle_diff
-                    cost = dist_to_last + (angle_diff * 35.0)
+                    cost = dist_to_last + (angle_diff * 30.0)
 
-                # Balance weight penalty if balanced mode
                 if balance_weight > 0:
                     cost += (len(routes[v]) * balance_weight * 0.1)
 
@@ -203,27 +253,7 @@ class AdvancedRouteOptimizer:
                 vehicle_v[best_v] += cd["volume"]
                 assigned_set.add(c_idx)
 
-        # 4. Phase 2: Deep Metaheuristic LNS (Large Neighborhood Search)
-        def route_dist(r: List[int]) -> float:
-            if not r:
-                return 0.0
-            d = distance_matrix[0][r[0]]
-            for i in range(len(r) - 1):
-                d += distance_matrix[r[i]][r[i+1]]
-            d += distance_matrix[r[-1]][0]
-            return d
-
-        def is_valid_shift(r: List[int], v_idx: int) -> bool:
-            vd = vehicle_data[v_idx]
-            for c in r:
-                cd = client_data[c]
-                if cd["tw_start"] >= vd["end"] or cd["tw_end"] <= vd["start"]:
-                    return False
-                if cd["wh"] and vd["wh"] and cd["wh"] != vd["wh"]:
-                    return False
-            return True
-
-        # Run LNS passes: Inter-Route Relocate & Swap
+        # 4. Phase 2: Metaheuristic LNS (Inter-Route Relocate & Swap with Feasibility Guarantee)
         improved = True
         iteration = 0
 
@@ -231,48 +261,41 @@ class AdvancedRouteOptimizer:
             improved = False
             iteration += 1
 
-            # A. Inter-Route Relocate: Move a stop from Route A to Route B
+            # A. Inter-Route Relocate
             for va in range(num_vehicles):
                 if not routes[va]:
                     continue
                 for pos_a, ca in enumerate(routes[va]):
-                    cd = client_data[ca]
+                    cda = client_data[ca]
                     for vb in range(num_vehicles):
                         if va == vb:
                             continue
                         vbd = vehicle_data[vb]
-                        # Shift & capacity check
-                        if cd["tw_start"] >= vbd["end"] or cd["tw_end"] <= vbd["start"]:
+                        if cda["tw_start"] >= vbd["end"] or cda["tw_end"] <= vbd["start"]:
                             continue
-                        if cd["wh"] and vbd["wh"] and cd["wh"] != vbd["wh"]:
+                        if cda["wh"] and vbd["wh"] and cda["wh"] != vbd["wh"]:
                             continue
-                        if vehicle_w[vb] + cd["weight"] > vbd["cap_w"] or vehicle_v[vb] + cd["volume"] > vbd["cap_v"]:
+                        if vehicle_w[vb] + cda["weight"] > vbd["cap_w"] or vehicle_v[vb] + cda["volume"] > vbd["cap_v"]:
                             continue
 
-                        cur_d = route_dist(routes[va]) + route_dist(routes[vb])
+                        # Feasibility of route vb with ca added
+                        test_rb = routes[vb] + [ca]
+                        is_feas_b, d_b, _, _ = evaluate_route(test_rb, vb)
+                        if not is_feas_b:
+                            continue
 
-                        # Test best insertion position in route vb
-                        best_pos_b = None
-                        best_delta = 0.0
+                        _, cur_da, _, _ = evaluate_route(routes[va], va)
+                        _, cur_db, _, _ = evaluate_route(routes[vb], vb)
+                        test_ra = routes[va][:pos_a] + routes[va][pos_a+1:]
+                        _, new_da, _, _ = evaluate_route(test_ra, va)
 
-                        for pos_b in range(len(routes[vb]) + 1):
-                            test_ra = routes[va][:pos_a] + routes[va][pos_a+1:]
-                            test_rb = routes[vb][:pos_b] + [ca] + routes[vb][pos_b:]
-                            new_d = route_dist(test_ra) + route_dist(test_rb)
-                            delta = new_d - cur_d
-
-                            if delta < best_delta - 0.001:
-                                best_delta = delta
-                                best_pos_b = pos_b
-
-                        if best_pos_b is not None:
-                            # Apply relocation
+                        if (new_da + d_b) < (cur_da + cur_db) - 0.05:
                             routes[va].pop(pos_a)
-                            routes[vb].insert(best_pos_b, ca)
-                            vehicle_w[va] -= cd["weight"]
-                            vehicle_w[vb] += cd["weight"]
-                            vehicle_v[va] -= cd["volume"]
-                            vehicle_v[vb] += cd["volume"]
+                            routes[vb].append(ca)
+                            vehicle_w[va] -= cda["weight"]
+                            vehicle_w[vb] += cda["weight"]
+                            vehicle_v[va] -= cda["volume"]
+                            vehicle_v[vb] += cda["volume"]
                             improved = True
                             break
                     if improved:
@@ -280,59 +303,7 @@ class AdvancedRouteOptimizer:
                 if improved:
                     break
 
-            # B. Inter-Route Swap: Swap a stop in Route A with a stop in Route B
-            if not improved and iteration % 2 == 0:
-                for va in range(num_vehicles):
-                    if not routes[va]:
-                        continue
-                    for pos_a, ca in enumerate(routes[va]):
-                        cda = client_data[ca]
-                        for vb in range(va + 1, num_vehicles):
-                            if not routes[vb]:
-                                continue
-                            vbd = vehicle_data[vb]
-                            vad = vehicle_data[va]
-                            for pos_b, cb in enumerate(routes[vb]):
-                                cdb = client_data[cb]
-
-                                # Shift check
-                                if cda["tw_start"] >= vbd["end"] or cda["tw_end"] <= vbd["start"]:
-                                    continue
-                                if cdb["tw_start"] >= vad["end"] or cdb["tw_end"] <= vad["start"]:
-                                    continue
-
-                                # Capacity check
-                                if vehicle_w[va] - cda["weight"] + cdb["weight"] > vad["cap_w"]:
-                                    continue
-                                if vehicle_w[vb] - cdb["weight"] + cda["weight"] > vbd["cap_w"]:
-                                    continue
-                                if vehicle_v[va] - cda["volume"] + cdb["volume"] > vad["cap_v"]:
-                                    continue
-                                if vehicle_v[vb] - cdb["volume"] + cda["volume"] > vbd["cap_v"]:
-                                    continue
-
-                                cur_d = route_dist(routes[va]) + route_dist(routes[vb])
-                                test_ra = routes[va][:pos_a] + [cb] + routes[va][pos_a+1:]
-                                test_rb = routes[vb][:pos_b] + [ca] + routes[vb][pos_b:]
-                                new_d = route_dist(test_ra) + route_dist(test_rb)
-
-                                if new_d < cur_d - 0.001:
-                                    routes[va][pos_a] = cb
-                                    routes[vb][pos_b] = ca
-                                    vehicle_w[va] = vehicle_w[va] - cda["weight"] + cdb["weight"]
-                                    vehicle_w[vb] = vehicle_w[vb] - cdb["weight"] + cda["weight"]
-                                    vehicle_v[va] = vehicle_v[va] - cda["volume"] + cdb["volume"]
-                                    vehicle_v[vb] = vehicle_v[vb] - cdb["volume"] + cda["volume"]
-                                    improved = True
-                                    break
-                            if improved:
-                                break
-                        if improved:
-                            break
-                    if improved:
-                        break
-
-        # 5. Phase 3: Intra-Route Chronological Sorting & 2-Opt Polish
+        # 5. Phase 3: Final Chronological Sequence & 2-Opt Refinement
         final_routes = []
         for v in range(num_vehicles):
             raw_r = routes[v]
@@ -340,17 +311,14 @@ class AdvancedRouteOptimizer:
                 final_routes.append([])
                 continue
 
-            # Sort primarily by time window start to ensure 100% on-time delivery
             sorted_by_tw = sorted(raw_r, key=lambda c: (client_data[c]["tw_start"], distance_matrix[0][c]))
 
-            # Intra-route 2-opt within identical time window groups
             n = len(sorted_by_tw)
             improved_2opt = True
             while improved_2opt and n > 3:
                 improved_2opt = False
                 for i in range(n - 1):
                     for j in range(i + 2, n):
-                        # Preserve time window ordering
                         if client_data[sorted_by_tw[i]]["tw_start"] != client_data[sorted_by_tw[j]]["tw_start"]:
                             continue
                         c_a, c_b = sorted_by_tw[i], sorted_by_tw[i+1]
