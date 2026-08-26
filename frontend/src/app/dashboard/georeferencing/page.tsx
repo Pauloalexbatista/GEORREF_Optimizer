@@ -26,6 +26,7 @@ interface Delivery {
   fonte_match: string;
   morada_encontrada: string;
   motivo_falha?: string;
+  armazem?: string;
 }
 
 export default function GeoreferencingPage() {
@@ -558,6 +559,7 @@ export default function GeoreferencingPage() {
                   <tr className="bg-zinc-950 border-b border-zinc-800 text-[11px] font-bold text-zinc-400 uppercase tracking-wider sticky top-0 z-10">
                     <th className="py-3 px-3 w-16 text-center">Ações</th>
                     <th onClick={() => handleSort("status")} className="py-3 px-3 cursor-pointer">Estado</th>
+                    <th onClick={() => handleSort("armazem")} className="py-3 px-3 w-40 cursor-pointer hover:text-zinc-200">Armazém</th>
                     <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-3 cursor-pointer">Código / Cliente</th>
                     <th onClick={() => handleSort("morada")} className="py-3 px-3 cursor-pointer">Morada</th>
                     <th onClick={() => handleSort("codigo_postal")} className="py-3 px-3 w-28 cursor-pointer hover:text-zinc-200">Cód. Postal</th>
@@ -609,6 +611,13 @@ export default function GeoreferencingPage() {
                           {del.nome_cliente && del.nome_cliente !== del.codigo_cliente && (
                             <div className="text-[9px] text-zinc-400 font-mono truncate max-w-[120px]">{del.codigo_cliente}</div>
                           )}
+                        </td>
+
+                        {/* Armazém */}
+                        <td className="py-1 px-2">
+                          <div className="text-xs text-zinc-400 truncate max-w-[140px]" title={del.armazem || ""}>
+                            {del.armazem || <span className="text-zinc-600 italic">—</span>}
+                          </div>
                         </td>
 
                         {/* Morada Input (Click-to-edit) */}
