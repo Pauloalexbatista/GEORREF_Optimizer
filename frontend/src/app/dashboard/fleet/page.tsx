@@ -120,6 +120,7 @@ export default function FleetPage() {
   const [editWhData, setEditWhData] = useState<Warehouse | null>(null);
 
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [geoTarget, setGeoTarget] = useState<"new" | "edit">("new");
 
   const handleCreateWarehouse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -419,8 +420,8 @@ export default function FleetPage() {
                 onClick={() => setActiveTab("warehouses")}
                 className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
                   activeTab === "warehouses"
-                    ? "bg-indigo-650 text-white shadow-sm"
-                    : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                    ? "bg-indigo-600 dark:bg-indigo-650 text-white shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 border border-transparent"
                 }`}
               >
                 🏬 Armazéns ({warehouses.length})
@@ -429,8 +430,8 @@ export default function FleetPage() {
                 onClick={() => setActiveTab("fleet")}
                 className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
                   activeTab === "fleet"
-                    ? "bg-indigo-650 text-white shadow-sm"
-                    : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                    ? "bg-indigo-600 dark:bg-indigo-650 text-white shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 border border-transparent"
                 }`}
               >
                 🚚 Frota ({fleet.length})
@@ -472,7 +473,7 @@ export default function FleetPage() {
         {/* TAB 1: WAREHOUSES TABLE */}
         {activeTab === "warehouses" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl p-3">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[calc(100vh-220px)] relative">
               <table className="w-full text-left border-collapse text-[11px] font-sans">
                 <thead>
                   <tr className="bg-zinc-950 border-b border-zinc-800 text-[9px] font-bold uppercase tracking-wider text-zinc-300">
@@ -555,7 +556,10 @@ export default function FleetPage() {
                         />
                         <button
                           type="button"
-                          onClick={() => setIsMapModalOpen(true)}
+                          onClick={() => {
+                            setGeoTarget("new");
+                            setIsMapModalOpen(true);
+                          }}
                           title="Georreferenciar no Mapa"
                           className="p-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 hover:border-zinc-700 rounded text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
                         >
@@ -685,13 +689,26 @@ export default function FleetPage() {
                           </td>
                           <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
                             {isEditing ? (
-                              <input
-                                type="number"
-                                step="0.000001"
-                                value={editWhData?.lon || 0.0}
-                                onChange={e => setEditWhData(prev => prev ? ({ ...prev, lon: parseFloat(e.target.value) || 0.0 }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
+                              <div className="flex items-center space-x-1">
+                                <input
+                                  type="number"
+                                  step="0.000001"
+                                  value={editWhData?.lon || 0.0}
+                                  onChange={e => setEditWhData(prev => prev ? ({ ...prev, lon: parseFloat(e.target.value) || 0.0 }) : null)}
+                                  className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-350 outline-none font-mono text-center"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setGeoTarget("edit");
+                                    setIsMapModalOpen(true);
+                                  }}
+                                  title="Georreferenciar no Mapa"
+                                  className="p-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 hover:border-zinc-700 rounded text-zinc-450 hover:text-zinc-200 transition-all cursor-pointer"
+                                >
+                                  📍
+                                </button>
+                              </div>
                             ) : (
                               wh.lon.toFixed(6)
                             )}
@@ -709,19 +726,19 @@ export default function FleetPage() {
         {/* TAB 2: VEHICLES TABLE */}
         {activeTab === "fleet" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl p-3">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[calc(100vh-220px)] relative">
               <table className="w-full text-left border-collapse text-[11px] font-sans">
                 <thead>
-                  <tr className="bg-zinc-950 border-b border-zinc-800 text-[9px] font-bold uppercase tracking-wider text-zinc-300">
-                    <th className="px-3 py-2.5 w-[110px] text-center">Ações</th>
-                    <th className="px-3 py-2.5 min-w-[150px]">Identificação / Matrícula</th>
-                    <th className="px-3 py-2.5 min-w-[130px]">Armazém de Origem</th>
-                    <th className="px-3 py-2.5 w-[90px] text-center">Capacidade (KG)</th>
-                    <th className="px-3 py-2.5 w-[90px] text-center">Volume (M³)</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center">V. Média (km/h)</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center">Início Turno</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center">Fim Turno</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center">Custo/KM (€)</th>
+                  <tr className="bg-zinc-100 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-850 text-[9px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                    <th className="px-3 py-2.5 w-[110px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Ações</th>
+                    <th className="px-3 py-2.5 min-w-[150px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Identificação / Matrícula</th>
+                    <th className="px-3 py-2.5 min-w-[130px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Armazém de Origem</th>
+                    <th className="px-3 py-2.5 w-[90px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Capacidade (KG)</th>
+                    <th className="px-3 py-2.5 w-[90px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Volume (M³)</th>
+                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">V. Média (km/h)</th>
+                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Início Turno</th>
+                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Fim Turno</th>
+                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Custo/KM (€)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-850">
@@ -1012,18 +1029,29 @@ export default function FleetPage() {
 
       <WarehouseGeoModal
         isOpen={isMapModalOpen}
-        warehouseName={newWhName || "Novo Armazém"}
-        initialAddress={newWhAddr || ""}
-        initialCp={newWhCp || ""}
-        initialLocality={newWhLocality || ""}
-        initialLat={newWhLat ? parseFloat(newWhLat) : 0}
-        initialLon={newWhLon ? parseFloat(newWhLon) : 0}
+        warehouseName={geoTarget === "new" ? (newWhName || "Novo Armazém") : (editWhData?.name || "Editar Armazém")}
+        initialAddress={geoTarget === "new" ? (newWhAddr || "") : (editWhData?.address || "")}
+        initialCp={geoTarget === "new" ? (newWhCp || "") : (editWhData?.cp || "")}
+        initialLocality={geoTarget === "new" ? (newWhLocality || "") : (editWhData?.locality || "")}
+        initialLat={geoTarget === "new" ? (newWhLat ? parseFloat(newWhLat) : 0) : (editWhData?.lat || 0)}
+        initialLon={geoTarget === "new" ? (newWhLon ? parseFloat(newWhLon) : 0) : (editWhData?.lon || 0)}
         onConfirm={(addr, cp, loc, lat, lon) => {
-          setNewWhAddr(addr);
-          setNewWhCp(cp);
-          setNewWhLocality(loc);
-          setNewWhLat(lat.toFixed(6));
-          setNewWhLon(lon.toFixed(6));
+          if (geoTarget === "new") {
+            setNewWhAddr(addr);
+            setNewWhCp(cp);
+            setNewWhLocality(loc);
+            setNewWhLat(lat.toFixed(6));
+            setNewWhLon(lon.toFixed(6));
+          } else {
+            setEditWhData(prev => prev ? {
+              ...prev,
+              address: addr,
+              cp: cp,
+              locality: loc,
+              lat: parseFloat(lat.toFixed(6)),
+              lon: parseFloat(lon.toFixed(6))
+            } : null);
+          }
           setIsMapModalOpen(false);
         }}
         onClose={() => setIsMapModalOpen(false)}
