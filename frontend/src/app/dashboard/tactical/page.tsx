@@ -406,6 +406,12 @@ export default function TacticalPage() {
   };
 
   useEffect(() => {
+    setSelectedWarehouseFilter("all");
+    setSelectedStatusFilter("all");
+    setSearchQuery("");
+    try {
+      localStorage.removeItem("georoute_active_filters");
+    } catch (e) {}
     loadTacticalData();
   }, [selectedProject]);
 
