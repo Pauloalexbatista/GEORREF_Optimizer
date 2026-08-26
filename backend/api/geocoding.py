@@ -1214,6 +1214,69 @@ def export_geocoding_results(
 
         return StreamingResponse(
 
+
+@router.delete("/delivery/{delivery_id}")
+def delete_delivery(delivery_id: int, current_user: UserResponse = Depends(get_current_user)):
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Check owner
+            cursor.execute("""
+                SELECT e.id, e.projeto_id, p.empresa_id, e.codigo_cliente
+                FROM entregas e 
+                JOIN projetos p ON e.projeto_id = p.id 
+                WHERE e.id = ?
+            """, (delivery_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                raise HTTPException(status_code=404, detail="Entrega não encontrada.")
+            if row["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False):
+                raise HTTPException(status_code=403, detail="Não tem permissão para eliminar esta entrega.")
+                
+            proj_id = row["projeto_id"]
+            client_code = row["codigo_cliente"]
+            
+            # Delete from deliveries table
+            cursor.execute("DELETE FROM entregas WHERE id = ?", (delivery_id,))
+            
+            # Remove from the latest snapshot if it exists
+            cursor.execute("SELECT id, payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (proj_id,))
+            snap_row = cursor.fetchone()
+            if snap_row and snap_row["payload_json"]:
+                try:
+                    from utils.snapshot_serializer import deserialize_state, serialize_state
+                    import pandas as pd
+                    state_dict = deserialize_state(snap_row["payload_json"])
+                    raw_routes = state_dict.get("routes_solution")
+                    if raw_routes is not None:
+                        df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+                        if not df_routes.empty:
+                            # Filter out this stop
+                            c_idx = []
+                            if "id" in df_routes.columns:
+                                c_idx = df_routes[df_routes["id"] == delivery_id].index
+                            if len(c_idx) == 0 and "ID_Original" in df_routes.columns:
+                                c_idx = df_routes[df_routes["ID_Original"] == delivery_id].index
+                            if len(c_idx) == 0 and "Cliente" in df_routes.columns:
+                                c_idx = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == str(client_code).strip().upper()].index
+                                
+                            if len(c_idx) > 0:
+                                df_routes = df_routes.drop(c_idx).reset_index(drop=True)
+                                # Recalculate stop orders for safety
+                                df_routes["Ordem"] = range(1, len(df_routes) + 1)
+                                state_dict["routes_solution"] = df_routes
+                                new_payload = serialize_state(state_dict)
+                                cursor.execute("UPDATE snapshots SET payload_json = ? WHERE id = ?", (new_payload, snap_row["id"]))
+                except Exception as snap_e:
+                    print(f"Error updating snapshot during delete: {snap_e}")
+                    
+            conn.commit()
+            return {"status": "success", "message": "Entrega eliminada com sucesso."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
             output,
 
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
