@@ -162,7 +162,9 @@ class AdvancedRouteOptimizer:
                 cd = client_data[c]
                 d  = distance_matrix[cur_l][c] * ROAD_FACTOR
                 total_km += d
-                cur_t    += (d / max(SPEED_KMH, 15.0)) * 60.0
+                # Hybrid speed: 75 km/h for highway segments (>15km), else SPEED_KMH
+                segment_speed = 75.0 if (d / ROAD_FACTOR) > 15.0 else SPEED_KMH
+                cur_t    += (d / max(segment_speed, 15.0)) * 60.0
                 if cur_t < cd["tw_start"]:
                     total_wait += int(cd["tw_start"] - cur_t)
                     cur_t = float(cd["tw_start"])
@@ -172,7 +174,9 @@ class AdvancedRouteOptimizer:
                 cur_l  = c
             d_ret     = distance_matrix[cur_l][v_depot] * ROAD_FACTOR
             total_km += d_ret
-            cur_t    += (d_ret / max(SPEED_KMH, 15.0)) * 60.0
+            # Hybrid speed: 75 km/h for highway segments (>15km), else SPEED_KMH
+            segment_speed = 75.0 if (d_ret / ROAD_FACTOR) > 15.0 else SPEED_KMH
+            cur_t    += (d_ret / max(segment_speed, 15.0)) * 60.0
             duration  = int(round(cur_t - vd["start"]))
             is_feasible = (
                 late_count == 0

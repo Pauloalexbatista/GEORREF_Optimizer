@@ -1213,6 +1213,22 @@ def export_geocoding_results(
         }
 
         return StreamingResponse(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers=headers
+        )
+
+        
+
+    except HTTPException as he:
+
+        raise he
+
+    except Exception as e:
+
+        raise HTTPException(status_code=500, detail=f"Erro ao exportar ficheiro: {str(e)}")
+
+
 
 
 @router.delete("/delivery/{delivery_id}")
@@ -1276,23 +1292,3 @@ def delete_delivery(delivery_id: int, current_user: UserResponse = Depends(get_c
             return {"status": "success", "message": "Entrega eliminada com sucesso."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-            output,
-
-            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-
-            headers=headers
-
-        )
-
-        
-
-    except HTTPException as he:
-
-        raise he
-
-    except Exception as e:
-
-        raise HTTPException(status_code=500, detail=f"Erro ao exportar ficheiro: {str(e)}")
-
-

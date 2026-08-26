@@ -113,6 +113,53 @@ export default function GeoreferencingPage() {
     }
   };
 
+  const handleCellSave = async (del: Delivery, field: keyof Delivery, value: any) => {
+    let isChanged = false;
+    if (field === 'latitude' || field === 'longitude') {
+      const numVal = parseFloat(value) || 0.0;
+      isChanged = numVal !== del[field];
+    } else {
+      isChanged = String(value).trim() !== String(del[field] || "").trim();
+    }
+    if (!isChanged) return;
+
+    // Reactively update local state first
+    const updatedDeliveries = deliveries.map(d => 
+      d.id === del.id ? { 
+        ...d, 
+        [field]: (field === 'latitude' || field === 'longitude') ? (parseFloat(value) || 0.0) : value 
+      } : d
+    );
+    setDeliveries(updatedDeliveries);
+
+    try {
+      const payload = {
+        morada: field === 'morada' ? value : del.morada,
+        codigo_postal: field === 'codigo_postal' ? value : del.codigo_postal,
+        concelho: field === 'concelho' ? value : del.concelho,
+        latitude: field === 'latitude' ? (parseFloat(value) || 0.0) : del.latitude,
+        longitude: field === 'longitude' ? (parseFloat(value) || 0.0) : del.longitude,
+      };
+
+      await apiRequest(`/api/geocoding/delivery/${del.id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      if (selectedProject) {
+        const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+        setDeliveries(data);
+      }
+    } catch (err: any) {
+      alert(err.message || "Erro ao guardar alterações.");
+      // Rollback on error
+      if (selectedProject) {
+        const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+        setDeliveries(data);
+      }
+    }
+  };
+
   // Correction state
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null);
   const [corrAddr, setCorrAddr] = useState("");
@@ -504,55 +551,132 @@ export default function GeoreferencingPage() {
               </div>
             </div>
 
-            {/* Table */}
-            <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 overflow-hidden shadow-xl">
+            {/* Table Container with vertical scroll and sticky headers */}
+            <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 overflow-hidden shadow-xl max-h-[600px] overflow-y-auto relative">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-zinc-950 border-b border-zinc-800 text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-                    <th onClick={() => handleSort("status")} className="py-3 px-4 cursor-pointer">Estado</th>
-                    <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-4 cursor-pointer">Código</th>
-                    <th onClick={() => handleSort("morada")} className="py-3 px-4 cursor-pointer">Morada Original</th>
-                    <th className="py-3 px-4">{t.geocoding.tableCp}</th>
-                    <th className="py-3 px-4">Concelho</th>
-                    <th className="py-3 px-4">Coordenadas</th>
-                    <th className="py-3 px-4 text-center">Ações</th>
+                  <tr className="bg-zinc-950 border-b border-zinc-800 text-[11px] font-bold text-zinc-400 uppercase tracking-wider sticky top-0 z-10">
+                    <th className="py-3 px-3 w-16 text-center">Ações</th>
+                    <th onClick={() => handleSort("status")} className="py-3 px-3 cursor-pointer">Estado</th>
+                    <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-3 cursor-pointer">Código / Cliente</th>
+                    <th onClick={() => handleSort("morada")} className="py-3 px-3 cursor-pointer">Morada</th>
+                    <th className="py-3 px-3 w-28">Cód. Postal</th>
+                    <th className="py-3 px-3 w-36">Concelho</th>
+                    <th className="py-3 px-3 w-48">Latitude / Longitude</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAndSortedDeliveries.map((del) => {
                     const isValid = del.latitude !== 0.0 && del.longitude !== 0.0 && del.nivel_qualidade !== 99;
                     return (
-                      <tr key={del.id} className="border-b border-zinc-800/40 hover:bg-zinc-800/30 transition-colors">
-                        <td className="py-2.5 px-4">
+                      <tr key={del.id} className="border-b border-zinc-800/40 hover:bg-zinc-800/20 hover:text-zinc-100 transition-colors">
+                        {/* Actions Col Left */}
+                        <td className="py-1 px-2 text-center whitespace-nowrap">
+                          <button
+                            onClick={() => openCorrection(del)}
+                            title="Ajustar no Mapa"
+                            className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-indigo-400 rounded transition-colors cursor-pointer"
+                          >
+                            📍
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInline(del.id)}
+                            title="Eliminar Encomenda"
+                            className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-red-400 rounded transition-colors cursor-pointer ml-1"
+                          >
+                            🗑️
+                          </button>
+                        </td>
+
+                        {/* Status Badge */}
+                        <td className="py-1 px-2 whitespace-nowrap">
                           {isValid ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-950 text-emerald-400 border border-emerald-800/60">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/40">
                               Nível {del.nivel_qualidade}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-950 text-amber-400 border border-amber-800/60">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-amber-950/80 text-amber-400 border border-amber-800/40">
                               Pendente
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-4">
-                          <div className="font-semibold text-zinc-200">{del.nome_cliente || del.codigo_cliente}</div>
+
+                        {/* Codigo / Nome */}
+                        <td className="py-1 px-2">
+                          <div className="font-semibold text-zinc-200 truncate max-w-[120px]" title={del.nome_cliente || del.codigo_cliente}>
+                            {del.nome_cliente || del.codigo_cliente}
+                          </div>
                           {del.nome_cliente && del.nome_cliente !== del.codigo_cliente && (
-                            <div className="text-[10px] text-zinc-300 font-mono">{del.codigo_cliente}</div>
+                            <div className="text-[9px] text-zinc-400 font-mono truncate max-w-[120px]">{del.codigo_cliente}</div>
                           )}
                         </td>
-                        <td className="py-2.5 px-4 text-zinc-300 truncate max-w-xs">{del.morada}</td>
-                        <td className="py-2.5 px-4 text-zinc-400 font-mono">{del.codigo_postal || "N/A"}</td>
-                        <td className="py-2.5 px-4 text-zinc-400">{del.concelho || "N/A"}</td>
-                        <td className="py-2.5 px-4 font-mono text-zinc-300">
-                          {isValid ? `${del.latitude.toFixed(5)}, ${del.longitude.toFixed(5)}` : "--, --"}
+
+                        {/* Morada Input (Click-to-edit) */}
+                        <td className="py-1 px-2">
+                          <input
+                            type="text"
+                            defaultValue={del.morada}
+                            onBlur={(e) => handleCellSave(del, 'morada', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            className="w-full bg-transparent border border-transparent hover:border-zinc-800 focus:border-indigo-500 focus:bg-zinc-950/80 rounded px-2 py-1 text-xs text-zinc-300 focus:text-zinc-100 outline-none transition-all"
+                          />
                         </td>
-                        <td className="py-2.5 px-4 text-center">
-                          <button
-                            onClick={() => openCorrection(del)}
-                            className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors"
-                          >
-                            Corrigir
-                          </button>
+
+                        {/* Codigo Postal Input (Click-to-edit) */}
+                        <td className="py-1 px-2">
+                          <input
+                            type="text"
+                            defaultValue={del.codigo_postal || ""}
+                            placeholder="CP7"
+                            onBlur={(e) => handleCellSave(del, 'codigo_postal', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            className="w-full bg-transparent border border-transparent hover:border-zinc-800 focus:border-indigo-500 focus:bg-zinc-950/80 rounded px-2 py-1 text-xs text-zinc-300 focus:text-zinc-100 font-mono outline-none transition-all"
+                          />
+                        </td>
+
+                        {/* Concelho Input (Click-to-edit) */}
+                        <td className="py-1 px-2">
+                          <input
+                            type="text"
+                            defaultValue={del.concelho || ""}
+                            placeholder="Concelho"
+                            onBlur={(e) => handleCellSave(del, 'concelho', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            className="w-full bg-transparent border border-transparent hover:border-zinc-800 focus:border-indigo-500 focus:bg-zinc-950/80 rounded px-2 py-1 text-xs text-zinc-300 focus:text-zinc-100 outline-none transition-all"
+                          />
+                        </td>
+
+                        {/* Coordinates Inputs (Click-to-edit) */}
+                        <td className="py-1 px-2">
+                          <div className="flex items-center space-x-1.5">
+                            <input
+                              type="text"
+                              placeholder="Lat"
+                              defaultValue={del.latitude !== 0.0 ? del.latitude.toFixed(5) : ""}
+                              onBlur={(e) => handleCellSave(del, 'latitude', e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                              }}
+                              className="w-20 bg-transparent border border-transparent hover:border-zinc-800 focus:border-indigo-500 focus:bg-zinc-950/80 rounded px-1.5 py-1 text-xs text-zinc-300 focus:text-zinc-100 font-mono outline-none transition-all text-right"
+                            />
+                            <span className="text-zinc-600">,</span>
+                            <input
+                              type="text"
+                              placeholder="Lon"
+                              defaultValue={del.longitude !== 0.0 ? del.longitude.toFixed(5) : ""}
+                              onBlur={(e) => handleCellSave(del, 'longitude', e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                              }}
+                              className="w-20 bg-transparent border border-transparent hover:border-zinc-800 focus:border-indigo-500 focus:bg-zinc-950/80 rounded px-1.5 py-1 text-xs text-zinc-300 focus:text-zinc-100 font-mono outline-none transition-all text-right"
+                            />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -562,6 +686,7 @@ export default function GeoreferencingPage() {
             </div>
           </div>
         )}
+
 
         {/* Correction Modal */}
         {editingDelivery && (

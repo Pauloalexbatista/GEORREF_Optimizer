@@ -867,7 +867,7 @@ export default function TacticalPage() {
             <div className="flex items-center space-x-3">
               <span className="w-3 h-3 rounded-full bg-indigo-500 shadow-md shadow-indigo-500/50" />
               <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
-                Matriz Operacional & Planeamento Tático
+                Planeamento
               </h1>
             </div>
             <p className="text-zinc-600 dark:text-zinc-400 text-xs mt-1">
@@ -1480,7 +1480,7 @@ export default function TacticalPage() {
 
                   {/* EXPANDED STOPS TABLE */}
                   {isExpanded && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[480px] relative rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-inner">
                       {filteredStops.length === 0 ? (
                         <div className="p-8 text-center text-zinc-500 text-xs italic">
                           {isEmptyVehicle
@@ -1490,16 +1490,16 @@ export default function TacticalPage() {
                       ) : (
                         <table className="w-full text-left text-xs border-collapse font-sans">
                           <thead>
-                            <tr className="bg-zinc-950/90 border-b border-zinc-800 text-[9px] font-black text-zinc-400 uppercase tracking-wider">
-                              <th className="py-2.5 px-3 text-center w-16"># Ordem</th>
-                              <th className="py-2.5 px-3 min-w-[180px]">Doc ID / Cliente</th>
-                              <th className="py-2.5 px-3 min-w-[220px]">Morada & Localidade</th>
-                              <th className="py-2.5 px-2 min-w-[110px] text-center">Contacto / Vend.</th>
-                              <th className="py-2.5 px-2 min-w-[100px] text-center">Janela Horária</th>
-                              <th className="py-2.5 px-2 min-w-[110px] text-center">Previsão Turno</th>
-                              <th className="py-2.5 px-2 w-[100px] text-center">Peso / Volume</th>
-                              <th className="py-2.5 px-2 w-[85px] text-center">Distância</th>
-                              <th className="py-2.5 px-3 text-center min-w-[150px]">Mover / Reatribuir</th>
+                            <tr className="bg-zinc-100 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-850 text-[9px] font-black text-zinc-700 dark:text-zinc-400 uppercase tracking-wider">
+                              <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10"># Ordem</th>
+                              <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Doc ID / Cliente</th>
+                              <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Morada & Localidade</th>
+                              <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Contacto / Vend.</th>
+                              <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Janela Horária</th>
+                              <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Previsão Turno</th>
+                              <th className="py-2 px-2 w-[100px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Peso / Volume</th>
+                              <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Distância</th>
+                              <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Mover / Reatribuir</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-850">
@@ -1588,18 +1588,18 @@ export default function TacticalPage() {
                                   {/* Cliente / Código */}
                                   {/* Doc ID / Cliente */}
                                   <td className="py-2 px-3">
-                                    <div className="font-bold text-zinc-100">{stop.Doc_ID || stop.Cliente || "S/ Doc"}</div>
-                                    <div className="text-[10px] text-indigo-400 font-bold font-mono">{stop.Cliente}</div>
-                                    <div className="text-[9px] text-zinc-400">{stop.Nome_Cliente}</div>
+                                    <div className="font-bold text-zinc-900 dark:text-zinc-100">{stop.Doc_ID || stop.Cliente || "S/ Doc"}</div>
+                                    <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold font-mono">{stop.Cliente}</div>
+                                    <div className="text-[9px] text-zinc-600 dark:text-zinc-400">{stop.Nome_Cliente}</div>
                                   </td>
 
                                   {/* Morada & Concelho */}
                                   <td className="py-2 px-3">
-                                    <div className="text-zinc-200 truncate max-w-xs" title={stop.Morada}>
+                                    <div className="text-zinc-800 dark:text-zinc-200 truncate max-w-xs" title={stop.Morada}>
                                       {stop.Morada}
                                     </div>
-                                    <div className="text-[9px] text-zinc-400 flex items-center space-x-1 mt-0.5">
-                                      <span className="font-mono text-indigo-400">{stop.CP}</span>
+                                    <div className="text-[9px] text-zinc-500 dark:text-zinc-400 flex items-center space-x-1 mt-0.5">
+                                      <span className="font-mono text-indigo-600 dark:text-indigo-400">{stop.CP}</span>
                                       <span>•</span>
                                       <span>{stop.Localidade}</span>
                                     </div>
