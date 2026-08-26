@@ -1008,6 +1008,17 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
                 "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
+            # Synchronize active database table 'entregas'
+            if req.delivery_id is not None:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                    (new_route_clean, req.project_id, req.delivery_id)
+                )
+            elif req.client_code:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                    (new_route_clean, req.project_id, req.client_code)
+                )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
@@ -1131,6 +1142,17 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
                 "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
+            # Synchronize active database table 'entregas'
+            if req.delivery_id is not None:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                    (new_route_clean, req.project_id, req.delivery_id)
+                )
+            elif req.client_code:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                    (new_route_clean, req.project_id, req.client_code)
+                )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records"), "count": len(matched_indices)})
@@ -1228,6 +1250,17 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
                 "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
+            # Synchronize active database table 'entregas'
+            if req.delivery_id is not None:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                    (new_route_clean, req.project_id, req.delivery_id)
+                )
+            elif req.client_code:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                    (new_route_clean, req.project_id, req.client_code)
+                )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
@@ -1327,6 +1360,17 @@ def reorder_route_stop(req: ReorderRequest, current_user: UserResponse = Depends
                 "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
+            # Synchronize active database table 'entregas'
+            if req.delivery_id is not None:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                    (new_route_clean, req.project_id, req.delivery_id)
+                )
+            elif req.client_code:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                    (new_route_clean, req.project_id, req.client_code)
+                )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
@@ -1493,6 +1537,17 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
                 "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
+            # Synchronize active database table 'entregas'
+            if req.delivery_id is not None:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                    (new_route_clean, req.project_id, req.delivery_id)
+                )
+            elif req.client_code:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                    (new_route_clean, req.project_id, req.client_code)
+                )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
