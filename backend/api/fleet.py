@@ -98,6 +98,7 @@ class VehicleItem(BaseModel):
     velocidade_media: Optional[float] = 40.0
     horario_inicio: Optional[str] = "08:00"
     horario_fim: Optional[str] = "18:00"
+    is_active: Optional[int] = 1
 
 class FleetSaveRequest(BaseModel):
     fleet: List[VehicleItem] = []
@@ -333,7 +334,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "custo_km": float(getattr(veh, "custo_km", 0.5) or 0.5),
                                 "velocidade_media": float(getattr(veh, "velocidade_media", 40.0) or 40.0),
                                 "horario_inicio": str(getattr(veh, "horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(getattr(veh, "horario_fim", "18:00") or "18:00")
+                                "horario_fim": str(getattr(veh, "horario_fim", "18:00") or "18:00"),
+                                "is_active": int(getattr(veh, "is_active", 1) if getattr(veh, "is_active", None) is not None else 1)
                             })
                         elif isinstance(veh, dict):
                             fleet_res.append({
@@ -344,7 +346,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
                                 "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
                                 "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00")
+                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00"),
+                                "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1)
                             })
                 elif isinstance(raw_fleet, pd.DataFrame):
                     for _, veh in raw_fleet.iterrows():
@@ -358,7 +361,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
                                 "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
                                 "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00")
+                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00"),
+                                "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1)
                             })
                 elif isinstance(raw_fleet, list):
                     for veh in raw_fleet:
@@ -371,7 +375,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
                                 "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
                                 "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00")
+                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00"),
+                                "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1)
                             })
 
             # If snapshot has no fleet, fallback to SQLite frota table
@@ -387,7 +392,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                         "custo_km": float(f["custo_km"] or 0.5),
                         "velocidade_media": float(f["velocidade_media"] or 40.0),
                         "horario_inicio": str(f["horario_inicio"] or "08:00"),
-                        "horario_fim": str(f["horario_fim"] or "18:00")
+                        "horario_fim": str(f["horario_fim"] or "18:00"),
+                        "is_active": int(f["is_active"] if f.get("is_active") is not None else 1)
                     })
 
             return {"fleet": fleet_res, "warehouses": warehouses_res}
@@ -451,7 +457,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "velocidade_media": float(veh.velocidade_media or 40.0),
                 "horario_inicio": str(veh.horario_inicio or "08:00"),
                 "horario_fim": str(veh.horario_fim or "18:00"),
-                "armazem": str(veh.armazem or "")
+                "armazem": str(veh.armazem or ""),
+                "is_active": int(veh.is_active if veh.is_active is not None else 1)
             })
 
         state_dict["fleet_config"] = fleet_dict
