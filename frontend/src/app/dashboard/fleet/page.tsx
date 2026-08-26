@@ -281,6 +281,47 @@ export default function FleetPage() {
   const [editingVehIdx, setEditingVehIdx] = useState<number | null>(null);
   const [editVehData, setEditVehData] = useState<Vehicle | null>(null);
 
+  // --- SORT & INLINE CHANGE HANDLERS ---
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const handleWhChange = (idx: number, field: keyof Warehouse, value: any) => {
+    const nextWh = [...warehouses];
+    nextWh[idx] = { ...nextWh[idx], [field]: value };
+    setWarehouses(nextWh);
+  };
+
+  const handleFleetChange = (idx: number, field: keyof Vehicle, value: any) => {
+    const nextFleet = [...fleet];
+    nextFleet[idx] = { ...nextFleet[idx], [field]: value };
+    setFleet(nextFleet);
+  };
+
+  const sortedWarehouses = [...warehouses].sort((a, b) => {
+    if (!sortField) return 0;
+    const va = (a as any)[sortField] ?? "";
+    const vb = (b as any)[sortField] ?? "";
+    return sortDirection === "asc" ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
+  });
+
+  const sortedFleet = [...fleet].sort((a, b) => {
+    if (!sortField) return 0;
+    const va = (a as any)[sortField] ?? "";
+    const vb = (b as any)[sortField] ?? "";
+    return sortDirection === "asc" ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
+  });
+
+
+
   const handleCreateVehicle = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = newVName.trim();
@@ -577,141 +618,52 @@ export default function FleetPage() {
                       </td>
                     </tr>
                   ) : (
-                    warehouses.map((wh, idx) => {
-                      const isEditing = editingWhIdx === idx;
+                    sortedWarehouses.map((wh, _loopIdx) => {
+                      const idx = warehouses.indexOf(wh);
                       return (
-                        <tr key={wh.name + idx} className="hover:bg-zinc-850/20 transition-colors">
+                        <tr key={wh.name + idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
+                          {/* ACTIONS */}
                           <td className="px-3 py-1.5 text-center">
                             <div className="flex items-center justify-center space-x-1.5">
-                              {isEditing ? (
-                                <>
-                                  <button
-                                    onClick={() => handleSaveEditWarehouse(idx)}
-                                    title="Guardar Linha"
-                                    className="p-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-indigo-400 hover:text-indigo-300 rounded cursor-pointer"
-                                  >
-                                    💾
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingWhIdx(null);
-                                      setEditWhData(null);
-                                    }}
-                                    title="Cancelar"
-                                    className="p-1 bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 text-zinc-400 hover:text-zinc-300 rounded cursor-pointer"
-                                  >
-                                    ❌
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      setEditingWhIdx(idx);
-                                      setEditWhData({ ...wh });
-                                    }}
-                                    title="Editar Linha"
-                                    className="p-1 bg-zinc-950 hover:bg-indigo-950 border border-zinc-850 hover:border-indigo-850 text-zinc-400 hover:text-indigo-400 rounded cursor-pointer transition-colors"
-                                  >
-                                    ✏️
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteWarehouse(idx)}
-                                    title="Eliminar Linha"
-                                    className="p-1 bg-zinc-950 hover:bg-red-950 border border-zinc-855 hover:border-red-850 text-zinc-400 hover:text-red-400 rounded cursor-pointer transition-colors"
-                                  >
-                                    🗑️
-                                  </button>
-                                </>
-                              )}
+                              <button
+                                onClick={() => { setGeoTarget("edit"); setEditWhData(wh); setEditingWhIdx(idx); setIsMapModalOpen(true); }}
+                                title="Georreferenciar no Mapa"
+                                className="p-1 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 rounded cursor-pointer transition-colors text-sm"
+                              >📍</button>
+                              <button
+                                onClick={() => handleDeleteWarehouse(idx)}
+                                title="Eliminar Armazém"
+                                className="p-1 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 rounded cursor-pointer transition-colors text-sm"
+                              >🗑️</button>
                             </div>
                           </td>
-                          <td className="px-3 py-1.5 font-bold text-zinc-200">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editWhData?.name || ""}
-                                onChange={e => setEditWhData(prev => prev ? ({ ...prev, name: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-200 outline-none"
-                              />
-                            ) : (
-                              wh.name
-                            )}
+                          {/* NOME */}
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={wh.name}
+                              onChange={e => handleWhChange(idx, "name", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-zinc-350">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editWhData?.address || ""}
-                                onChange={e => setEditWhData(prev => prev ? ({ ...prev, address: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-250 outline-none"
-                              />
-                            ) : (
-                              wh.address
-                            )}
+                          {/* MORADA */}
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={wh.address}
+                              onChange={e => handleWhChange(idx, "address", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editWhData?.cp || ""}
-                                onChange={e => setEditWhData(prev => prev ? ({ ...prev, cp: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono"
-                              />
-                            ) : (
-                              wh.cp
-                            )}
+                          {/* CP */}
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={wh.cp}
+                              onChange={e => handleWhChange(idx, "cp", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 font-mono outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-zinc-450">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editWhData?.locality || ""}
-                                onChange={e => setEditWhData(prev => prev ? ({ ...prev, locality: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none"
-                              />
-                            ) : (
-                              wh.locality
-                            )}
+                          {/* LOCALIDADE */}
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={wh.locality}
+                              onChange={e => handleWhChange(idx, "locality", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="number"
-                                step="0.000001"
-                                value={editWhData?.lat || 0.0}
-                                onChange={e => setEditWhData(prev => prev ? ({ ...prev, lat: parseFloat(e.target.value) || 0.0 }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              wh.lat.toFixed(6)
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <div className="flex items-center space-x-1">
-                                <input
-                                  type="number"
-                                  step="0.000001"
-                                  value={editWhData?.lon || 0.0}
-                                  onChange={e => setEditWhData(prev => prev ? ({ ...prev, lon: parseFloat(e.target.value) || 0.0 }) : null)}
-                                  className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-350 outline-none font-mono text-center"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setGeoTarget("edit");
-                                    setIsMapModalOpen(true);
-                                  }}
-                                  title="Georreferenciar no Mapa"
-                                  className="p-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 hover:border-zinc-700 rounded text-zinc-450 hover:text-zinc-200 transition-all cursor-pointer"
-                                >
-                                  📍
-                                </button>
-                              </div>
-                            ) : (
-                              wh.lon.toFixed(6)
-                            )}
+                          {/* COORDS */}
+                          <td className="px-3 py-1.5 text-zinc-400 font-mono text-[10px]">
+                            {wh.lat !== 0 && wh.lon !== 0 ? `${wh.lat.toFixed(5)}, ${wh.lon.toFixed(5)}`  : "—"}
                           </td>
                         </tr>
                       );
@@ -731,14 +683,14 @@ export default function FleetPage() {
                 <thead>
                   <tr className="bg-zinc-100 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-850 text-[9px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
                     <th className="px-3 py-2.5 w-[110px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Ações</th>
-                    <th className="px-3 py-2.5 min-w-[150px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Identificação / Matrícula</th>
-                    <th className="px-3 py-2.5 min-w-[130px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Armazém de Origem</th>
-                    <th className="px-3 py-2.5 w-[90px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Capacidade (KG)</th>
-                    <th className="px-3 py-2.5 w-[90px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Volume (M³)</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">V. Média (km/h)</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Início Turno</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Fim Turno</th>
-                    <th className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Custo/KM (€)</th>
+                    <th onClick={() => handleSort("veiculo")} className="px-3 py-2.5 min-w-[150px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">Identificação / Matrícula {sortField==="veiculo"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("armazem")} className="px-3 py-2.5 min-w-[130px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">Armazém de Origem {sortField==="armazem"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("capacidade_kg")} className="px-3 py-2.5 w-[90px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">Cap. KG {sortField==="capacidade_kg"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("capacidade_vol")} className="px-3 py-2.5 w-[90px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">Vol. M³ {sortField==="capacidade_vol"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("velocidade_media")} className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">V.Média {sortField==="velocidade_media"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("horario_inicio")} className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">Início {sortField==="horario_inicio"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("horario_fim")} className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">Fim {sortField==="horario_fim"?(sortDirection==="asc"?"▲":"▼"):""}</th>
+                    <th onClick={() => handleSort("custo_km")} className="px-3 py-2.5 w-[80px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10 cursor-pointer select-none">€/km {sortField==="custo_km"?(sortDirection==="asc"?"▲":"▼"):""}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-850">
@@ -850,171 +802,75 @@ export default function FleetPage() {
                       </td>
                     </tr>
                   ) : (
-                    fleet.map((veh, idx) => {
-                      const isEditing = editingVehIdx === idx;
-                      const isActive = veh.is_active !== 0;
+                    sortedFleet.map((veh, _loopIdx) => {
+                      const idx = fleet.indexOf(veh);
                       return (
-                        <tr key={veh.veiculo + idx} className={`hover:bg-zinc-850/20 transition-colors ${!isActive ? 'opacity-40 bg-zinc-950/20' : ''}`}>
+                        <tr key={veh.veiculo + idx} className={`hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors${veh.is_active === 0 ? " opacity-50 grayscale" : ""}`}>
+                          {/* ACTIONS */}
                           <td className="px-3 py-1.5 text-center">
                             <div className="flex items-center justify-center space-x-1.5">
-                              {isEditing ? (
-                                <>
-                                  <button
-                                    onClick={() => handleSaveEditVehicle(idx)}
-                                    title="Guardar Linha"
-                                    className="p-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-indigo-400 hover:text-indigo-300 rounded cursor-pointer"
-                                  >
-                                    💾
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingVehIdx(null);
-                                      setEditVehData(null);
-                                    }}
-                                    title="Cancelar"
-                                    className="p-1 bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 text-zinc-400 hover:text-zinc-300 rounded cursor-pointer"
-                                  >
-                                    ❌
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    onClick={() => handleToggleVehicleActive(idx)}
-                                    title={isActive ? "Desativar Veículo" : "Ativar Veículo"}
-                                    className={`p-1 border rounded cursor-pointer transition-all ${
-                                      isActive 
-                                        ? 'bg-emerald-950/60 border-emerald-700 text-emerald-400 hover:bg-emerald-900/60' 
-                                        : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-800'
-                                    }`}
-                                  >
-                                    ●
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingVehIdx(idx);
-                                      setEditVehData({ ...veh });
-                                    }}
-                                    title="Editar Linha"
-                                    className="p-1 bg-zinc-950 hover:bg-indigo-950 border border-zinc-850 hover:border-indigo-850 text-zinc-400 hover:text-indigo-400 rounded cursor-pointer transition-colors"
-                                  >
-                                    ✏️
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteVehicle(idx)}
-                                    title="Eliminar Linha"
-                                    className="p-1 bg-zinc-950 hover:bg-red-950 border border-zinc-855 hover:border-red-850 text-zinc-400 hover:text-red-400 rounded cursor-pointer transition-colors"
-                                  >
-                                    🗑️
-                                  </button>
-                                </>
-                              )}
+                              <button
+                                onClick={() => handleToggleVehicleActive(idx)}
+                                title={veh.is_active !== 0 ? "Desativar" : "Ativar"}
+                                className={`p-1 rounded cursor-pointer transition-colors text-sm ${veh.is_active !== 0 ? "bg-emerald-950 hover:bg-emerald-900 text-emerald-400" : "bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 text-zinc-500"}`}
+                              >{veh.is_active !== 0 ? "✅" : "❌"}</button>
+                              <button
+                                onClick={() => handleDeleteVehicle(idx)}
+                                title="Eliminar"
+                                className="p-1 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 rounded cursor-pointer transition-colors text-sm"
+                              >🗑️</button>
                             </div>
                           </td>
-                          <td className="px-3 py-1.5 font-bold text-zinc-200">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editVehData?.veiculo || ""}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, veiculo: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-200 outline-none"
-                              />
-                            ) : (
-                              veh.veiculo
-                            )}
+                          {/* VEICULO */}
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={veh.veiculo}
+                              onChange={e => handleFleetChange(idx, "veiculo", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-zinc-350">
-                            {isEditing ? (
-                              <select
-                                value={editVehData?.armazem || ""}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, armazem: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-250 outline-none"
-                              >
-                                {warehouses.map(w => (
-                                  <option key={w.name} value={w.name}>{w.name}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              veh.armazem
-                            )}
+                          {/* ARMAZEM */}
+                          <td className="px-3 py-1.5">
+                            <select value={veh.armazem || ""}
+                              onChange={e => handleFleetChange(idx, "armazem", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all">
+                              <option value="">(Sem armazém)</option>
+                              {warehouses.map(w => <option key={w.name} value={w.name}>{w.name}</option>)}
+                            </select>
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-300 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="number"
-                                min="0"
-                                value={editVehData?.capacidade_kg || 0}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, capacidade_kg: parseInt(e.target.value) || 0 }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              `${veh.capacidade_kg} kg`
-                            )}
+                          {/* CAP KG */}
+                          <td className="px-3 py-1.5">
+                            <input type="number" min="0" value={veh.capacidade_kg}
+                              onChange={e => handleFleetChange(idx, "capacidade_kg", parseInt(e.target.value) || 0)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 text-center font-mono outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-300 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                value={editVehData?.capacidade_vol || 0.0}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, capacidade_vol: parseFloat(e.target.value) || 0.0 }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              `${veh.capacidade_vol} m³`
-                            )}
+                          {/* CAP VOL */}
+                          <td className="px-3 py-1.5">
+                            <input type="number" step="0.1" min="0" value={veh.capacidade_vol}
+                              onChange={e => handleFleetChange(idx, "capacidade_vol", parseFloat(e.target.value) || 0)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 text-center font-mono outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="number"
-                                min="0"
-                                value={editVehData?.velocidade_media || 0}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, velocidade_media: parseInt(e.target.value) || 0 }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              `${veh.velocidade_media} km/h`
-                            )}
+                          {/* VELOCIDADE */}
+                          <td className="px-3 py-1.5">
+                            <input type="number" min="0" value={veh.velocidade_media}
+                              onChange={e => handleFleetChange(idx, "velocidade_media", parseInt(e.target.value) || 0)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 text-center font-mono outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editVehData?.horario_inicio || ""}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, horario_inicio: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              veh.horario_inicio
-                            )}
+                          {/* INICIO */}
+                          <td className="px-3 py-1.5">
+                            <input type="time" value={veh.horario_inicio}
+                              onChange={e => handleFleetChange(idx, "horario_inicio", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 text-center font-mono outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editVehData?.horario_fim || ""}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, horario_fim: e.target.value }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              veh.horario_fim
-                            )}
+                          {/* FIM */}
+                          <td className="px-3 py-1.5">
+                            <input type="time" value={veh.horario_fim}
+                              onChange={e => handleFleetChange(idx, "horario_fim", e.target.value)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 text-center font-mono outline-none transition-all" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-zinc-400 font-mono">
-                            {isEditing ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={editVehData?.custo_km || 0.0}
-                                onChange={e => setEditVehData(prev => prev ? ({ ...prev, custo_km: parseFloat(e.target.value) || 0.0 }) : null)}
-                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-1.5 py-0.5 text-xs text-zinc-300 outline-none font-mono text-center"
-                              />
-                            ) : (
-                              `${veh.custo_km.toFixed(2)} €`
-                            )}
+                          {/* CUSTO */}
+                          <td className="px-3 py-1.5">
+                            <input type="number" step="0.01" min="0" value={veh.custo_km}
+                              onChange={e => handleFleetChange(idx, "custo_km", parseFloat(e.target.value) || 0)}
+                              className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 text-center font-mono outline-none transition-all" />
                           </td>
                         </tr>
                       );

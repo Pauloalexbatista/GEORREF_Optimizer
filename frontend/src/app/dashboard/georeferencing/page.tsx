@@ -560,9 +560,9 @@ export default function GeoreferencingPage() {
                     <th onClick={() => handleSort("status")} className="py-3 px-3 cursor-pointer">Estado</th>
                     <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-3 cursor-pointer">Código / Cliente</th>
                     <th onClick={() => handleSort("morada")} className="py-3 px-3 cursor-pointer">Morada</th>
-                    <th className="py-3 px-3 w-28">Cód. Postal</th>
-                    <th className="py-3 px-3 w-36">Concelho</th>
-                    <th className="py-3 px-3 w-48">Latitude / Longitude</th>
+                    <th onClick={() => handleSort("codigo_postal")} className="py-3 px-3 w-28 cursor-pointer hover:text-zinc-200">Cód. Postal</th>
+                    <th onClick={() => handleSort("concelho")} className="py-3 px-3 w-36 cursor-pointer hover:text-zinc-200">Concelho</th>
+                    <th onClick={() => handleSort("latitude")} className="py-3 px-3 w-48 cursor-pointer hover:text-zinc-200">Latitude / Longitude</th>
                   </tr>
                 </thead>
                 <tbody>
