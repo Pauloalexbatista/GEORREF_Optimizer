@@ -1,13 +1,7 @@
 """
 GEOREF Optimizer — Advanced VRPTW Engine (6-Phase Layered Architecture)
 =======================================================================
-Phase 1 — Far-First Greedy Fill       : Assign deliveries farthest-first; respects capacity + time windows
-Phase 2 — Push-Inward                 : Guarantee dropped nodes = closest to depot (far = priority)
-Phase 3 — Full Route Swap             : Swap entire routes between vehicles to improve turno x zone match
-Phase 4 — Inter-Route Relocate+Swap   : Individual delivery moves/swaps between vehicles to reduce KM
-Phase 5 — 2-Opt + Consolidation       : Intra-route 2-opt polish; merge sparse routes
-Phase 6 — Second Chance Re-insertion  : After optimisation freed space, retry all dropped (farthest first)
-Phase 6b— 2-Opt on affected routes    : Re-polish only routes touched in Phase 6
+Corrigido: Mapeamento de depósito correto por veículo (depot_idx em vez de 0).
 """
 
 from utils.rules_engine import is_vehicle_compatible, extract_tags
@@ -15,15 +9,12 @@ import math
 import time
 from typing import List, Dict, Any, Tuple, Optional
 
-
-# Constants
-SPEED_KMH   = 50.0   # average speed km/h (conservative urban/rural mix)
-SERVICE_MIN = 15.0   # minutes per stop (unload + signature)
-MAX_STOPS   = 40     # hard limit per vehicle
-
+SPEED_KMH   = 32.0
+ROAD_FACTOR = 1.30
+SERVICE_MIN = 15.0
+MAX_STOPS   = 40
 
 class AdvancedRouteOptimizer:
-
     def __init__(self):
         self.manager = None
         self.routing = None
@@ -48,7 +39,6 @@ class AdvancedRouteOptimizer:
         vehicle_rules: Optional[List[str]] = None,
         rules_matrix: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-
         params          = optimization_params or {}
         strategy        = str(params.get("strategy",       "clusters") or "clusters").lower()
         load_mode       = str(params.get("load_mode",      "full")     or "full").lower()
@@ -79,12 +69,10 @@ class AdvancedRouteOptimizer:
         solving_depth="balanced",
         time_limit_seconds=45.0,
     ) -> Dict[str, Any]:
-
         num_vehicles = len(vehicle_capacities)
         num_clients  = len(demands) - num_warehouses
         if num_vehicles == 0 or num_clients <= 0:
-            return {"routes": [[] for _ in range(num_vehicles)],
-                    "dropped_nodes": [], "status": "no_data"}
+            return {"routes": [[] for _ in range(num_vehicles)], "dropped_nodes": [], "status": "no_data"}
 
         if solving_depth in ("deep", "profundo", "high"):
             max_iters = 2000
@@ -98,9 +86,12 @@ class AdvancedRouteOptimizer:
 
         t0 = time.time()
 
-        depot_lat, depot_lon = 40.6405, -8.6538
-        if locations and locations[0]:
-            depot_lat, depot_lon = locations[0]
+        # Build warehouse name to index mapping using vehicles config
+        wh_name_to_idx = {}
+        if vehicle_warehouses and depot_indices:
+            for v in range(num_vehicles):
+                wh_name = vehicle_warehouses[v]
+                wh_name_to_idx[wh_name] = depot_indices[v]
 
         # Build client data
         client_data: Dict[int, Dict] = {}
@@ -109,16 +100,15 @@ class AdvancedRouteOptimizer:
             if locations and c < len(locations):
                 lat, lon = locations[c]
 
-            angle = math.atan2(lat - depot_lat, lon - depot_lon)
-            dist  = distance_matrix[0][c] if c < len(distance_matrix[0]) else 10.0
+            c_wh = client_warehouses[c - num_warehouses] if client_warehouses and (c - num_warehouses) < len(client_warehouses) else ""
+            c_depot_idx = wh_name_to_idx.get(c_wh, 0)
+
+            angle = math.atan2(lat - locations[c_depot_idx][0], lon - locations[c_depot_idx][1]) if locations else 0.0
+            dist  = distance_matrix[c_depot_idx][c] if c < len(distance_matrix[c_depot_idx]) else 10.0
 
             tw_s, tw_e = 0, 1440
             if client_time_windows and (c - num_warehouses) < len(client_time_windows):
                 tw_s, tw_e = client_time_windows[c - num_warehouses]
-
-            c_wh = ""
-            if client_warehouses and (c - num_warehouses) < len(client_warehouses):
-                c_wh = client_warehouses[c - num_warehouses]
 
             client_data[c] = {
                 "idx":           c,
@@ -131,6 +121,7 @@ class AdvancedRouteOptimizer:
                 "tw_start":      tw_s,
                 "tw_end":        tw_e,
                 "wh":            c_wh,
+                "depot_idx":     c_depot_idx
             }
 
         # Build vehicle data
@@ -141,32 +132,37 @@ class AdvancedRouteOptimizer:
             cw = float(vehicle_capacities[v])
             cv = float(vehicle_volume_capacities[v]) if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 100000.0
             wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
+            v_depot_idx = depot_indices[v] if depot_indices and v < len(depot_indices) else 0
 
-            vehicle_data.append({"id": v, "start": vs, "end": ve,
-                                  "cap_w": cw, "cap_v": cv, "wh": wh})
+            vehicle_data.append({
+                "id": v, "start": vs, "end": ve,
+                "cap_w": cw, "cap_v": cv, "wh": wh, "depot_idx": v_depot_idx
+            })
 
         # ------------------------------------------------------------------
         # HELPERS
         # ------------------------------------------------------------------
-        def _sequence(nodes):
+        def _sequence(nodes, v):
+            v_depot = vehicle_data[v]["depot_idx"]
             return sorted(nodes, key=lambda c: (client_data[c]["tw_start"],
-                                                distance_matrix[0][c]))
+                                                distance_matrix[v_depot][c]))
 
         def _eval(nodes, v):
             if not nodes:
                 return True, 0.0, 0, 0
             vd  = vehicle_data[v]
-            seq = _sequence(nodes)
+            v_depot = vd["depot_idx"]
+            seq = _sequence(nodes, v)
             cur_t = float(vd["start"])
-            cur_l = 0
+            cur_l = v_depot
             total_km = 0.0
             total_wait = 0
             late_count = 0
             for c in seq:
                 cd = client_data[c]
-                d  = distance_matrix[cur_l][c]
+                d  = distance_matrix[cur_l][c] * ROAD_FACTOR
                 total_km += d
-                cur_t    += (d / max(SPEED_KMH, 20.0)) * 60.0
+                cur_t    += (d / max(SPEED_KMH, 15.0)) * 60.0
                 if cur_t < cd["tw_start"]:
                     total_wait += int(cd["tw_start"] - cur_t)
                     cur_t = float(cd["tw_start"])
@@ -174,9 +170,9 @@ class AdvancedRouteOptimizer:
                     late_count += 1
                 cur_t += SERVICE_MIN
                 cur_l  = c
-            d_ret     = distance_matrix[cur_l][0]
+            d_ret     = distance_matrix[cur_l][v_depot] * ROAD_FACTOR
             total_km += d_ret
-            cur_t    += (d_ret / max(SPEED_KMH, 20.0)) * 60.0
+            cur_t    += (d_ret / max(SPEED_KMH, 15.0)) * 60.0
             duration  = int(round(cur_t - vd["start"]))
             is_feasible = (
                 late_count == 0
@@ -198,18 +194,19 @@ class AdvancedRouteOptimizer:
 
         def _insert_cost(c, route, v):
             cd = client_data[c]
+            v_depot = vehicle_data[v]["depot_idx"]
             if not route:
-                return cd["dist_to_depot"]
+                return distance_matrix[v_depot][c] * ROAD_FACTOR
             if strategy == "min_km":
                 best = float("inf")
-                seq  = _sequence(route)
-                prev_seq = [0] + seq
-                next_seq = seq + [0]
+                seq  = _sequence(route, v)
+                prev_seq = [v_depot] + seq
+                next_seq = seq + [v_depot]
                 for i in range(len(seq) + 1):
                     pn = prev_seq[i]
                     nn = next_seq[i]
                     extra = (distance_matrix[pn][c] + distance_matrix[c][nn]
-                             - distance_matrix[pn][nn])
+                             - distance_matrix[pn][nn]) * ROAD_FACTOR
                     if extra < best:
                         best = extra
                 return best
@@ -445,10 +442,11 @@ class AdvancedRouteOptimizer:
         # PHASE 5 — 2-OPT + CONSOLIDATION
         # ------------------------------------------------------------------
         def _two_opt(route, v):
-            best = _sequence(route)
+            best = _sequence(route, v)
             n    = len(best)
             if n < 3:
                 return best
+            v_depot = vehicle_data[v]["depot_idx"]
             imp = True
             while imp:
                 imp = False
@@ -457,9 +455,9 @@ class AdvancedRouteOptimizer:
                         ca = best[i];     cb = best[i + 1]
                         cc = best[j];     cd_ = best[j + 1] if j + 1 < n else 0
                         cur = (distance_matrix[ca][cb]
-                               + (distance_matrix[cc][cd_] if cd_ else distance_matrix[cc][0]))
+                               + (distance_matrix[cc][cd_] if cd_ else distance_matrix[cc][v_depot])) * ROAD_FACTOR
                         new = (distance_matrix[ca][cc]
-                               + (distance_matrix[cb][cd_] if cd_ else distance_matrix[cb][0]))
+                               + (distance_matrix[cb][cd_] if cd_ else distance_matrix[cb][v_depot])) * ROAD_FACTOR
                         if new < cur - 0.01:
                             cand = best[:i+1] + list(reversed(best[i+1:j+1])) + best[j+1:]
                             feas, _, lates, _ = _eval(cand, v)
