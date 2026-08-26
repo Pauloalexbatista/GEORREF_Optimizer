@@ -1,16 +1,29 @@
+"""
+GEOREF Optimizer — Advanced VRPTW Engine (6-Phase Layered Architecture)
+=======================================================================
+Phase 1 — Far-First Greedy Fill       : Assign deliveries farthest-first; respects capacity + time windows
+Phase 2 — Push-Inward                 : Guarantee dropped nodes = closest to depot (far = priority)
+Phase 3 — Full Route Swap             : Swap entire routes between vehicles to improve turno x zone match
+Phase 4 — Inter-Route Relocate+Swap   : Individual delivery moves/swaps between vehicles to reduce KM
+Phase 5 — 2-Opt + Consolidation       : Intra-route 2-opt polish; merge sparse routes
+Phase 6 — Second Chance Re-insertion  : After optimisation freed space, retry all dropped (farthest first)
+Phase 6b— 2-Opt on affected routes    : Re-polish only routes touched in Phase 6
+"""
+
 from utils.rules_engine import is_vehicle_compatible, extract_tags
-import numpy as np
 import math
 import time
-import random
 from typing import List, Dict, Any, Tuple, Optional
 
-def _safe_int_scale(arr, factor=100):
-    if arr is None:
-        return []
-    return [int(round(float(x) * factor)) for x in arr]
+
+# Constants
+SPEED_KMH   = 50.0   # average speed km/h (conservative urban/rural mix)
+SERVICE_MIN = 15.0   # minutes per stop (unload + signature)
+MAX_STOPS   = 40     # hard limit per vehicle
+
 
 class AdvancedRouteOptimizer:
+
     def __init__(self):
         self.manager = None
         self.routing = None
@@ -33,303 +46,495 @@ class AdvancedRouteOptimizer:
         locations: Optional[List[Tuple[float, float]]] = None,
         client_rules: Optional[List[str]] = None,
         vehicle_rules: Optional[List[str]] = None,
-        rules_matrix: Optional[List[Dict[str, Any]]] = None
+        rules_matrix: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        params = optimization_params or {}
-        strategy = str(params.get("strategy", "clusters") or "clusters").lower()
-        load_mode = str(params.get("load_mode", "full") or "full").lower()
-        balance_weight = float(params.get("balance_weight", 0.0) or 0.0)
-        solving_depth = str(params.get("solving_depth", "balanced") or "balanced").lower()
-        time_limit = float(params.get("time_limit_seconds", 30) or 30)
 
-        # Max allowed shift duration in minutes (default 9.0h = 540 min, max 10.5h = 630 min)
-        max_shift_hours = float(params.get("max_travel_time_hours", 9.0) or 9.0)
-        max_shift_minutes = int(round(min(max_shift_hours, 11.0) * 60))
+        params          = optimization_params or {}
+        strategy        = str(params.get("strategy",       "clusters") or "clusters").lower()
+        load_mode       = str(params.get("load_mode",      "full")     or "full").lower()
+        solving_depth   = str(params.get("solving_depth",  "balanced") or "balanced").lower()
+        time_limit      = float(params.get("time_limit_seconds", 45)   or 45)
 
-        if load_mode in ["balanced", "equilibrado"] and balance_weight <= 0:
-            balance_weight = 50.0
-
-        return self._solve_enterprise_lns_optimizer(
+        return self._solve_layered_vrptw(
             distance_matrix, demands, vehicle_capacities, depot_indices,
             num_warehouses, volume_demands, vehicle_volume_capacities,
             client_warehouses, vehicle_warehouses,
             vehicle_start_times, vehicle_end_times, client_time_windows,
-            locations=locations, balance_weight=balance_weight, load_mode=load_mode,
-            strategy=strategy, solving_depth=solving_depth, time_limit_seconds=time_limit,
-            max_shift_minutes=max_shift_minutes
+            locations=locations,
+            strategy=strategy,
+            load_mode=load_mode,
+            solving_depth=solving_depth,
+            time_limit_seconds=time_limit,
         )
 
-    def _solve_enterprise_lns_optimizer(
+    def _solve_layered_vrptw(
         self,
-        distance_matrix: List[List[float]],
-        demands: List[float],
-        vehicle_capacities: List[float],
-        depot_indices: List[int],
-        num_warehouses: int,
-        volume_demands: Optional[List[float]],
-        vehicle_volume_capacities: Optional[List[float]],
-        client_warehouses: Optional[List[str]],
-        vehicle_warehouses: Optional[List[str]],
-        vehicle_start_times: Optional[List[int]],
-        vehicle_end_times: Optional[List[int]],
-        client_time_windows: Optional[List[Tuple[int, int]]],
-        locations: Optional[List[Tuple[float, float]]] = None,
-        balance_weight: float = 0.0,
-        load_mode: str = "full",
-        strategy: str = "clusters",
-        solving_depth: str = "balanced",
-        time_limit_seconds: float = 30.0,
-        max_shift_minutes: int = 570
+        distance_matrix, demands, vehicle_capacities, depot_indices,
+        num_warehouses, volume_demands, vehicle_volume_capacities,
+        client_warehouses, vehicle_warehouses,
+        vehicle_start_times, vehicle_end_times, client_time_windows,
+        locations=None,
+        strategy="clusters",
+        load_mode="full",
+        solving_depth="balanced",
+        time_limit_seconds=45.0,
     ) -> Dict[str, Any]:
+
         num_vehicles = len(vehicle_capacities)
-        num_clients = len(demands) - num_warehouses
+        num_clients  = len(demands) - num_warehouses
         if num_vehicles == 0 or num_clients <= 0:
-            return {"routes": [[] for _ in range(num_vehicles)], "dropped_nodes": [], "status": "no_data"}
+            return {"routes": [[] for _ in range(num_vehicles)],
+                    "dropped_nodes": [], "status": "no_data"}
 
-        if solving_depth in ["deep", "profundo", "high"]:
-            max_iterations = 2500
-            max_time = max(time_limit_seconds, 120.0)
-        elif solving_depth in ["fast", "rapido"]:
-            max_iterations = 150
-            max_time = min(time_limit_seconds, 15.0)
-        else: # balanced
-            max_iterations = 600
-            max_time = max(time_limit_seconds, 45.0)
+        if solving_depth in ("deep", "profundo", "high"):
+            max_iters = 2000
+            max_time  = max(time_limit_seconds, 120.0)
+        elif solving_depth in ("fast", "rapido"):
+            max_iters = 100
+            max_time  = min(time_limit_seconds, 15.0)
+        else:
+            max_iters = 500
+            max_time  = max(time_limit_seconds, 45.0)
 
-        start_solve_time = time.time()
+        t0 = time.time()
 
-        # 1. Coordinates & Polar Angle Setup
-        depot_lat, depot_lon = (40.6405, -8.6538)
-        if locations and len(locations) > 0:
+        depot_lat, depot_lon = 40.6405, -8.6538
+        if locations and locations[0]:
             depot_lat, depot_lon = locations[0]
 
-        client_data = {}
-        for c_idx in range(num_warehouses, len(demands)):
-            lat, lon = depot_lat, depot_lon
-            if locations and c_idx < len(locations):
-                lat, lon = locations[c_idx]
+        # Build client data
+        client_data: Dict[int, Dict] = {}
+        for c in range(num_warehouses, len(demands)):
+            lat = lon = 0.0
+            if locations and c < len(locations):
+                lat, lon = locations[c]
 
-            dlat = lat - depot_lat
-            dlon = lon - depot_lon
-            angle = math.atan2(dlat, dlon)
-            dist_to_depot = distance_matrix[0][c_idx] if len(distance_matrix) > 0 and len(distance_matrix[0]) > c_idx else 10.0
+            angle = math.atan2(lat - depot_lat, lon - depot_lon)
+            dist  = distance_matrix[0][c] if c < len(distance_matrix[0]) else 10.0
 
-            tw_start, tw_end = 480, 1080
-            if client_time_windows and (c_idx - num_warehouses) < len(client_time_windows):
-                tw_start, tw_end = client_time_windows[c_idx - num_warehouses]
+            tw_s, tw_e = 0, 1440
+            if client_time_windows and (c - num_warehouses) < len(client_time_windows):
+                tw_s, tw_e = client_time_windows[c - num_warehouses]
 
-            c_wh = client_warehouses[c_idx - num_warehouses] if client_warehouses and (c_idx - num_warehouses) < len(client_warehouses) else ""
+            c_wh = ""
+            if client_warehouses and (c - num_warehouses) < len(client_warehouses):
+                c_wh = client_warehouses[c - num_warehouses]
 
-            client_data[c_idx] = {
-                "idx": c_idx,
-                "lat": lat,
-                "lon": lon,
-                "angle": angle,
-                "dist_to_depot": dist_to_depot,
-                "weight": demands[c_idx],
-                "volume": volume_demands[c_idx] if volume_demands and c_idx < len(volume_demands) else 0.1,
-                "tw_start": tw_start,
-                "tw_end": tw_end,
-                "wh": c_wh
+            client_data[c] = {
+                "idx":           c,
+                "lat":           lat,
+                "lon":           lon,
+                "angle":         angle,
+                "dist_to_depot": dist,
+                "weight":        float(demands[c]),
+                "volume":        float(volume_demands[c]) if volume_demands and c < len(volume_demands) else 0.1,
+                "tw_start":      tw_s,
+                "tw_end":        tw_e,
+                "wh":            c_wh,
             }
 
-        # 2. Vehicle Shift Setup
-        vehicle_data = []
+        # Build vehicle data
+        vehicle_data: List[Dict] = []
         for v in range(num_vehicles):
-            v_start = vehicle_start_times[v] if vehicle_start_times and v < len(vehicle_start_times) else 480
-            v_end = vehicle_end_times[v] if vehicle_end_times and v < len(vehicle_end_times) else 1080
-            v_cap_w = vehicle_capacities[v]
-            v_cap_v = vehicle_volume_capacities[v] if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 1000.0
-            v_wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
+            vs = vehicle_start_times[v] if vehicle_start_times and v < len(vehicle_start_times) else 480
+            ve = vehicle_end_times[v]   if vehicle_end_times   and v < len(vehicle_end_times)   else 1080
+            cw = float(vehicle_capacities[v])
+            cv = float(vehicle_volume_capacities[v]) if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 100000.0
+            wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
 
-            shift_span = v_end - v_start
-            allowed_duration = shift_span if shift_span > 0 else 840
+            vehicle_data.append({"id": v, "start": vs, "end": ve,
+                                  "cap_w": cw, "cap_v": cv, "wh": wh})
 
-            vehicle_data.append({
-                "id": v,
-                "start": v_start,
-                "end": v_end,
-                "max_duration": allowed_duration,
-                "cap_w": v_cap_w,
-                "cap_v": v_cap_v,
-                "wh": v_wh
-            })
+        # ------------------------------------------------------------------
+        # HELPERS
+        # ------------------------------------------------------------------
+        def _sequence(nodes):
+            return sorted(nodes, key=lambda c: (client_data[c]["tw_start"],
+                                                distance_matrix[0][c]))
 
-        # Helper: Route Schedule & Time Window Feasibility Evaluator
-        def evaluate_route(route_nodes: List[int], v_idx: int, speed_kmh: float = 50.0) -> Tuple[bool, float, int, int, float]:
-            if not route_nodes:
-                return True, 0.0, 0, 0, 0.0
-            vd = vehicle_data[v_idx]
-            ordered = sorted(route_nodes, key=lambda c: (client_data[c]["tw_start"], distance_matrix[0][c]))
-
-            cur_time = float(vd["start"])
-            cur_loc = 0
-            total_dist = 0.0
-            total_wait = 0.0
+        def _eval(nodes, v):
+            if not nodes:
+                return True, 0.0, 0, 0
+            vd  = vehicle_data[v]
+            seq = _sequence(nodes)
+            cur_t = float(vd["start"])
+            cur_l = 0
+            total_km = 0.0
+            total_wait = 0
             late_count = 0
-
-            for c_idx in ordered:
-                cd = client_data[c_idx]
-                d_km = distance_matrix[cur_loc][c_idx]
-                total_dist += d_km
-                cur_time += (d_km / max(speed_kmh, 20.0)) * 60.0
-
-                if cur_time < cd["tw_start"]:
-                    wait_min = cd["tw_start"] - cur_time
-                    total_wait += wait_min
-                    cur_time = float(cd["tw_start"])
-                elif cur_time > cd["tw_end"] + 15:
+            for c in seq:
+                cd = client_data[c]
+                d  = distance_matrix[cur_l][c]
+                total_km += d
+                cur_t    += (d / max(SPEED_KMH, 20.0)) * 60.0
+                if cur_t < cd["tw_start"]:
+                    total_wait += int(cd["tw_start"] - cur_t)
+                    cur_t = float(cd["tw_start"])
+                elif cd["tw_end"] < 1440 and cur_t > cd["tw_end"]:
                     late_count += 1
+                cur_t += SERVICE_MIN
+                cur_l  = c
+            d_ret     = distance_matrix[cur_l][0]
+            total_km += d_ret
+            cur_t    += (d_ret / max(SPEED_KMH, 20.0)) * 60.0
+            duration  = int(round(cur_t - vd["start"]))
+            is_feasible = (
+                late_count == 0
+                and cur_t <= vd["end"] + 30
+                and duration <= (vd["end"] - vd["start"] + 60)
+                and len(nodes) <= MAX_STOPS
+            )
+            return is_feasible, total_km, late_count, total_wait
 
-                cur_time += 15.0 # unload
-                cur_loc = c_idx
+        def _quick_ok(c, v, cur_w, cur_vol):
+            vd = vehicle_data[v]
+            cd = client_data[c]
+            if cd["tw_start"] >= vd["end"]:   return False
+            if cd["tw_end"]   <  vd["start"]: return False
+            if cd["wh"] and vd["wh"] and cd["wh"] != vd["wh"]: return False
+            if cur_w   + cd["weight"] > vd["cap_w"]: return False
+            if cur_vol + cd["volume"] > vd["cap_v"]: return False
+            return True
 
-            # Return to depot
-            d_ret = distance_matrix[cur_loc][0]
-            total_dist += d_ret
-            cur_time += (d_ret / max(speed_kmh, 20.0)) * 60.0
+        def _insert_cost(c, route, v):
+            cd = client_data[c]
+            if not route:
+                return cd["dist_to_depot"]
+            if strategy == "min_km":
+                best = float("inf")
+                seq  = _sequence(route)
+                prev_seq = [0] + seq
+                next_seq = seq + [0]
+                for i in range(len(seq) + 1):
+                    pn = prev_seq[i]
+                    nn = next_seq[i]
+                    extra = (distance_matrix[pn][c] + distance_matrix[c][nn]
+                             - distance_matrix[pn][nn])
+                    if extra < best:
+                        best = extra
+                return best
+            else:
+                lats = [client_data[r]["lat"] for r in route]
+                lons = [client_data[r]["lon"] for r in route]
+                cg_lat = sum(lats) / len(lats)
+                cg_lon = sum(lons) / len(lons)
+                return math.sqrt((cd["lat"] - cg_lat) ** 2 +
+                                 (cd["lon"] - cg_lon) ** 2) * 111.0
 
-            total_duration = int(round(cur_time - vd["start"]))
-            is_feasible = (late_count == 0) and (cur_time <= vd["end"] + 30) and (total_duration <= vd["max_duration"] + 30) and (len(route_nodes) <= 35)
-            return is_feasible, total_dist, total_duration, late_count, total_wait
+        def _route_km(v):
+            _, km, _, _ = _eval(routes[v], v)
+            return km
 
-        # 3. Chronological Wave & Polar Sector Sorting
-        # Group by time window wave first to prevent idle waiting hours, then by polar angle and distance
-        sorted_clients = sorted(client_data.keys(), key=lambda c: (
-            client_data[c]["tw_start"] // 120, # 2-hour chronological wave
-            round(client_data[c]["angle"], 1),
-            -client_data[c]["dist_to_depot"]
-        ))
+        def _total_lates(v):
+            _, _, lates, _ = _eval(routes[v], v)
+            return lates
 
-        routes = [[] for _ in range(num_vehicles)]
-        vehicle_w = [0.0] * num_vehicles
-        vehicle_v = [0.0] * num_vehicles
-        assigned_set = set()
+        # ------------------------------------------------------------------
+        # PHASE 1 — FAR-FIRST GREEDY FILL
+        # ------------------------------------------------------------------
+        all_clients = sorted(client_data.keys(),
+                             key=lambda c: -client_data[c]["dist_to_depot"])
 
-        for c_idx in sorted_clients:
-            cd = client_data[c_idx]
-            best_v = None
+        routes:   List[List[int]] = [[] for _ in range(num_vehicles)]
+        veh_w:    List[float]     = [0.0] * num_vehicles
+        veh_v:    List[float]     = [0.0] * num_vehicles
+        assigned: set             = set()
+        dropped:  set             = set(all_clients)
+
+        for c in all_clients:
+            cd        = client_data[c]
+            best_v    = None
             best_cost = float("inf")
 
             for v in range(num_vehicles):
-                vd = vehicle_data[v]
-                if cd["tw_start"] >= vd["end"] or cd["tw_end"] <= vd["start"]:
+                if not _quick_ok(c, v, veh_w[v], veh_v[v]):
                     continue
-                if cd["wh"] and vd["wh"] and cd["wh"] != vd["wh"]:
+                feas, _, lates, wait = _eval(routes[v] + [c], v)
+                if not feas:
                     continue
-                if vehicle_w[v] + cd["weight"] > vd["cap_w"] or vehicle_v[v] + cd["volume"] > vd["cap_v"]:
-                    continue
-
-                test_r = routes[v] + [c_idx]
-                is_feas, d_km, dur_min, late, wait = evaluate_route(test_r, v)
-                if not is_feas:
-                    continue
-
-                if not routes[v]:
-                    cost = cd["dist_to_depot"] + (wait * 2.0)
-                else:
-                    last_c = routes[v][-1]
-                    dist_to_last = distance_matrix[last_c][c_idx]
-                    angle_diff = abs(client_data[last_c]["angle"] - cd["angle"])
-                    if angle_diff > math.pi:
-                        angle_diff = 2 * math.pi - angle_diff
-                    cost = dist_to_last + (angle_diff * 25.0) + (wait * 2.0)
-
-                cost += (len(routes[v]) * 1.5)
-
+                cost = _insert_cost(c, routes[v], v) + wait * 0.5
                 if cost < best_cost:
                     best_cost = cost
-                    best_v = v
+                    best_v    = v
 
             if best_v is not None:
-                routes[best_v].append(c_idx)
-                vehicle_w[best_v] += cd["weight"]
-                vehicle_v[best_v] += cd["volume"]
-                assigned_set.add(c_idx)
+                routes[best_v].append(c)
+                veh_w[best_v]  += cd["weight"]
+                veh_v[best_v]  += cd["volume"]
+                assigned.add(c)
+                dropped.discard(c)
 
-        # 4. Phase 2: Metaheuristic LNS (Inter-Route Relocate & Swap)
-        improved = True
-        iteration = 0
+        # ------------------------------------------------------------------
+        # PHASE 2 — PUSH-INWARD
+        # ------------------------------------------------------------------
+        def _run_push_inward():
+            drop_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
+            did_swap    = True
+            while did_swap:
+                did_swap = False
+                for drop_c in list(drop_sorted):
+                    drop_cd  = client_data[drop_c]
+                    best_v   = None
+                    best_sw  = None
+                    best_dist = float("inf")
 
-        while improved and iteration < max_iterations and (time.time() - start_solve_time) < max_time:
-            improved = False
-            iteration += 1
+                    for v in range(num_vehicles):
+                        vd = vehicle_data[v]
+                        for asgn_c in routes[v]:
+                            acd = client_data[asgn_c]
+                            if drop_cd["dist_to_depot"] <= acd["dist_to_depot"]:
+                                continue
+                            new_w   = veh_w[v] - acd["weight"] + drop_cd["weight"]
+                            new_vol = veh_v[v] - acd["volume"] + drop_cd["volume"]
+                            if new_w   > vd["cap_w"]: continue
+                            if new_vol > vd["cap_v"]: continue
+                            if drop_cd["tw_start"] >= vd["end"]:   continue
+                            if drop_cd["tw_end"]   <  vd["start"]: continue
+                            if drop_cd["wh"] and vd["wh"] and drop_cd["wh"] != vd["wh"]: continue
+                            test_r = [x for x in routes[v] if x != asgn_c] + [drop_c]
+                            feas, _, lates, _ = _eval(test_r, v)
+                            if not feas:
+                                continue
+                            if acd["dist_to_depot"] < best_dist:
+                                best_v    = v
+                                best_sw   = asgn_c
+                                best_dist = acd["dist_to_depot"]
 
-            # Inter-Route Relocate
-            for va in range(num_vehicles):
-                if not routes[va]:
-                    continue
-                for pos_a, ca in enumerate(routes[va]):
-                    cda = client_data[ca]
-                    for vb in range(num_vehicles):
-                        if va == vb:
-                            continue
-                        vbd = vehicle_data[vb]
-                        if cda["tw_start"] >= vbd["end"] or cda["tw_end"] <= vbd["start"]:
-                            continue
-                        if cda["wh"] and vbd["wh"] and cda["wh"] != vbd["wh"]:
-                            continue
-                        if vehicle_w[vb] + cda["weight"] > vbd["cap_w"] or vehicle_v[vb] + cda["volume"] > vbd["cap_v"]:
-                            continue
-
-                        test_rb = routes[vb] + [ca]
-                        is_feas_b, d_b, _, _, _ = evaluate_route(test_rb, vb)
-                        if not is_feas_b:
-                            continue
-
-                        _, cur_da, _, _, _ = evaluate_route(routes[va], va)
-                        _, cur_db, _, _, _ = evaluate_route(routes[vb], vb)
-                        test_ra = routes[va][:pos_a] + routes[va][pos_a+1:]
-                        _, new_da, _, _, _ = evaluate_route(test_ra, va)
-
-                        if (new_da + d_b) < (cur_da + cur_db) - 0.05:
-                            routes[va].pop(pos_a)
-                            routes[vb].append(ca)
-                            vehicle_w[va] -= cda["weight"]
-                            vehicle_w[vb] += cda["weight"]
-                            vehicle_v[va] -= cda["volume"]
-                            vehicle_v[vb] += cda["volume"]
-                            improved = True
-                            break
-                    if improved:
+                    if best_sw is not None:
+                        acd = client_data[best_sw]
+                        routes[best_v] = [x for x in routes[best_v] if x != best_sw] + [drop_c]
+                        veh_w[best_v] += drop_cd["weight"]  - acd["weight"]
+                        veh_v[best_v] += drop_cd["volume"]  - acd["volume"]
+                        assigned.add(drop_c);    dropped.discard(drop_c)
+                        assigned.discard(best_sw); dropped.add(best_sw)
+                        drop_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
+                        did_swap = True
                         break
+
+        _run_push_inward()
+
+        # ------------------------------------------------------------------
+        # PHASES 3+4 — INTER-ROUTE OPTIMISATION LOOP
+        # ------------------------------------------------------------------
+        def _run_inter_route_loop():
+            improved  = True
+            iteration = 0
+
+            while improved and iteration < max_iters and (time.time() - t0) < max_time:
+                improved  = False
+                iteration += 1
+
+                # Phase 3: Full Route Swap
+                for va in range(num_vehicles):
+                    for vb in range(va + 1, num_vehicles):
+                        if not routes[va] and not routes[vb]:
+                            continue
+                        late_a = _total_lates(va)
+                        late_b = _total_lates(vb)
+
+                        new_w_a = sum(client_data[c]["weight"] for c in routes[vb])
+                        new_v_a = sum(client_data[c]["volume"] for c in routes[vb])
+                        new_w_b = sum(client_data[c]["weight"] for c in routes[va])
+                        new_v_b = sum(client_data[c]["volume"] for c in routes[va])
+
+                        if new_w_a > vehicle_data[va]["cap_w"]: continue
+                        if new_v_a > vehicle_data[va]["cap_v"]: continue
+                        if new_w_b > vehicle_data[vb]["cap_w"]: continue
+                        if new_v_b > vehicle_data[vb]["cap_v"]: continue
+
+                        feas_asw, km_asw, late_asw, _ = _eval(routes[vb], va)
+                        feas_bsw, km_bsw, late_bsw, _ = _eval(routes[va], vb)
+                        if not feas_asw or not feas_bsw:
+                            continue
+
+                        cur_late = late_a + late_b
+                        new_late = late_asw + late_bsw
+                        accept   = False
+
+                        if new_late < cur_late:
+                            accept = True
+                        elif new_late == cur_late == 0:
+                            cur_km = _route_km(va) + _route_km(vb)
+                            if (km_asw + km_bsw) < cur_km - 0.5:
+                                accept = True
+
+                        if accept:
+                            routes[va], routes[vb] = list(routes[vb]), list(routes[va])
+                            veh_w[va], veh_w[vb]   = new_w_a, new_w_b
+                            veh_v[va], veh_v[vb]   = new_v_a, new_v_b
+                            improved = True
+
                 if improved:
-                    break
+                    continue
 
-        # 5. Phase 3: Final Chronological Sequence & 2-Opt Polish
-        final_routes = []
-        for v in range(num_vehicles):
-            raw_r = routes[v]
-            if not raw_r:
-                final_routes.append([])
-                continue
+                # Phase 4a: Relocate
+                for va in range(num_vehicles):
+                    if not routes[va]:
+                        continue
+                    for ca in list(routes[va]):
+                        cda = client_data[ca]
+                        km_a_cur = _route_km(va)
+                        for vb in range(num_vehicles):
+                            if va == vb:
+                                continue
+                            if not _quick_ok(ca, vb, veh_w[vb], veh_v[vb]):
+                                continue
+                            test_rb = routes[vb] + [ca]
+                            feas_b, km_b_new, late_b, _ = _eval(test_rb, vb)
+                            if not feas_b:
+                                continue
+                            test_ra = [x for x in routes[va] if x != ca]
+                            _, km_a_new, _, _ = _eval(test_ra, va) if test_ra else (True, 0.0, 0, 0)
+                            km_b_cur = _route_km(vb)
+                            if (km_a_new + km_b_new) < (km_a_cur + km_b_cur) - 0.1:
+                                routes[va] = test_ra
+                                routes[vb] = test_rb
+                                veh_w[va] -= cda["weight"]; veh_w[vb] += cda["weight"]
+                                veh_v[va] -= cda["volume"]; veh_v[vb] += cda["volume"]
+                                improved = True
+                                break
+                        if improved: break
+                    if improved: break
 
-            sorted_by_tw = sorted(raw_r, key=lambda c: (client_data[c]["tw_start"], distance_matrix[0][c]))
+                if improved:
+                    continue
 
-            n = len(sorted_by_tw)
-            improved_2opt = True
-            while improved_2opt and n > 3:
-                improved_2opt = False
+                # Phase 4b: Swap
+                for va in range(num_vehicles):
+                    if not routes[va]:
+                        continue
+                    for ca in list(routes[va]):
+                        cda    = client_data[ca]
+                        km_a_c = _route_km(va)
+                        for vb in range(num_vehicles):
+                            if va == vb or not routes[vb]:
+                                continue
+                            vda = vehicle_data[va]
+                            vdb = vehicle_data[vb]
+                            km_b_c = _route_km(vb)
+                            for cb in list(routes[vb]):
+                                cdb = client_data[cb]
+                                nw_a = veh_w[va] - cda["weight"] + cdb["weight"]
+                                nw_b = veh_w[vb] - cdb["weight"] + cda["weight"]
+                                nv_a = veh_v[va] - cda["volume"] + cdb["volume"]
+                                nv_b = veh_v[vb] - cdb["volume"] + cda["volume"]
+                                if nw_a > vda["cap_w"] or nw_b > vdb["cap_w"]: continue
+                                if nv_a > vda["cap_v"] or nv_b > vdb["cap_v"]: continue
+                                if cdb["tw_start"] >= vda["end"] or cdb["tw_end"] < vda["start"]: continue
+                                if cda["tw_start"] >= vdb["end"] or cda["tw_end"] < vdb["start"]: continue
+                                test_ra = [cb if x == ca else x for x in routes[va]]
+                                test_rb = [ca if x == cb else x for x in routes[vb]]
+                                feas_a, km_a_n, _, _ = _eval(test_ra, va)
+                                feas_b, km_b_n, _, _ = _eval(test_rb, vb)
+                                if not feas_a or not feas_b: continue
+                                if (km_a_n + km_b_n) < (km_a_c + km_b_c) - 0.1:
+                                    routes[va], routes[vb] = test_ra, test_rb
+                                    veh_w[va], veh_w[vb]   = nw_a, nw_b
+                                    veh_v[va], veh_v[vb]   = nv_a, nv_b
+                                    improved = True
+                                    break
+                            if improved: break
+                        if improved: break
+                    if improved: break
+
+            return iteration
+
+        iters = _run_inter_route_loop()
+
+        # ------------------------------------------------------------------
+        # PHASE 5 — 2-OPT + CONSOLIDATION
+        # ------------------------------------------------------------------
+        def _two_opt(route, v):
+            best = _sequence(route)
+            n    = len(best)
+            if n < 3:
+                return best
+            imp = True
+            while imp:
+                imp = False
                 for i in range(n - 1):
                     for j in range(i + 2, n):
-                        if client_data[sorted_by_tw[i]]["tw_start"] != client_data[sorted_by_tw[j]]["tw_start"]:
+                        ca = best[i];     cb = best[i + 1]
+                        cc = best[j];     cd_ = best[j + 1] if j + 1 < n else 0
+                        cur = (distance_matrix[ca][cb]
+                               + (distance_matrix[cc][cd_] if cd_ else distance_matrix[cc][0]))
+                        new = (distance_matrix[ca][cc]
+                               + (distance_matrix[cb][cd_] if cd_ else distance_matrix[cb][0]))
+                        if new < cur - 0.01:
+                            cand = best[:i+1] + list(reversed(best[i+1:j+1])) + best[j+1:]
+                            feas, _, lates, _ = _eval(cand, v)
+                            if feas and lates == 0:
+                                best = cand
+                                imp  = True
+            return best
+
+        final: List[List[int]] = []
+        for v in range(num_vehicles):
+            final.append(_two_opt(routes[v], v) if routes[v] else [])
+
+        # Consolidation: absorb routes with 1-2 stops
+        for vs in range(num_vehicles):
+            if 1 <= len(final[vs]) <= 2:
+                for ca in list(final[vs]):
+                    cda = client_data[ca]
+                    for vt in range(num_vehicles):
+                        if vt == vs or not final[vt]:
                             continue
-                        c_a, c_b = sorted_by_tw[i], sorted_by_tw[i+1]
-                        c_c = sorted_by_tw[j]
-                        c_d = sorted_by_tw[j+1] if j+1 < n else 0
-                        cur_seg = distance_matrix[c_a][c_b] + (distance_matrix[c_c][c_d] if c_d != 0 else distance_matrix[c_c][0])
-                        new_seg = distance_matrix[c_a][c_c] + (distance_matrix[c_b][c_d] if c_d != 0 else distance_matrix[c_b][0])
-                        if new_seg < cur_seg - 0.01:
-                            sorted_by_tw[i+1:j+1] = reversed(sorted_by_tw[i+1:j+1])
-                            improved_2opt = True
+                        if not _quick_ok(ca, vt, veh_w[vt], veh_v[vt]):
+                            continue
+                        test_r = final[vt] + [ca]
+                        feas, _, lates, _ = _eval(test_r, vt)
+                        if feas and lates == 0:
+                            final[vs].remove(ca)
+                            final[vt].append(ca)
+                            veh_w[vs] -= cda["weight"]; veh_w[vt] += cda["weight"]
+                            veh_v[vs] -= cda["volume"]; veh_v[vt] += cda["volume"]
+                            break
 
-            final_routes.append(sorted_by_tw)
+        # ------------------------------------------------------------------
+        # PHASE 6 — SECOND CHANCE RE-INSERTION
+        # ------------------------------------------------------------------
+        dropped_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
+        affected_veh: set = set()
 
-        dropped = [c for c in range(num_warehouses, len(demands)) if c not in assigned_set]
+        for drop_c in dropped_sorted:
+            drop_cd  = client_data[drop_c]
+            best_v   = None
+            best_cost = float("inf")
+            for v in range(num_vehicles):
+                if not _quick_ok(drop_c, v, veh_w[v], veh_v[v]):
+                    continue
+                test_r = final[v] + [drop_c]
+                feas, _, lates, _ = _eval(test_r, v)
+                if not feas:
+                    continue
+                cost = _insert_cost(drop_c, final[v], v)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_v    = v
+            if best_v is not None:
+                final[best_v].append(drop_c)
+                veh_w[best_v] += drop_cd["weight"]
+                veh_v[best_v] += drop_cd["volume"]
+                assigned.add(drop_c)
+                dropped.discard(drop_c)
+                affected_veh.add(best_v)
+
+        # Phase 6b: re-polish affected routes
+        for v in affected_veh:
+            if len(final[v]) > 2:
+                final[v] = _two_opt(final[v], v)
+
+        # ------------------------------------------------------------------
+        # RESULT
+        # ------------------------------------------------------------------
+        final_dropped = [c for c in range(num_warehouses, len(demands))
+                         if c not in assigned]
+
         return {
-            "routes": final_routes,
-            "dropped_nodes": dropped,
-            "status": "success",
-            "iterations": iteration,
-            "elapsed_seconds": round(time.time() - start_solve_time, 2)
+            "routes":          final,
+            "dropped_nodes":   final_dropped,
+            "status":          "success",
+            "iterations":      iters,
+            "elapsed_seconds": round(time.time() - t0, 2),
         }

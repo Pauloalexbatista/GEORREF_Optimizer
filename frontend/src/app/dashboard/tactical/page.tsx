@@ -442,15 +442,33 @@ export default function TacticalPage() {
       });
 
       // Reload fresh fleet, warehouses, vehicles and routes
-      await loadTacticalData();
-
-      const updatedRoutes: RouteNode[] = (res.routes || []).map((r: any) => ({
+       // Apply routes directly from solver response (avoids React state race condition)
+      const allResRoutes: RouteNode[] = (res.routes || []).map((r: any) => ({
         ...r,
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
-      const pendingCount = updatedRoutes.filter((r) => isPendingRoute(r.Rota)).length;
-      const assignedCount = updatedRoutes.length - pendingCount;
-      const numVehicles = res.vehicles?.length || vehicles.length;
+      const pendingCount = allResRoutes.filter((r) => isPendingRoute(r.Rota)).length;
+      const assignedCount = allResRoutes.length - pendingCount;
+      setRoutes(allResRoutes);
+
+      // Reload fleet/vehicles without overwriting routes
+      const fleetRes2 = await apiRequest(`/api/fleet/${selectedProject.id}`);
+      const rawFleet2: VehicleData[] = fleetRes2.fleet || [];
+      const vList2 = rawFleet2.map((v: any) => v.veiculo);
+      const rawWh2: WarehouseData[] = fleetRes2.warehouses || [];
+      setFleetList(rawFleet2);
+      setVehicles(vList2);
+      setWarehouses(rawWh2);
+
+      // Expand all routes in the accordion
+      const expState2: Record<string, boolean> = { "Por Distribuir": true };
+      vList2.forEach((v: string) => { expState2[v] = true; });
+      setExpandedRoutes(expState2);
+
+      // Broadcast to map with fresh data
+      broadcastUpdate(allResRoutes, vList2, rawWh2, rawFleet2);
+
+      const numVehicles = res.vehicles?.length || vList2.length;
       const alertMsg = pendingCount > 0
         ? `Otimização concluída: ${assignedCount} paragens atribuídas à frota. ${pendingCount} encomendas ficaram na rota "Por Distribuir" para gestão manual.`
         : `Otimização concluída com sucesso: Todas as ${assignedCount} paragens foram distribuídas pelas ${numVehicles} viaturas.`;
@@ -941,57 +959,38 @@ export default function TacticalPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+
+              {/* Card 1: Agrupadas por Centro de Gravidade */}
               <div
-                onClick={() => {
-                  setStrategy("clusters");
-                  setLoadMode("full");
-                }}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "clusters"
+                onClick={() => { setStrategy("clusters"); setLoadMode("full"); }}
+                className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                  strategy !== "min_km"
                     ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
                     : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
                 }`}
               >
-                <p className="font-bold text-zinc-100 mb-1">🎯 Agrupamento por Zonas (Clusters Densos)</p>
+                <p className="font-bold text-zinc-100 mb-1">ðµ Agrupadas por Centro de Gravidade</p>
                 <p className="text-[11px] text-zinc-400">
-                  Agrupa as entregas por concelhos/zonas contíguas e enche cada viatura ao máximo (800-1000 kg). Evita que múltiplos carros vão à mesma localidade.
+                  Começa na entrega mais distante e preenche cada viatura com as entregas da mesma zona geográfica (menor dispersão territorial). Ideal para rotas compactas por bairros ou concelhos.
                 </p>
               </div>
 
+              {/* Card 2: Mínimos KM */}
               <div
-                onClick={() => {
-                  setStrategy("far_first");
-                  setLoadMode("full");
-                }}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "far_first"
-                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                onClick={() => { setStrategy("min_km"); setLoadMode("full"); }}
+                className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                  strategy === "min_km"
+                    ? "bg-emerald-950/40 border-emerald-500 shadow-md ring-1 ring-emerald-500"
                     : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
                 }`}
               >
-                <p className="font-bold text-zinc-100 mb-1">🚚 Far-First por Distância (Mais Longe Primeiro)</p>
+                <p className="font-bold text-zinc-100 mb-1">ð¢ Mínimos KM (Menor Distância Total)</p>
                 <p className="text-[11px] text-zinc-400">
-                  Identifica as entregas mais afastadas do armazém e preenche as viaturas no corredor de regresso à base, minimizando a frota ativa e libertando o máximo de carros perto da loja.
+                  Começa na entrega mais distante e insere as seguintes com o menor acréscimo de quilómetros à rota. Ideal para reduzir combustível e tempo de condução total.
                 </p>
               </div>
 
-              <div
-                onClick={() => {
-                  setStrategy("balanced");
-                  setLoadMode("balanced");
-                }}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "balanced"
-                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
-                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
-                }`}
-              >
-                <p className="font-bold text-zinc-100 mb-1">⚖️ Equilíbrio Perfeito de Carga</p>
-                <p className="text-[11px] text-zinc-400">
-                  Distribui o número de paragens e peso de forma equitativa por todos os carros disponíveis para empresas onde todos os motoristas saem em simultâneo.
-                </p>
-              </div>
             </div>
 
             {/* Depth / Computation Time Selector */}
