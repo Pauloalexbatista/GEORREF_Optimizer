@@ -152,7 +152,7 @@ class AdvancedRouteOptimizer:
                 return True, 0.0, 0, 0
             vd  = vehicle_data[v]
             v_depot = vd["depot_idx"]
-            seq = _sequence(nodes, v)
+            seq = nodes  # Evaluate literal physical order
             cur_t = float(vd["start"])
             cur_l = v_depot
             total_km = 0.0
@@ -246,7 +246,8 @@ class AdvancedRouteOptimizer:
             for v in range(num_vehicles):
                 if not _quick_ok(c, v, veh_w[v], veh_v[v]):
                     continue
-                feas, _, lates, wait = _eval(routes[v] + [c], v)
+                test_r = _sequence(routes[v] + [c], v)
+                feas, _, lates, wait = _eval(test_r, v)
                 if not feas:
                     continue
                 cost = _insert_cost(c, routes[v], v) + wait * 0.5
@@ -255,7 +256,7 @@ class AdvancedRouteOptimizer:
                     best_v    = v
 
             if best_v is not None:
-                routes[best_v].append(c)
+                routes[best_v] = _sequence(routes[best_v] + [c], best_v)
                 veh_w[best_v]  += cd["weight"]
                 veh_v[best_v]  += cd["volume"]
                 assigned.add(c)
@@ -288,7 +289,7 @@ class AdvancedRouteOptimizer:
                             if drop_cd["tw_start"] >= vd["end"]:   continue
                             if drop_cd["tw_end"]   <  vd["start"]: continue
                             if drop_cd["wh"] and vd["wh"] and drop_cd["wh"] != vd["wh"]: continue
-                            test_r = [x for x in routes[v] if x != asgn_c] + [drop_c]
+                            test_r = _sequence([x for x in routes[v] if x != asgn_c] + [drop_c], v)
                             feas, _, lates, _ = _eval(test_r, v)
                             if not feas:
                                 continue
@@ -299,7 +300,7 @@ class AdvancedRouteOptimizer:
 
                     if best_sw is not None:
                         acd = client_data[best_sw]
-                        routes[best_v] = [x for x in routes[best_v] if x != best_sw] + [drop_c]
+                        routes[best_v] = _sequence([x for x in routes[best_v] if x != best_sw] + [drop_c], best_v)
                         veh_w[best_v] += drop_cd["weight"]  - acd["weight"]
                         veh_v[best_v] += drop_cd["volume"]  - acd["volume"]
                         assigned.add(drop_c);    dropped.discard(drop_c)
@@ -376,11 +377,11 @@ class AdvancedRouteOptimizer:
                                 continue
                             if not _quick_ok(ca, vb, veh_w[vb], veh_v[vb]):
                                 continue
-                            test_rb = routes[vb] + [ca]
+                            test_rb = _sequence(routes[vb] + [ca], vb)
                             feas_b, km_b_new, late_b, _ = _eval(test_rb, vb)
                             if not feas_b:
                                 continue
-                            test_ra = [x for x in routes[va] if x != ca]
+                            test_ra = _sequence([x for x in routes[va] if x != ca], va)
                             _, km_a_new, _, _ = _eval(test_ra, va) if test_ra else (True, 0.0, 0, 0)
                             km_b_cur = _route_km(vb)
                             if (km_a_new + km_b_new) < (km_a_cur + km_b_cur) - 0.1:
@@ -419,8 +420,8 @@ class AdvancedRouteOptimizer:
                                 if nv_a > vda["cap_v"] or nv_b > vdb["cap_v"]: continue
                                 if cdb["tw_start"] >= vda["end"] or cdb["tw_end"] < vda["start"]: continue
                                 if cda["tw_start"] >= vdb["end"] or cda["tw_end"] < vdb["start"]: continue
-                                test_ra = [cb if x == ca else x for x in routes[va]]
-                                test_rb = [ca if x == cb else x for x in routes[vb]]
+                                test_ra = _sequence([cb if x == ca else x for x in routes[va]], va)
+                                test_rb = _sequence([ca if x == cb else x for x in routes[vb]], vb)
                                 feas_a, km_a_n, _, _ = _eval(test_ra, va)
                                 feas_b, km_b_n, _, _ = _eval(test_rb, vb)
                                 if not feas_a or not feas_b: continue
@@ -502,7 +503,7 @@ class AdvancedRouteOptimizer:
             for v in range(num_vehicles):
                 if not _quick_ok(drop_c, v, veh_w[v], veh_v[v]):
                     continue
-                test_r = final[v] + [drop_c]
+                test_r = _sequence(final[v] + [drop_c], v)
                 feas, _, lates, _ = _eval(test_r, v)
                 if not feas:
                     continue
@@ -511,7 +512,7 @@ class AdvancedRouteOptimizer:
                     best_cost = cost
                     best_v    = v
             if best_v is not None:
-                final[best_v].append(drop_c)
+                final[best_v] = _sequence(final[best_v] + [drop_c], best_v)
                 veh_w[best_v] += drop_cd["weight"]
                 veh_v[best_v] += drop_cd["volume"]
                 assigned.add(drop_c)
