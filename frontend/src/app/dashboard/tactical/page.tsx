@@ -1252,6 +1252,8 @@ export default function TacticalPage() {
             </div>
           ) : (
             displayRouteKeys.map((routeName) => {
+              try {
+
               const isPending = isPendingRoute(routeName);
               const allStops = groupedRoutes[routeName] || [];
               
@@ -1719,7 +1721,16 @@ export default function TacticalPage() {
                   )}
                 </div>
               );
-            })
+            
+              } catch (renderError: any) {
+                console.error("Error rendering route card:", routeName, renderError);
+                return (
+                  <div key={routeName} className="bg-rose-950/40 border border-rose-800 p-4 rounded-xl text-xs text-rose-300 font-mono">
+                    Erro ao renderizar rota {routeName}: {renderError.message}
+                  </div>
+                );
+              }
+})
           )}
         </div>
       </div>
