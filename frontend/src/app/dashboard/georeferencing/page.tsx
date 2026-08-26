@@ -53,6 +53,66 @@ export default function GeoreferencingPage() {
   const [colLon, setColLon] = useState("");
   const [colVendedor, setColVendedor] = useState("");
 
+  // Inline editing state
+  const [editingInlineId, setEditingInlineId] = useState<number | null>(null);
+  const [editInlineData, setEditInlineData] = useState<Delivery | null>(null);
+
+  const startEditingInline = (del: Delivery) => {
+    setEditingInlineId(del.id);
+    setEditInlineData({ ...del });
+  };
+
+  const handleEditInlineChange = (field: keyof Delivery, value: any) => {
+    setEditInlineData(prev => prev ? { ...prev, [field]: value } : null);
+  };
+
+  const handleSaveInline = async (id: number) => {
+    if (!editInlineData || !selectedProject) return;
+    setLoading(true);
+    try {
+      await apiRequest(`/api/geocoding/delivery/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          morada: editInlineData.morada,
+          codigo_postal: editInlineData.codigo_postal,
+          concelho: editInlineData.concelho,
+          latitude: editInlineData.latitude,
+          longitude: editInlineData.longitude,
+        }),
+      });
+      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+      setDeliveries(data);
+      setEditingInlineId(null);
+      setEditInlineData(null);
+    } catch (err: any) {
+      alert(err.message || "Erro ao guardar alterações.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteInline = async (id: number) => {
+    if (!confirm("Tem a certeza que deseja eliminar esta encomenda permanente da base de dados? Esta ação não pode ser desfeita.")) return;
+    setLoading(true);
+    try {
+      await apiRequest(`/api/geocoding/delivery/${id}`, {
+        method: "DELETE",
+      });
+      if (selectedProject) {
+        const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+        setDeliveries(data);
+      }
+      if (editingInlineId === id) {
+        setEditingInlineId(null);
+        setEditInlineData(null);
+      }
+    } catch (err: any) {
+      alert(err.message || "Erro ao eliminar encomenda.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Correction state
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null);
   const [corrAddr, setCorrAddr] = useState("");
@@ -330,8 +390,8 @@ export default function GeoreferencingPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Georreferenciação</h1>
-            <p className="text-zinc-400 text-xs mt-1">{t.geocoding.subtitle}</p>
+                        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">Georreferenciação</h1>
+            <p className="text-zinc-500 dark:text-zinc-400 text-xs mt-1">{t.geocoding.subtitle}</p>
           </div>
           {step === "results" && (
             <div className="flex items-center space-x-3">
