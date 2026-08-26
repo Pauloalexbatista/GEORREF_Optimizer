@@ -310,7 +310,9 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             travel_min = float(g_legs[idx]["duration_min"])
         else:
             dist = haversine_distance(p_lat, p_lon, c_lat, c_lon)
-            travel_min = (dist / avg_speed) * 60.0
+            # Hybrid speed: 75 km/h for highway segments (>15km), else avg_speed (urban)
+            segment_speed = 75.0 if dist > 15.0 else avg_speed
+            travel_min = (dist / segment_speed) * 60.0
         cumul_dist += dist
         arr_min = cur_time_min + travel_min
         
@@ -409,10 +411,36 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             raise HTTPException(status_code=400, detail="Nenhum armazém configurado no projeto.")
         warehouses_df = raw_wh if isinstance(raw_wh, pd.DataFrame) else pd.DataFrame(raw_wh)
         
-        fleet_config = state_dict.get("fleet_config")
-        if not fleet_config:
-            raise HTTPException(status_code=400, detail="Nenhum veículo configurado na frota.")
-            
+                # Read fleet configuration directly from the database table 'frota' to get fresh updates
+        db_fleet = {}
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM frota WHERE projeto_id = ? AND is_active = 1", (req.project_id,))
+            fleet_rows = cursor.fetchall()
+            if fleet_rows:
+                col_names = [d[0] for d in cursor.description]
+                for row_f in fleet_rows:
+                    dict_f = dict(zip(col_names, row_f))
+                    v_name = str(dict_f["veiculo"])
+                    db_fleet[v_name] = {
+                        "capacity": float(dict_f.get("capacidade_kg") or 1000.0),
+                        "capacity_volume": float(dict_f.get("capacidade_volume") or 5.0),
+                        "cost_per_km": float(dict_f.get("custo_km") or 0.65),
+                        "speed": float(dict_f.get("velocidade_media") or 50.0),
+                        "start_time": str(dict_f.get("horario_inicio") or "08:00:00"),
+                        "end_time": str(dict_f.get("horario_fim") or "18:00:00"),
+                        "warehouse": str(dict_f.get("armazem") or ""),
+                        "regras": ""
+                    }
+        
+        # Fallback to snapshot if database table is empty
+        if db_fleet:
+            fleet_config = db_fleet
+            state_dict["fleet_config"] = db_fleet
+        else:
+            fleet_config = state_dict.get("fleet_config")
+            if not fleet_config:
+                raise HTTPException(status_code=400, detail="Nenhum veculo configurado na frota.")            
         # 4. Build coordinates locations array and solver demands
         locations = []
         location_names = []
