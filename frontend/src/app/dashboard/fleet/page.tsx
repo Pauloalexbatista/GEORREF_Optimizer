@@ -298,12 +298,14 @@ export default function FleetPage() {
     const nextWh = [...warehouses];
     nextWh[idx] = { ...nextWh[idx], [field]: value };
     setWarehouses(nextWh);
+    persistFleetAndWarehouses(fleet, nextWh);
   };
 
   const handleFleetChange = (idx: number, field: keyof Vehicle, value: any) => {
     const nextFleet = [...fleet];
     nextFleet[idx] = { ...nextFleet[idx], [field]: value };
     setFleet(nextFleet);
+    persistFleetAndWarehouses(nextFleet, warehouses);
   };
 
   const sortedWarehouses = [...warehouses].sort((a, b) => {
@@ -497,17 +499,6 @@ export default function FleetPage() {
                 disabled={importing || loading}
               />
             </label>
-
-            <button
-              onClick={handleSaveConfig}
-              disabled={loading}
-              className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-lg px-3.5 py-1.5 text-[11px] font-semibold shadow-md shadow-indigo-500/10 transition-all flex items-center space-x-1.5"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              <span>{loading ? "A Guardar..." : "Guardar Configurações"}</span>
-            </button>
           </div>
         </div>
 
