@@ -1490,55 +1490,55 @@ export default function TacticalPage() {
                       ) : (
                         <table className="w-full text-left text-xs border-collapse font-sans">
                           <thead>
-                            <tr className="bg-zinc-950/90 border-b border-zinc-800 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                              <th className="py-2.5 px-3.5 text-center w-16"># Ordem</th>
-                              <th className="py-2.5 px-4 min-w-[200px]">Cliente / Código</th>
-                              <th className="py-2.5 px-4 min-w-[240px]">Morada & Localidade</th>
-                              <th className="py-2.5 px-3 min-w-[110px]">Janela Horária</th>
-                              <th className="py-2.5 px-3 min-w-[130px]">Previsão Turno</th>
-                              <th className="py-2.5 px-3 min-w-[100px]">Carga (kg)</th>
-                              <th className="py-2.5 px-3 min-w-[90px]">Distância</th>
-                              <th className="py-2.5 px-4 text-center min-w-[180px]">Mover / Reatribuir</th>
+                            <tr className="bg-zinc-950/90 border-b border-zinc-800 text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+                              <th className="py-2.5 px-3 text-center w-16"># Ordem</th>
+                              <th className="py-2.5 px-3 min-w-[180px]">Doc ID / Cliente</th>
+                              <th className="py-2.5 px-3 min-w-[220px]">Morada & Localidade</th>
+                              <th className="py-2.5 px-2 min-w-[110px] text-center">Contacto / Vend.</th>
+                              <th className="py-2.5 px-2 min-w-[100px] text-center">Janela Horária</th>
+                              <th className="py-2.5 px-2 min-w-[110px] text-center">Previsão Turno</th>
+                              <th className="py-2.5 px-2 w-[100px] text-center">Peso / Volume</th>
+                              <th className="py-2.5 px-2 w-[85px] text-center">Distância</th>
+                              <th className="py-2.5 px-3 text-center min-w-[150px]">Mover / Reatribuir</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-850">
                             {/* 1ª LINHA: ARMAZÉM DE ORIGEM (PARTIDA) */}
                             {!isPending && (
                               <tr className="bg-indigo-950/25 border-b border-indigo-800/40 text-indigo-200 font-medium">
-                                <td className="py-2.5 px-3.5 text-center">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-900/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
-                                    🛫 Partida
+                                <td className="py-2 px-3 text-center">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-indigo-900/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
+                                    Partida
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-4">
-                                  <div className="font-bold text-indigo-300 flex items-center space-x-1.5">
-                                    <span>🏠</span>
-                                    <span>{whData.name}</span>
-                                  </div>
-                                  <div className="text-[10px] text-indigo-400/80 font-mono">Armazém de Origem</div>
+                                <td className="py-2 px-3">
+                                  <div className="font-bold text-indigo-300">{whData.name}</div>
+                                  <div className="text-[9px] text-indigo-400/80 font-mono">Armazém de Origem</div>
                                 </td>
-                                <td className="py-2.5 px-4">
-                                  <div className="text-zinc-200 truncate max-w-sm">{whData.address}</div>
-                                  <div className="text-[10px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
+                                <td className="py-2 px-3">
+                                  <div className="text-zinc-200 truncate max-w-xs">{whData.address}</div>
+                                  <div className="text-[9px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
                                 </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800 text-[10px]">
+                                <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
+                                  --
+                                </td>
+                                <td className="py-2 px-2 text-center">
+                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
                                     Início Turno
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-3">
+                                <td className="py-2 px-2 text-center">
                                   <div className="font-mono text-xs font-bold text-emerald-400">
-                                    🛫 {startTimeStr}
+                                    {startTimeStr}
                                   </div>
-                                  <span className="text-[9px] text-zinc-400 block font-normal">Saída da Base</span>
                                 </td>
-                                <td className="py-2.5 px-3 font-mono text-zinc-400">
-                                  0 kg
+                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                  0 kg / 0 m³
                                 </td>
-                                <td className="py-2.5 px-3 font-mono text-zinc-400">
+                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
                                   0.0 km
                                 </td>
-                                <td className="py-2.5 px-4 text-center text-[10px] text-indigo-300 font-semibold">
+                                <td className="py-2 px-3 text-center text-[10px] text-indigo-350 font-semibold">
                                   Base Central
                                 </td>
                               </tr>
@@ -1586,44 +1586,52 @@ export default function TacticalPage() {
                                   </td>
 
                                   {/* Cliente / Código */}
-                                  <td className="py-2.5 px-4">
-                                    <div className="font-bold text-zinc-100">{stop.Nome_Cliente || stop.Cliente}</div>
-                                    <div className="text-[10px] text-zinc-400 font-mono">{stop.Cliente}</div>
+                                  {/* Doc ID / Cliente */}
+                                  <td className="py-2 px-3">
+                                    <div className="font-bold text-zinc-100">{stop.Doc_ID || stop.Cliente || "S/ Doc"}</div>
+                                    <div className="text-[10px] text-indigo-400 font-bold font-mono">{stop.Cliente}</div>
+                                    <div className="text-[9px] text-zinc-400">{stop.Nome_Cliente}</div>
                                   </td>
 
                                   {/* Morada & Concelho */}
-                                  <td className="py-2.5 px-4">
-                                    <div className="text-zinc-200 truncate max-w-sm" title={stop.Morada}>
+                                  <td className="py-2 px-3">
+                                    <div className="text-zinc-200 truncate max-w-xs" title={stop.Morada}>
                                       {stop.Morada}
                                     </div>
-                                    <div className="text-[10px] text-zinc-400 flex items-center space-x-1.5 mt-0.5">
+                                    <div className="text-[9px] text-zinc-400 flex items-center space-x-1 mt-0.5">
                                       <span className="font-mono text-indigo-400">{stop.CP}</span>
                                       <span>•</span>
                                       <span>{stop.Localidade}</span>
                                     </div>
                                   </td>
 
+                                  {/* Contacto / Vendedor */}
+                                  <td className="py-2 px-2 text-center">
+                                    <div className="font-mono text-zinc-300 font-semibold">{stop.Telefone || stop.Telefone_Cliente || "--"}</div>
+                                    <div className="text-[9px] text-zinc-400">{stop.Vendedor || "--"}</div>
+                                  </td>
+
                                   {/* Janela Horária */}
-                                  <td className="py-2.5 px-3">
-                                    <span className="font-mono text-zinc-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[11px] block text-center">
+                                  <td className="py-2 px-2 text-center">
+                                    <span className="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800 text-[10px] inline-block">
                                       {formatTimeWindow(stop.Janela_Horaria)}
                                     </span>
                                   </td>
 
                                   {/* Previsão Turno & Alerta de Atraso */}
-                                  <td className="py-2.5 px-3">
+                                  <td className="py-2 px-2 text-center">
                                     {!isPending ? (
                                       <div>
                                         <div className="font-mono text-xs font-bold text-zinc-100">
-                                          {stop.Chegada} ➔ {stop.Saida}
+                                          {stop.Chegada} » {stop.Saida}
                                         </div>
                                         {isLate ? (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-950 text-rose-400 border border-rose-800 mt-0.5">
-                                            🚨 Fora da Janela
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-rose-950 text-rose-450 border border-rose-800 mt-0.5">
+                                            Atraso
                                           </span>
                                         ) : (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 mt-0.5">
-                                            ✓ No Horário
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 mt-0.5">
+                                            No Horário
                                           </span>
                                         )}
                                       </div>
@@ -1632,20 +1640,21 @@ export default function TacticalPage() {
                                     )}
                                   </td>
 
-                                  {/* Carga KG */}
-                                  <td className="py-2.5 px-3 font-mono">
-                                    <div className="text-zinc-200 font-semibold">{(stop.Peso_KG || 50).toFixed(0)} kg</div>
+                                  {/* Peso / Volume */}
+                                  <td className="py-2 px-2 text-center font-mono">
+                                    <div className="text-zinc-200 font-semibold">{(stop.Peso_KG || 0).toFixed(0)} kg</div>
+                                    <div className="text-[9px] text-zinc-400">{(stop.Volume_m3 || 0.0).toFixed(2)} m³</div>
                                     {!isPending && (
-                                      <div className="text-[10px] text-zinc-400">Acum: {stop.Carga_Acum.toFixed(0)} kg</div>
+                                      <div className="text-[8px] text-zinc-500 font-normal">Acum: {stop.Carga_Acum.toFixed(0)} kg</div>
                                     )}
                                   </td>
 
                                   {/* Distância */}
-                                  <td className="py-2.5 px-3 font-mono">
+                                  <td className="py-2 px-2 text-center font-mono">
                                     {!isPending ? (
                                       <div>
                                         <div className="text-zinc-200 font-semibold">{(stop.KM_Anterior || 0).toFixed(1)} km</div>
-                                        <div className="text-[10px] text-zinc-400">Acum: {(stop.Dist_Acum || 0).toFixed(1)} km</div>
+                                        <div className="text-[9px] text-zinc-400">Acum: {(stop.Dist_Acum || 0).toFixed(1)} km</div>
                                       </div>
                                     ) : (
                                       <span className="text-zinc-500 text-xs">--</span>
@@ -1678,45 +1687,40 @@ export default function TacticalPage() {
                             {/* ÚLTIMA LINHA: REGRESSO AO ARMAZÉM (CHEGADA) */}
                             {!isPending && allStops.length > 0 && (
                               <tr className="bg-emerald-950/25 border-t border-emerald-800/40 text-emerald-200 font-medium">
-                                <td className="py-2.5 px-3.5 text-center">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 shadow-sm">
-                                    🏁 Regresso
+                                <td className="py-2 px-3 text-center">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 shadow-sm">
+                                    Regresso
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-4">
-                                  <div className="font-bold text-emerald-300 flex items-center space-x-1.5">
-                                    <span>🏠</span>
-                                    <span>{whData.name}</span>
-                                  </div>
-                                  <div className="text-[10px] text-emerald-400/80 font-mono">Regresso ao Armazém</div>
+                                <td className="py-2 px-3">
+                                  <div className="font-bold text-emerald-300">{whData.name}</div>
+                                  <div className="text-[9px] text-emerald-400/80 font-mono">Regresso ao Armazém</div>
                                 </td>
-                                <td className="py-2.5 px-4">
-                                  <div className="text-zinc-200 truncate max-w-sm">{whData.address}</div>
-                                  <div className="text-[10px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
+                                <td className="py-2 px-3">
+                                  <div className="text-zinc-200 truncate max-w-xs">{whData.address}</div>
+                                  <div className="text-[9px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
                                 </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800 text-[10px]">
+                                <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
+                                  --
+                                </td>
+                                <td className="py-2 px-2 text-center">
+                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
                                     Fim Turno
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-3">
+                                <td className="py-2 px-2 text-center">
                                   <div className="font-mono text-xs font-bold text-emerald-400">
-                                    🏁 {returnArrivalTimeStr}
+                                    {returnArrivalTimeStr}
                                   </div>
-                                  <span className="text-[9px] text-zinc-400 block font-normal">
-                                    Total: {totalDurationStr}
-                                  </span>
                                 </td>
-                                <td className="py-2.5 px-3 font-mono">
-                                  <div className="text-zinc-300 font-semibold">{totalKg.toFixed(0)} kg</div>
-                                  <div className="text-[9px] text-zinc-400">Total Entregue</div>
+                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                  --
                                 </td>
-                                <td className="py-2.5 px-3 font-mono">
-                                  <div className="text-indigo-300 font-semibold">{totalRouteKm.toFixed(1)} km</div>
-                                  <div className="text-[9px] text-zinc-400">+{returnDist.toFixed(1)}km regresso</div>
+                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                  Acum: {totalRouteKm.toFixed(1)} km
                                 </td>
-                                <td className="py-2.5 px-4 text-center text-[10px] text-emerald-300 font-semibold">
-                                  Fim da Rota
+                                <td className="py-2 px-3 text-center text-[10px] text-emerald-400 font-semibold font-sans">
+                                  Fim de Turno
                                 </td>
                               </tr>
                             )}
