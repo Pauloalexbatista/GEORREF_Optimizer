@@ -417,6 +417,7 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
 
 
 @router.post("/{project_id}")
+@router.post("/{project_id}/save")
 def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(project_id)
     if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):

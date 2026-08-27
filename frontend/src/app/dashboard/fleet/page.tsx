@@ -243,6 +243,13 @@ export default function TablesFleetPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <a
+              href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/fleet/template/unified`}
+              download="GeoRoutePlan.xlsx"
+              className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-zinc-700"
+            >
+              📄 Descarregar Modelo Excel
+            </a>
             <button
               onClick={() => persistAllTables(fleet, warehouses, drivers, reasons, true)}
               disabled={saveStatus === "saving"}
