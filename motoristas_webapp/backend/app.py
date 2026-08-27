@@ -315,6 +315,19 @@ async def api_manager_dashboard():
         "reasons": reasons
     }
 
+@app.get("/api/manager/route_details/{route_id}")
+async def api_manager_route_details(route_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM route_stops 
+        WHERE route_id = ? 
+        ORDER BY sequence ASC, id ASC
+    """, (route_id,))
+    stops = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return {"route_id": route_id, "stops": stops}
+
 @app.post("/api/manager/assign")
 async def api_manager_assign(req: AssignDriverRequest):
     conn = get_db()

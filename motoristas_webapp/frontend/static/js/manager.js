@@ -1,6 +1,8 @@
 ﻿let map = null;
 let markersGroup = null;
 let qrCodeObj = null;
+let expandedRoutes = new Set();
+let cachedRouteStops = {};
 
 // Auth check
 const managerRole = localStorage.getItem("geo_role");
@@ -100,6 +102,7 @@ function initDashboardEvents() {
       if (res.ok) {
         alert(`Importação concluída com sucesso!\nRotas: ${data.summary.total_routes} | Clientes: ${data.summary.total_stops}`);
         document.getElementById("import-modal").classList.remove("active");
+        cachedRouteStops = {};
         fetchDashboardData();
       } else {
         alert(data.detail || "Erro ao importar ficheiro.");
@@ -124,6 +127,8 @@ function initDashboardEvents() {
         const res = await fetch("/api/clear", { method: "POST" });
         if (res.ok) {
           alert("Sessão do dia limpa com sucesso!");
+          cachedRouteStops = {};
+          expandedRoutes.clear();
           fetchDashboardData();
         }
       } catch (err) {
@@ -146,7 +151,7 @@ async function fetchDashboardData() {
     const data = await res.json();
     
     renderOverviewStats(data.totals);
-    renderRoutesTable(data.routes, data.drivers);
+    await renderRoutesTable(data.routes, data.drivers);
     renderMapMarkers(data.drivers);
     renderActivityFeed(data.activity);
   } catch (err) {
@@ -168,7 +173,27 @@ function renderOverviewStats(totals) {
   document.getElementById("stat-rate").textContent = `${rate}%`;
 }
 
-function renderRoutesTable(routes, drivers) {
+async function toggleRouteExpand(routeId) {
+  if (expandedRoutes.has(routeId)) {
+    expandedRoutes.delete(routeId);
+  } else {
+    expandedRoutes.add(routeId);
+    if (!cachedRouteStops[routeId]) {
+      try {
+        const res = await fetch(`/api/manager/route_details/${encodeURIComponent(routeId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          cachedRouteStops[routeId] = data.stops || [];
+        }
+      } catch (e) {
+        console.error("Failed to load route details", e);
+      }
+    }
+  }
+  fetchDashboardData();
+}
+
+async function renderRoutesTable(routes, drivers) {
   const tbody = document.getElementById("routes-table-body");
   tbody.innerHTML = "";
   
@@ -177,15 +202,22 @@ function renderRoutesTable(routes, drivers) {
     return;
   }
   
-  routes.forEach((r) => {
+  for (const r of routes) {
     const total = r.total || 0;
     const delivered = r.entregues || 0;
     const failed = r.falhadas || 0;
     const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
+    const isExpanded = expandedRoutes.has(r.route_id);
     
     const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
     tr.innerHTML = `
-      <td><strong>${escapeHtml(r.route_id)}</strong></td>
+      <td>
+        <button class="btn-icon" style="min-width:24px; min-height:24px; font-size:11px; margin-right:6px;" onclick="event.stopPropagation(); toggleRouteExpand('${escapeHtml(r.route_id)}')">
+          ${isExpanded ? "▼" : "▶"}
+        </button>
+        <strong>${escapeHtml(r.route_id)}</strong>
+      </td>
       <td>${escapeHtml(r.driver_name || "Não Atribuído")}</td>
       <td>${escapeHtml(r.vehicle || "-")}</td>
       <td>
@@ -199,13 +231,90 @@ function renderRoutesTable(routes, drivers) {
       <td><span class="badge-status ${failed > 0 ? 'badge-nao-entregue' : 'badge-pendente'}">${failed}</span></td>
       <td><span style="font-size:12px; color:var(--text-secondary)">${r.last_gps_time || "Sem sinal"}</span></td>
       <td>
-        <button class="btn btn-secondary" style="min-height:32px; padding:4px 10px; font-size:12px;" onclick="openAssignModal('${escapeHtml(r.route_id)}')">
-          👤 ${t("btn_assign")}
-        </button>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-secondary" style="min-height:30px; padding:3px 8px; font-size:11px;" onclick="event.stopPropagation(); toggleRouteExpand('${escapeHtml(r.route_id)}')">
+            🔍 ${isExpanded ? "Ocultar" : "Detalhes"}
+          </button>
+          <button class="btn btn-primary" style="min-height:30px; padding:3px 8px; font-size:11px;" onclick="event.stopPropagation(); openAssignModal('${escapeHtml(r.route_id)}')">
+            👤 Atribuir
+          </button>
+        </div>
       </td>
     `;
+    
+    tr.addEventListener("click", () => toggleRouteExpand(r.route_id));
     tbody.appendChild(tr);
-  });
+    
+    // If expanded, render child stops accordion
+    if (isExpanded) {
+      const stops = cachedRouteStops[r.route_id] || [];
+      const trDetails = document.createElement("tr");
+      trDetails.className = "route-details-row";
+      
+      let stopsRowsHtml = "";
+      if (stops.length === 0) {
+        stopsRowsHtml = `<tr><td colspan="7" style="text-align:center; padding:12px; font-size:12px; color:var(--text-secondary)">A carregar paragens...</td></tr>`;
+      } else {
+        stops.forEach((s) => {
+          const isDelivered = s.status === "Entregue";
+          const isFailed = s.status === "Não Entregue";
+          const badgeClass = isDelivered ? "badge-entregue" : (isFailed ? "badge-nao-entregue" : "badge-pendente");
+          
+          stopsRowsHtml += `
+            <tr style="background:var(--bg-surface); font-size:12px;">
+              <td style="font-weight:700; width:40px; text-align:center;">#${s.sequence || "-"}</td>
+              <td>
+                <div style="font-weight:700; color:var(--text-primary);">${escapeHtml(s.client_name)}</div>
+                <div style="font-size:11px; color:var(--text-secondary);">${escapeHtml(s.address || "")} ${escapeHtml(s.postal_code || "")}</div>
+              </td>
+              <td>${escapeHtml(s.phone || "-")}</td>
+              <td>
+                <div style="font-family:monospace; font-weight:600;">${s.window_start || "08:00"} - ${s.window_end || "18:00"}</div>
+              </td>
+              <td>
+                ${s.actual_arrival_time ? `<span style="color:#16a34a; font-weight:700; font-family:monospace;">⏱️ ${s.actual_arrival_time}</span>` : `<span style="color:var(--text-muted); font-size:11px;">Aguardando</span>`}
+              </td>
+              <td>
+                <span class="badge-status ${badgeClass}">${s.status}</span>
+                ${s.fail_reason ? `<div style="font-size:10px; color:#dc2626; margin-top:2px;">${escapeHtml(s.fail_reason)}</div>` : ""}
+              </td>
+              <td>
+                <div style="font-size:11px; color:var(--text-secondary);">${s.driver_notes ? `<em>"${escapeHtml(s.driver_notes)}"</em>` : "-"}</div>
+              </td>
+            </tr>
+          `;
+        });
+      }
+      
+      trDetails.innerHTML = `
+        <td colspan="7" style="padding: 12px 16px; background: var(--bg-surface-alt); border-bottom: 2px solid var(--border-color);">
+          <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-sm);">
+            <div style="padding: 8px 12px; background: var(--bg-surface-alt); border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:12px; font-weight:700;">📦 Paragens da Rota: ${escapeHtml(r.route_id)} (${stops.length} clientes)</span>
+              <span style="font-size:11px; color:var(--text-secondary);">Motorista: ${escapeHtml(r.driver_name || "Não Atribuído")} | Viatura: ${escapeHtml(r.vehicle || "-")}</span>
+            </div>
+            <table style="width:100%; border-collapse:collapse;" class="data-table">
+              <thead>
+                <tr style="font-size:11px; text-transform:uppercase; color:var(--text-muted); background:var(--bg-surface-alt);">
+                  <th>#</th>
+                  <th>Cliente & Morada</th>
+                  <th>Contacto</th>
+                  <th>Janela Horária</th>
+                  <th>Picagem Real</th>
+                  <th>Estado</th>
+                  <th>Feedback do Motorista</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${stopsRowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(trDetails);
+    }
+  }
 }
 
 function renderMapMarkers(drivers) {
