@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
@@ -65,8 +65,12 @@ export default function FleetPage() {
       await apiRequest(`/api/fleet/${selectedProject.id}`, {
         method: "POST",
         body: JSON.stringify({
-          fleet: nextFleet.map(v => ({
+          fleet: nextFleet.map((v, i) => ({
             ...v,
+            veiculo: v.veiculo?.trim() ? v.veiculo : `Veículo ${i + 1}`,
+            armazem: v.armazem?.trim() ? v.armazem : (whToSend.length > 0 ? whToSend[0].name : "Armazém Principal"),
+            capacidade_kg: v.capacidade_kg || 1000,
+            capacidade_vol: v.capacidade_vol || 5,
             is_active: v.is_active !== undefined ? v.is_active : 1
           })),
           warehouses: whToSend,
@@ -92,8 +96,26 @@ export default function FleetPage() {
       setLoading(true);
       try {
         const data = await apiRequest(`/api/fleet/${selectedProject?.id}`);
-        setWarehouses(data.warehouses || []);
-        setFleet(data.fleet || []);
+                  const whs = data.warehouses || [];
+          setWarehouses(whs);
+          
+          const defaultWh = whs.length > 0 ? whs[0].name : "Armazém Principal";
+          const rawFleet: Vehicle[] = data.fleet || [];
+          
+          const safeFleet = rawFleet.map((v, i) => ({
+            ...v,
+            veiculo: v.veiculo?.trim() ? v.veiculo : `Veículo ${i + 1}`,
+            armazem: v.armazem?.trim() ? v.armazem : defaultWh,
+            capacidade_kg: v.capacidade_kg || 1000,
+            capacidade_vol: v.capacidade_vol || 5,
+            custo_km: v.custo_km || 0.5,
+            velocidade_media: v.velocidade_media || 40,
+            horario_inicio: v.horario_inicio || "08:00",
+            horario_fim: v.horario_fim || "18:00",
+            is_active: v.is_active !== undefined ? v.is_active : 1
+          }));
+          
+          setFleet(safeFleet);
         if (data.warehouses && data.warehouses.length > 0 && !newVWarehouse) {
           setNewVWarehouse(data.warehouses[0].name);
         }
@@ -293,19 +315,27 @@ export default function FleetPage() {
       setSortDirection("asc");
     }
   };
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
 
   const handleWhChange = (idx: number, field: keyof Warehouse, value: any) => {
     const nextWh = [...warehouses];
     nextWh[idx] = { ...nextWh[idx], [field]: value };
     setWarehouses(nextWh);
-    persistFleetAndWarehouses(fleet, nextWh);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      persistFleetAndWarehouses(fleet, nextWh);
+    }, 1000);
   };
 
   const handleFleetChange = (idx: number, field: keyof Vehicle, value: any) => {
     const nextFleet = [...fleet];
     nextFleet[idx] = { ...nextFleet[idx], [field]: value };
     setFleet(nextFleet);
-    persistFleetAndWarehouses(nextFleet, warehouses);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      persistFleetAndWarehouses(nextFleet, warehouses);
+    }, 1000);
   };
 
   const sortedWarehouses = [...warehouses].sort((a, b) => {
@@ -326,11 +356,15 @@ export default function FleetPage() {
 
   const handleCreateVehicle = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = newVName.trim();
-    if (!cleanName) {
-      alert("Insira a matrícula/nome do veículo.");
-      return;
-    }
+    let cleanName = newVName.trim();
+      if (!cleanName) {
+        let num = fleet.length + 1;
+        cleanName = `Viatura ${num}`;
+        while (fleet.some(v => v.veiculo.toLowerCase() === cleanName.toLowerCase())) {
+          num++;
+          cleanName = `Viatura ${num}`;
+        }
+      }
     const targetWh = newVWarehouse.trim() || (warehouses.length > 0 ? warehouses[0].name : "Armazém Principal");
 
     if (fleet.some(v => v.veiculo.toLowerCase() === cleanName.toLowerCase())) {
@@ -610,7 +644,7 @@ export default function FleetPage() {
                     </tr>
                   ) : (
                     sortedWarehouses.map((wh, _loopIdx) => {
-                      const idx = warehouses.indexOf(wh);
+                      const idx = warehouses.findIndex(w => w.name === wh.name);
                       return (
                         <tr key={wh.name + idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
                           {/* ACTIONS */}
@@ -794,7 +828,7 @@ export default function FleetPage() {
                     </tr>
                   ) : (
                     sortedFleet.map((veh, _loopIdx) => {
-                      const idx = fleet.indexOf(veh);
+                      const idx = fleet.findIndex(v => v.veiculo === veh.veiculo);
                       return (
                         <tr key={veh.veiculo + idx} className={`hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors${veh.is_active === 0 ? " opacity-50 grayscale" : ""}`}>
                           {/* ACTIONS */}
@@ -815,15 +849,19 @@ export default function FleetPage() {
                           {/* VEICULO */}
                           <td className="px-3 py-1.5">
                             <input type="text" value={veh.veiculo}
-                              onChange={e => handleFleetChange(idx, "veiculo", e.target.value)}
+                                onChange={e => handleFleetChange(idx, "veiculo", e.target.value)}
+                                onBlur={(e) => {
+                                  if (!e.target.value.trim()) {
+                                    handleFleetChange(idx, "veiculo", `Veículo ${idx + 1}`);
+                                  }
+                                }}
                               className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all" />
                           </td>
                           {/* ARMAZEM */}
                           <td className="px-3 py-1.5">
-                            <select value={veh.armazem || ""}
+                            <select value={veh.armazem || (warehouses.length > 0 ? warehouses[0].name : "")}
                               onChange={e => handleFleetChange(idx, "armazem", e.target.value)}
                               className="w-full bg-transparent border border-transparent hover:border-zinc-600 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 outline-none transition-all">
-                              <option value="">(Sem armazém)</option>
                               {warehouses.map(w => <option key={w.name} value={w.name}>{w.name}</option>)}
                             </select>
                           </td>

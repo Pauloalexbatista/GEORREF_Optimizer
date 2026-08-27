@@ -599,9 +599,13 @@ async def import_fleet_warehouses(
                 col_f_driver = next((c for c in ['Motorista_Nome', 'Motorista', 'Driver_Name', 'Driver'] if c in df_fleet_raw.columns), None)
                 col_f_driver_tel = next((c for c in ['Motorista_Telemovel', 'Telemovel_Motorista', 'Driver_Phone', 'Contacto_Motorista'] if c in df_fleet_raw.columns), None)
                 
-                if col_f_veh:
-                    for idx, row in df_fleet_raw.iterrows():
-                        v_name = str(row[col_f_veh]).strip()
+                # Allow importing even if col_f_veh is None
+                for idx, row in df_fleet_raw.iterrows():
+                    v_name = str(row[col_f_veh]).strip() if col_f_veh and pd.notna(row[col_f_veh]) else ""
+                    if not v_name or v_name == 'nan':
+                        v_name = f"Viatura {idx + 1}"
+                    
+                    if True:
                         wh_name = str(row[col_f_wh]).strip() if col_f_wh and pd.notna(row[col_f_wh]) else (wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Central")
                         cap_kg = float(row[col_f_cap_kg]) if col_f_cap_kg and pd.notna(row[col_f_cap_kg]) else 1000.0
                         cap_vol = float(row[col_f_cap_vol]) if col_f_cap_vol and pd.notna(row[col_f_cap_vol]) else 10.0

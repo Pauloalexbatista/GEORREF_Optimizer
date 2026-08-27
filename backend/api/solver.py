@@ -436,7 +436,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         # Fallback to snapshot if database table is empty
         if db_fleet:
             fleet_config = db_fleet
-            state_dict["fleet_config"] = db_fleet
+            
         else:
             fleet_config = state_dict.get("fleet_config")
             if not fleet_config:
