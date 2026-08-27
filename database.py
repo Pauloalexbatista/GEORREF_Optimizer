@@ -164,6 +164,8 @@ def init_database():
         add_column_if_missing("utilizadores", "data_validade", "TEXT DEFAULT '2099-12-31'")
         add_column_if_missing("utilizadores", "programas", "TEXT DEFAULT 'site,app'")
         add_column_if_missing("utilizadores", "password_plain", "TEXT")
+        add_column_if_missing("utilizadores", "driver_password", "TEXT DEFAULT ''")
+        add_column_if_missing("empresas", "driver_password", "TEXT DEFAULT ''")
         add_column_if_missing("frota", "capacidade_volume", "REAL DEFAULT 0.0")
         add_column_if_missing("frota", "armazem", "TEXT DEFAULT ''")
         add_column_if_missing("entregas", "armazem", "TEXT DEFAULT 'Armazém Principal'")
@@ -679,6 +681,16 @@ def listar_todos_utilizadores_admin():
     """Retorna todos os utilizadores com detalhes da empresa, validade e programas."""
     with get_db() as conn:
         cursor = conn.cursor()
+        try:
+            cursor.execute("ALTER TABLE utilizadores ADD COLUMN driver_password TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE empresas ADD COLUMN driver_password TEXT DEFAULT ''")
+        except Exception:
+            pass
+        conn.commit()
+        
         cursor.execute("""
             SELECT 
                 u.id,
