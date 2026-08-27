@@ -1,5 +1,6 @@
 ﻿let map = null;
 let markersGroup = null;
+let qrCodeObj = null;
 
 // Auth check
 const managerRole = localStorage.getItem("geo_role");
@@ -35,6 +36,35 @@ function initDashboardEvents() {
   document.getElementById("btn-logout-manager").addEventListener("click", () => {
     localStorage.removeItem("geo_role");
     window.location.href = "/login";
+  });
+  
+  // QR Code Modal
+  document.getElementById("btn-open-qr").addEventListener("click", () => {
+    const qrContainer = document.getElementById("qrcode-container");
+    const directLink = document.getElementById("qr-direct-link");
+    const driverAppUrl = window.location.origin + "/login";
+    
+    directLink.textContent = driverAppUrl;
+    qrContainer.innerHTML = "";
+    
+    if (typeof QRCode !== "undefined") {
+      qrCodeObj = new QRCode(qrContainer, {
+        text: driverAppUrl,
+        width: 180,
+        height: 180,
+        colorDark: "#1e293b",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
+      });
+    } else {
+      qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(driverAppUrl)}" alt="QR Code">`;
+    }
+    
+    document.getElementById("qr-modal").classList.add("active");
+  });
+  
+  document.getElementById("btn-close-qr").addEventListener("click", () => {
+    document.getElementById("qr-modal").classList.remove("active");
   });
   
   // Import Modal

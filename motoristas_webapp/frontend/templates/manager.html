@@ -9,6 +9,31 @@
   <!-- Leaflet CSS & JS for Live Map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- QRCode.js library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printable-qr-poster, #printable-qr-poster * {
+        visibility: visible;
+      }
+      #printable-qr-poster {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 40px;
+        box-shadow: none;
+        border: none;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
 </head>
 <body>
   <!-- Header -->
@@ -35,9 +60,12 @@
   <!-- Main Content -->
   <main class="app-content manager-content">
     
-    <!-- Action Toolbar (Excel Template, Import/Export/Clear) -->
+    <!-- Action Toolbar (Excel Template, QR Code, Import/Export/Clear) -->
     <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px;">
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="btn-open-qr" class="btn btn-secondary">
+          📱 <span data-i18n="btn_qr_code">QR Code Motoristas</span>
+        </button>
         <a href="/api/template" class="btn btn-secondary" style="text-decoration:none;">
           📄 <span data-i18n="btn_download_template">Modelo Excel (AppGeoRoutePlan)</span>
         </a>
@@ -120,6 +148,41 @@
     </div>
 
   </main>
+
+  <!-- Modal QR Code / Cartaz de Acesso para Motoristas -->
+  <div id="qr-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header no-print">
+        <h3 class="modal-title" data-i18n="qr_modal_title">Acesso Rápido para Motoristas</h3>
+        <button class="modal-close" id="btn-close-qr">&times;</button>
+      </div>
+      
+      <!-- Cartaz Imprimível -->
+      <div id="printable-qr-poster" style="text-align:center; padding: 10px;">
+        <div style="font-size: 32px; margin-bottom: 4px;">🚚</div>
+        <h2 style="font-size: 22px; font-weight: 800; color: var(--brand-primary); margin-bottom: 4px;">AppGeoRoutePlan</h2>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">Aplicação Móvel de Navegação & Entregas</p>
+        
+        <div id="qrcode-container" style="display:inline-flex; padding: 16px; background: white; border-radius: 12px; border: 2px solid var(--border-color); box-shadow: var(--shadow-md); margin-bottom: 20px;"></div>
+        
+        <div style="text-align: left; background: var(--bg-surface-alt); padding: 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px;">
+          <strong style="display:block; margin-bottom: 6px;" data-i18n="qr_instructions_title">Como Aceder:</strong>
+          <p style="margin-bottom: 4px;" data-i18n="qr_step_1">1. Aponte a câmara do telemóvel ao QR Code.</p>
+          <p style="margin-bottom: 4px;" data-i18n="qr_step_2">2. Introduza o seu PIN da rota do dia.</p>
+          <p data-i18n="qr_step_3">3. No navegador, clique em 'Adicionar ao ecrã principal' para instalar.</p>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-muted);">
+          Endereço direto: <span id="qr-direct-link" style="font-weight:700; color:var(--text-primary);"></span>
+        </div>
+      </div>
+
+      <div class="no-print" style="display:flex; justify-content:space-between; gap:10px; margin-top:20px;">
+        <button class="btn btn-secondary" onclick="document.getElementById('qr-modal').classList.remove('active')" data-i18n="btn_cancel">Fechar</button>
+        <button class="btn btn-primary" onclick="window.print()" data-i18n="btn_print_poster">🖨️ Imprimir Cartaz A4</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal Importar Excel -->
   <div id="import-modal" class="modal-backdrop">
