@@ -61,6 +61,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </svg>
       ),
     },
+    {
+      name: "📱 App Motoristas",
+      href: "https://driver.testeweb.cloud",
+      isExternal: true,
+      icon: (
+        <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      ),
+    },
     ...((user as any)?.is_superadmin
       ? [
           {
@@ -205,7 +215,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Navigation Menu */}
           <nav className="p-4 space-y-1.5">
-            {menuItems.map((item) => {
+            {menuItems.map((item: any) => {
+              if (item.isExternal) {
+                return (
+                  <a
+                    key={item.name}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-emerald-400 hover:bg-emerald-950/40 hover:text-emerald-300 border border-emerald-500/30 bg-emerald-950/20 shadow-sm transition-all cursor-pointer"
+                  >
+                    <div className="flex items-center space-x-3">
+                      {item.icon}
+                      <span>{item.name}</span>
+                    </div>
+                    <svg className="w-3.5 h-3.5 text-emerald-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                );
+              }
               const isActive = pathname.startsWith(item.href);
               return (
                 <Link
@@ -284,6 +313,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center space-x-3">
+            {/* App Motoristas Direct Link */}
+            <a
+              href="https://driver.testeweb.cloud"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm shadow-emerald-500/10 cursor-pointer"
+              title="Abrir AppGeoRoutePlan (WebApp dos Motoristas)"
+            >
+              <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <span>📱 App Motoristas</span>
+              <svg className="w-3 h-3 text-emerald-400/70 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+
             {/* License info pill */}
             <div className="hidden lg:flex items-center space-x-2 bg-zinc-850 border border-zinc-800 px-3 py-1.5 rounded-xl text-xs">
               <span className="text-zinc-400">Licença:</span>
