@@ -59,7 +59,7 @@ def autofit_columns(ws, max_cols=30, min_width=12):
                 max_len = len(val_str)
         ws.column_dimensions[col_letter].width = max(max_len + 4, min_width)
 
-def format_data_rows(ws, start_row, end_row, num_cols, center_cols=(), right_cols=()):
+def format_data_rows(ws, start_row, end_row, num_cols, center_cols=(), right_cols=(), currency_cols=()):
     for r_idx in range(start_row, end_row + 1):
         ws.row_dimensions[r_idx].height = 20
         row_fill = FILL_ZEBRA if (r_idx % 2 == 0) else FILL_WHITE
@@ -68,7 +68,10 @@ def format_data_rows(ws, start_row, end_row, num_cols, center_cols=(), right_col
             cell.font = FONT_DATA
             cell.fill = row_fill
             cell.border = BORDER_CELL
-            if c_idx in center_cols:
+            if c_idx in currency_cols:
+                cell.number_format = '#,##0.00 €'
+                cell.alignment = ALIGN_RIGHT
+            elif c_idx in center_cols:
                 cell.alignment = ALIGN_CENTER
             elif c_idx in right_cols:
                 cell.alignment = ALIGN_RIGHT
