@@ -669,18 +669,26 @@ export default function TablesFleetPage() {
         {/* Modal de Geocodificação Manual do Armazém */}
         {geoModalOpen && editingWhIndex !== null && (
           <WarehouseGeoModal
-            warehouse={warehouses[editingWhIndex]}
-            onClose={() => {
-              setGeoModalOpen(false);
-              setEditingWhIndex(null);
-            }}
-            onSave={(lat, lon, quality) => {
+            isOpen={geoModalOpen}
+            warehouseName={warehouses[editingWhIndex].name}
+            initialAddress={warehouses[editingWhIndex].address}
+            initialCp={warehouses[editingWhIndex].cp}
+            initialLocality={warehouses[editingWhIndex].locality}
+            initialLat={warehouses[editingWhIndex].lat}
+            initialLon={warehouses[editingWhIndex].lon}
+            onConfirm={(address, cp, locality, lat, lon) => {
+              updateWarehouse(editingWhIndex, "address", address);
+              updateWarehouse(editingWhIndex, "cp", cp);
+              updateWarehouse(editingWhIndex, "locality", locality);
               updateWarehouse(editingWhIndex, "lat", lat);
               updateWarehouse(editingWhIndex, "lon", lon);
-              updateWarehouse(editingWhIndex, "quality", quality);
               setGeoModalOpen(false);
               setEditingWhIndex(null);
               persistAllTables();
+            }}
+            onClose={() => {
+              setGeoModalOpen(false);
+              setEditingWhIndex(null);
             }}
           />
         )}
