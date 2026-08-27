@@ -262,7 +262,7 @@ def geocode_warehouses(warehouses: List[WarehouseItem], current_user: UserRespon
 
 
 @router.get("/template/unified")
-def download_unified_template(current_user: UserResponse = Depends(get_current_user)):
+def download_unified_template():
     from utils.template_manager import create_unified_project_template
     from fastapi.responses import Response
     
