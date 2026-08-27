@@ -10,6 +10,7 @@ FONT_FAMILY = "Segoe UI"
 FONT_HEADER = Font(name=FONT_FAMILY, size=11, bold=True, color="FFFFFF")
 FONT_DATA = Font(name=FONT_FAMILY, size=10, color="1F2937")
 FONT_DATA_BOLD = Font(name=FONT_FAMILY, size=10, bold=True, color="1F2937")
+FONT_MUTED = Font(name=FONT_FAMILY, size=9, italic=True, color="6B7280")
 
 COLOR_REQ = "1E3A8A"        # Azul Escuro (OBRIGATÓRIO)
 COLOR_REC = "2563EB"        # Azul Mais Claro (RECOMENDADO)
@@ -295,3 +296,12 @@ def save_master_template_file(output_path: str = "Ficheiros EXCEL/GeoRoutePlan.x
 if __name__ == "__main__":
     p = save_master_template_file()
     print(f"Generated COMPLETE 9-SHEET unified template at: {p}")
+
+# Aliases for export_engine compatibility
+build_sheet_instrucoes = build_sheet_9_instrucoes
+build_sheet_armazens = build_sheet_1_armazens
+build_sheet_frota = build_sheet_2_frota
+build_sheet_entregas = build_sheet_3_entregas
+build_sheet_regras = build_sheet_4_regras
+build_sheet_rotas = build_sheet_5_rotas
+build_sheet_manifestos = build_sheet_6_manifestos

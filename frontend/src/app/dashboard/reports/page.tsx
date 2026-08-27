@@ -30,9 +30,33 @@ export default function ReportsPage() {
     fetchReports();
   }, [selectedProject]);
 
-  const handleExportFinal = () => {
+  const handleExportFinal = async () => {
     if (!selectedProject) return;
-    window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/reports/${selectedProject.id}/export`;
+    try {
+      const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/reports/${selectedProject.id}/export`, { headers });
+      if (!res.ok) {
+        // Fallback direct download
+        window.open(`/api/reports/${selectedProject.id}/export`, "_blank");
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const projClean = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
+      a.download = `Relatorio_Final_${projClean}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e: any) {
+      window.open(`/api/reports/${selectedProject.id}/export`, "_blank");
+    }
   };
 
   const totals = data?.totals || {
