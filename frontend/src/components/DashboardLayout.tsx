@@ -35,7 +35,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ),
     },
     {
-      name: "2. Frota & Armazéns",
+      name: "2. Tabelas",
       href: "/dashboard/fleet",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

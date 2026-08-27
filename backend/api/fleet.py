@@ -92,6 +92,8 @@ class WarehouseGeocoded(BaseModel):
 class VehicleItem(BaseModel):
     veiculo: str
     armazem: Optional[str] = ""
+    matricula: Optional[str] = ""
+    motorista: Optional[str] = ""
     capacidade_kg: Optional[float] = 1000.0
     capacidade_vol: Optional[float] = 5.0
     custo_km: Optional[float] = 0.5
@@ -100,9 +102,22 @@ class VehicleItem(BaseModel):
     horario_fim: Optional[str] = "18:00"
     is_active: Optional[int] = 1
 
+class DriverItem(BaseModel):
+    name: str
+    pin: Optional[str] = "1234"
+    phone: Optional[str] = ""
+    vehicle: Optional[str] = ""
+    is_active: Optional[int] = 1
+
+class ReasonItem(BaseModel):
+    reason: str
+    category: Optional[str] = "Geral"
+
 class FleetSaveRequest(BaseModel):
     fleet: List[VehicleItem] = []
     warehouses: List[WarehouseGeocoded] = []
+    drivers: List[DriverItem] = []
+    reasons: List[ReasonItem] = []
 
 
 

@@ -86,6 +86,21 @@ def init_database():
             )
         """)
         
+        # Tabela de Consumos Google
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS consumos_google (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER,
+                projeto_id INTEGER,
+                servico TEXT DEFAULT 'routes_traffic',
+                num_pedidos INTEGER DEFAULT 1,
+                custo_estimado REAL DEFAULT 0.01,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (empresa_id) REFERENCES empresas (id),
+                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+
         # Tabela de Geocoding Cache
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS geocoding_cache (
