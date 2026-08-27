@@ -1037,17 +1037,16 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
             # Synchronize active database table 'entregas'
-            for item in req.items:
-                if item.delivery_id is not None:
-                    cursor.execute(
-                        "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
-                        (new_route_clean, req.project_id, item.delivery_id)
-                    )
-                elif item.client_code:
-                    cursor.execute(
-                        "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
-                        (new_route_clean, req.project_id, item.client_code)
-                    )
+            if req.delivery_id is not None:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                    (new_route_clean, req.project_id, req.delivery_id)
+                )
+            elif req.client_code:
+                cursor.execute(
+                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                    (new_route_clean, req.project_id, req.client_code)
+                )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})

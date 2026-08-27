@@ -1,0 +1,125 @@
+﻿<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Motorista - AppGeoRoutePlan</title>
+  <link rel="stylesheet" href="/static/css/themes.css">
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="manifest" href="/static/manifest.json">
+</head>
+<body>
+  <!-- Header Fixo -->
+  <header class="app-header">
+    <div class="brand-wrapper">
+      <div class="brand-icon">🚚</div>
+      <div>
+        <div class="brand-name" style="font-size: 15px;" id="driver-name-display">Motorista</div>
+        <div style="font-size: 11px; color: var(--text-secondary);">
+          <span id="driver-route-display">Rota</span> | <span id="driver-vehicle-display">Viatura</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-controls">
+      <!-- Status Badge (Online/Offline/Sync) -->
+      <div id="network-status-badge" class="status-pill status-online">
+        <span class="dot"></span>
+        <span class="status-text" data-i18n="status_online">Online</span>
+      </div>
+      <select id="lang-select" class="lang-select">
+        <option value="pt">PT</option>
+        <option value="en">UK</option>
+        <option value="es">ES</option>
+        <option value="fr">FR</option>
+      </select>
+      <button id="theme-toggle-btn" class="btn-icon" aria-label="Toggle Theme">🌙</button>
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal com Scroll -->
+  <main class="app-content">
+    <div id="stops-list-container">
+      <!-- Cards gerados dinamicamente pelo app.js -->
+    </div>
+  </main>
+
+  <!-- Footer Fixo Ergonómico (Ações Rápidas) -->
+  <footer class="app-footer">
+    <button id="btn-nav-list" class="footer-btn active">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"></path>
+      </svg>
+      <span data-i18n="btn_clients_list">Clientes</span>
+    </button>
+    <button id="btn-nav-sync" class="footer-btn">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+      </svg>
+      <span data-i18n="btn_sync_now">Sincronizar</span>
+    </button>
+    <button id="btn-nav-summary" class="footer-btn">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+      </svg>
+      <span data-i18n="btn_summary">Resumo</span>
+    </button>
+    <button id="btn-logout" class="footer-btn">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+      </svg>
+      <span data-i18n="btn_logout">Sair</span>
+    </button>
+  </footer>
+
+  <!-- Modal Selecionar Motivo de Não Entrega -->
+  <div id="reason-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="modal_reason_title">Motivo de Não Entrega</h3>
+        <button class="modal-close" onclick="closeReasonModal()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="modal_reason_select">Selecione o Motivo</label>
+        <select id="select-fail-reason" class="form-select">
+          <!-- Opções preenchidas dinamicamente -->
+        </select>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
+        <button id="btn-cancel-reason" class="btn btn-secondary" data-i18n="btn_cancel">Cancelar</button>
+        <button id="btn-confirm-reason" class="btn btn-danger" data-i18n="btn_confirm">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Resumo da Rota -->
+  <div id="summary-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="summary_title">Resumo da Distribuição</h3>
+        <button class="modal-close" id="btn-close-summary">&times;</button>
+      </div>
+      <div class="stats-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="total_clients">Total Clientes</div>
+          <div id="sum-total" class="stat-val">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="success_rate">Taxa de Sucesso</div>
+          <div id="sum-rate" class="stat-val" style="color: #16a34a;">0%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="total_delivered">Entregues</div>
+          <div id="sum-delivered" class="stat-val" style="color: #16a34a;">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="total_failed">Falhadas</div>
+          <div id="sum-failed" class="stat-val" style="color: #dc2626;">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

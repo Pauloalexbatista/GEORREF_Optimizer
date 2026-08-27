@@ -1,0 +1,167 @@
+﻿<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Gestor - AppGeoRoutePlan</title>
+  <link rel="stylesheet" href="/static/css/themes.css">
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <!-- Leaflet CSS & JS for Live Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand-wrapper">
+      <div class="brand-icon">📊</div>
+      <div>
+        <div class="brand-name" data-i18n="manager_title">Painel de Gestão de Tráfego</div>
+        <div style="font-size: 11px; color: var(--text-secondary);">AppGeoRoutePlan - Central de Operações</div>
+      </div>
+    </div>
+    <div class="header-controls">
+      <select id="lang-select" class="lang-select">
+        <option value="pt">🇵🇹 PT</option>
+        <option value="en">🇬🇧 UK</option>
+        <option value="es">🇪🇸 ES</option>
+        <option value="fr">🇫🇷 FR</option>
+      </select>
+      <button id="theme-toggle-btn" class="btn-icon" aria-label="Toggle Theme">🌙</button>
+      <button id="btn-logout-manager" class="btn btn-secondary" style="min-height:36px; padding:6px 12px; font-size:12px;" data-i18n="btn_logout">Sair</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="app-content manager-content">
+    
+    <!-- Action Toolbar (Excel Template, Import/Export/Clear) -->
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a href="/api/template" class="btn btn-secondary" style="text-decoration:none;">
+          📄 <span data-i18n="btn_download_template">Modelo Excel (AppGeoRoutePlan)</span>
+        </a>
+        <button id="btn-open-import" class="btn btn-primary">
+          📥 <span data-i18n="btn_import_excel">Importar Excel Diário</span>
+        </button>
+        <button id="btn-export-day" class="btn btn-success">
+          📤 <span data-i18n="btn_export_excel">Exportar & Fechar Dia</span>
+        </button>
+      </div>
+      <div>
+        <button id="btn-clear-day" class="btn btn-danger">
+          🗑️ <span data-i18n="btn_clear_day">Limpar Dia</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Global Stats Overview -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label" data-i18n="total_clients">Total Clientes</div>
+        <div id="stat-total-stops" class="stat-val">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label" data-i18n="success_rate">Taxa de Sucesso</div>
+        <div id="stat-rate" class="stat-val" style="color: #16a34a;">0%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label" data-i18n="total_delivered">Entregues</div>
+        <div id="stat-delivered" class="stat-val" style="color: #16a34a;">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label" data-i18n="total_failed">Falhadas</div>
+        <div id="stat-failed" class="stat-val" style="color: #dc2626;">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label" data-i18n="total_pending">Pendentes</div>
+        <div id="stat-pending" class="stat-val" style="color: var(--text-secondary);">0</div>
+      </div>
+    </div>
+
+    <!-- Routes Overview Table -->
+    <div class="card" style="margin-bottom: 24px;">
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;" data-i18n="routes_overview">Progresso por Rota</h2>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th data-i18n="table_route">Rota</th>
+              <th data-i18n="table_driver">Motorista</th>
+              <th data-i18n="table_vehicle">Viatura</th>
+              <th data-i18n="table_progress">Progresso</th>
+              <th data-i18n="total_failed">Falhas</th>
+              <th data-i18n="table_last_gps">Último GPS</th>
+              <th data-i18n="table_actions">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="routes-table-body">
+            <!-- Gerado dinamicamente -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Live Map & Activity Feed Grid -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap:20px;">
+      <!-- Live Map Card -->
+      <div class="card">
+        <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;" data-i18n="live_map_title">Localização Live das Viaturas (GPS)</h2>
+        <div id="map"></div>
+      </div>
+
+      <!-- Live Activity Card -->
+      <div class="card">
+        <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;" data-i18n="live_activity_title">Histórico de Atividade em Direto</h2>
+        <div id="activity-feed-container" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Feed gerado dinamicamente -->
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal Importar Excel -->
+  <div id="import-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="import_modal_title">Importar Ficheiro Diário de Distribuição</h3>
+        <button class="modal-close" id="btn-close-import">&times;</button>
+      </div>
+      <form id="import-form">
+        <div class="form-group">
+          <label class="form-label" data-i18n="select_excel_file">Selecione o ficheiro Excel (.xlsx)</label>
+          <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="form-input" required>
+        </div>
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
+          * Estrutura recomendada: <strong>Armazém</strong> (1ª folha), <strong>Rotas</strong> (2ª folha), <strong>Motoristas e Carros</strong> e <strong>Justificação entregas</strong>.
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <a href="/api/template" style="font-size:12px; color:var(--brand-primary); text-decoration:none;">📄 Baixar Modelo</a>
+          <button type="submit" id="btn-upload-submit" class="btn btn-primary" data-i18n="btn_upload">Processar Ficheiro</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Atribuir Motorista -->
+  <div id="assign-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Atribuir Motorista a <span id="assign-route-name"></span></h3>
+        <button class="modal-close" id="btn-close-assign">&times;</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Selecione o Motorista</label>
+        <select id="select-assign-driver" class="form-select"></select>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
+        <button id="btn-confirm-assign" class="btn btn-primary" data-i18n="btn_confirm">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/manager.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+﻿{
+  "name": "AppGeoRoutePlan",
+  "short_name": "GeoRoute",
+  "description": "App de Navegação e Gestão de Entregas para Motoristas",
+  "start_url": "/driver",
+  "display": "standalone",
+  "background_color": "#2563eb",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
