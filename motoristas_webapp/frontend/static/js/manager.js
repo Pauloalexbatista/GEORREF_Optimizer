@@ -38,26 +38,26 @@ function initDashboardEvents() {
     window.location.href = "/login";
   });
   
-  // QR Code Modal
+  // QR Code Modal (Optimized for Mobile Phone Cameras)
   document.getElementById("btn-open-qr").addEventListener("click", () => {
     const qrContainer = document.getElementById("qrcode-container");
     const directLink = document.getElementById("qr-direct-link");
     const driverAppUrl = window.location.origin + "/login";
     
-    directLink.textContent = driverAppUrl;
+    directLink.innerHTML = `<a href="${driverAppUrl}" target="_blank" style="color:var(--brand-primary); font-weight:700; text-decoration:underline;">${driverAppUrl}</a>`;
     qrContainer.innerHTML = "";
     
     if (typeof QRCode !== "undefined") {
       qrCodeObj = new QRCode(qrContainer, {
         text: driverAppUrl,
-        width: 180,
-        height: 180,
-        colorDark: "#1e293b",
+        width: 220,
+        height: 220,
+        colorDark: "#000000",
         colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.H
+        correctLevel: QRCode.CorrectLevel.M
       });
     } else {
-      qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(driverAppUrl)}" alt="QR Code">`;
+      qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(driverAppUrl)}" alt="QR Code">`;
     }
     
     document.getElementById("qr-modal").classList.add("active");

@@ -19,6 +19,7 @@ interface AdminUser {
   programas: string;
   dias_restantes: number;
   password_plain?: string;
+  driver_password?: string;
   created_at?: string;
 }
 
@@ -44,6 +45,7 @@ export default function AdminUsersPage() {
   const [formDataValidade, setFormDataValidade] = useState("");
   const [formProgSite, setFormProgSite] = useState(true);
   const [formProgApp, setFormProgApp] = useState(true);
+  const [formDriverPassword, setFormDriverPassword] = useState("");
   const [formIsActive, setFormIsActive] = useState(true);
   const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
 
@@ -75,6 +77,7 @@ export default function AdminUsersPage() {
     setFormDataValidade(nextYear.toISOString().split("T")[0]);
     setFormProgSite(true);
     setFormProgApp(true);
+    setFormDriverPassword(generateRandomPassword());
     setFormIsActive(true);
     setShowModal(true);
   };
@@ -88,6 +91,7 @@ export default function AdminUsersPage() {
     setFormDataValidade(u.data_validade ? u.data_validade.slice(0, 10) : "2027-12-31");
     setFormProgSite(u.programas.includes("site"));
     setFormProgApp(u.programas.includes("app"));
+    setFormDriverPassword(u.driver_password || "");
     setFormIsActive(u.is_active);
     setShowModal(true);
   };
@@ -140,6 +144,7 @@ export default function AdminUsersPage() {
             responsavel: formResponsavel.trim(),
             email: formEmail.trim(),
             password: formPassword.trim() || undefined,
+            driver_password: formDriverPassword.trim(),
             data_validade: formDataValidade,
             programas: programasStr,
             is_active: formIsActive,
@@ -154,6 +159,7 @@ export default function AdminUsersPage() {
             responsavel: formResponsavel.trim(),
             email: formEmail.trim(),
             password: formPassword.trim() || "123456",
+            driver_password: formDriverPassword.trim(),
             data_validade: formDataValidade,
             programas: programasStr,
             is_admin: false,

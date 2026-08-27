@@ -313,12 +313,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* App Motoristas Direct Link */}
+            {/* App Motoristas Direct Link (High Contrast for Light & Dark Mode) */}
             <a
               href="https://driver.testeweb.cloud"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm shadow-emerald-500/10 cursor-pointer"
+              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 border border-emerald-500 cursor-pointer"
               title="Abrir AppGeoRoutePlan (WebApp dos Motoristas)"
             >
               <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

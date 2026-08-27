@@ -40,6 +40,7 @@ class AdminUserItem(BaseModel):
     programas: str
     dias_restantes: int
     password_plain: Optional[str] = None
+    driver_password: Optional[str] = ""
     created_at: Optional[str] = None
 
 class CreateUserPayload(BaseModel):
@@ -49,6 +50,7 @@ class CreateUserPayload(BaseModel):
     password: str
     data_validade: str = "2027-12-31"
     programas: str = "site,app"
+    driver_password: Optional[str] = ""
     is_admin: bool = False
 
 class UpdateUserPayload(BaseModel):

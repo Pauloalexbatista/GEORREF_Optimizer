@@ -677,6 +677,7 @@ def listar_todos_utilizadores_admin():
                 COALESCE(u.data_validade, e.data_validade, '2099-12-31') as data_validade,
                 COALESCE(u.programas, e.programas, 'site,app') as programas,
                 u.password_plain,
+                COALESCE(u.driver_password, e.driver_password, '') as driver_password,
                 u.created_at
             FROM utilizadores u
             LEFT JOIN empresas e ON u.empresa_id = e.id
@@ -685,7 +686,7 @@ def listar_todos_utilizadores_admin():
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
-def criar_utilizador_admin(empresa_nome, responsavel, email, password_plain, password_hash, data_validade="2027-12-31", programas="site,app", is_admin=False):
+def criar_utilizador_admin(empresa_nome, responsavel, email, password_plain, password_hash, data_validade="2027-12-31", programas="site,app", is_admin=False, driver_password=""): 
     """Cria uma nova empresa (se não existir) e o respetivo utilizador com validade e programas."""
     with get_db() as conn:
         cursor = conn.cursor()
@@ -695,20 +696,20 @@ def criar_utilizador_admin(empresa_nome, responsavel, email, password_plain, pas
             empresa_id = emp_row["id"]
         else:
             cursor.execute("""
-                INSERT INTO empresas (nome, email, plano, data_validade, programas, is_active)
-                VALUES (?, ?, 'pro', ?, ?, 1)
-            """, (empresa_nome.strip(), email.strip(), data_validade, programas))
+                INSERT INTO empresas (nome, email, plano, data_validade, programas, driver_password, is_active)
+                VALUES (?, ?, 'pro', ?, ?, ?, 1)
+            """, (empresa_nome.strip(), email.strip(), data_validade, programas, str(driver_password or "").strip()))
             empresa_id = cursor.lastrowid
         
         cursor.execute("""
-            INSERT INTO utilizadores (empresa_id, nome, email, password_hash, password_plain, is_admin, is_superadmin, is_active, data_validade, programas)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
-        """, (empresa_id, responsavel.strip(), email.strip(), password_hash, password_plain, 1 if is_admin else 0, data_validade, programas))
+            INSERT INTO utilizadores (empresa_id, nome, email, password_hash, password_plain, driver_password, is_admin, is_superadmin, is_active, data_validade, programas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
+        """, (empresa_id, responsavel.strip(), email.strip(), password_hash, password_plain, str(driver_password or "").strip(), 1 if is_admin else 0, data_validade, programas))
         user_id = cursor.lastrowid
         conn.commit()
         return user_id
 
-def atualizar_utilizador_admin(user_id, empresa_nome, responsavel, email, password_plain=None, password_hash=None, data_validade="2027-12-31", programas="site,app", is_active=1):
+def atualizar_utilizador_admin(user_id, empresa_nome, responsavel, email, password_plain=None, password_hash=None, data_validade="2027-12-31", programas="site,app", is_active=1, driver_password=""): 
     """Atualiza dados do utilizador, empresa, password, validade e programas."""
     with get_db() as conn:
         cursor = conn.cursor()
@@ -725,21 +726,22 @@ def atualizar_utilizador_admin(user_id, empresa_nome, responsavel, email, passwo
             is_active = 1
             data_validade = "2099-12-31"
 
-        cursor.execute("UPDATE empresas SET nome = ?, data_validade = ?, programas = ?, is_active = ? WHERE id = ?",
+        cursor.execute("UPDATE empresas SET nome = ?, data_validade = ?, programas = ?, driver_password = ?, is_active = ? WHERE id = ?", (empresa_nome.strip(), data_validade, programas, str(driver_password or "").strip(), is_active, empresa_id))
+        #
                        (empresa_nome.strip(), data_validade, programas, is_active, empresa_id))
         
         if password_hash and password_plain:
             cursor.execute("""
                 UPDATE utilizadores 
-                SET nome = ?, email = ?, password_hash = ?, password_plain = ?, data_validade = ?, programas = ?, is_active = ?
+                SET nome = ?, email = ?, password_hash = ?, password_plain = ?, driver_password = ?, data_validade = ?, programas = ?, is_active = ?
                 WHERE id = ?
-            """, (responsavel.strip(), email.strip(), password_hash, password_plain, data_validade, programas, is_active, user_id))
+            """, (responsavel.strip(), email.strip(), password_hash, password_plain, str(driver_password or "").strip(), data_validade, programas, is_active, user_id))
         else:
             cursor.execute("""
                 UPDATE utilizadores 
-                SET nome = ?, email = ?, data_validade = ?, programas = ?, is_active = ?
+                SET nome = ?, email = ?, driver_password = ?, data_validade = ?, programas = ?, is_active = ?
                 WHERE id = ?
-            """, (responsavel.strip(), email.strip(), data_validade, programas, is_active, user_id))
+            """, (responsavel.strip(), email.strip(), str(driver_password or "").strip(), data_validade, programas, is_active, user_id))
             
         conn.commit()
         return True
