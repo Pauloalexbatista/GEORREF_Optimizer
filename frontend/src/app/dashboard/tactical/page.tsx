@@ -308,6 +308,9 @@ export default function TacticalPage() {
               setSelectedStatusFilter(f.statusFilter === "with_cargo" ? "active" : f.statusFilter);
             }
           } catch (err) {}
+        } else if (e.key === "georoute_fleet_saved") {
+          // Frota/Armazens foram guardados - recarregar dados do planeamento automaticamente
+          loadTacticalData();
         }
       };
       window.addEventListener("storage", handleStorage);
@@ -900,6 +903,19 @@ export default function TacticalPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <span>{t.tactical.settingsBtn}</span>
+            </button>
+
+            {/* Recarregar Frota/Dados */}
+            <button
+              onClick={() => loadTacticalData()}
+              disabled={loading}
+              className="cursor-pointer bg-zinc-900 hover:bg-zinc-800 text-sky-400 border border-sky-500/40 rounded-xl px-3 py-2 text-xs font-bold transition-all flex items-center space-x-1.5 disabled:opacity-50"
+              title="Recarregar frota, armazens e dados do planeamento a partir da base de dados"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{loading ? "A carregar..." : "Recarregar"}</span>
             </button>
 
             {/* Optimize Sequences TSP */}

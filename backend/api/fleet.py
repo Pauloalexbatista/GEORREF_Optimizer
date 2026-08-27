@@ -434,21 +434,23 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
         state_dict["warehouses_geocoded"] = df_wh
         state_dict["df_warehouses"] = df_wh
 
-        from core.session_state import FleetVehicle
+        # NOTE: Guardar como dict puro - FleetVehicle nao tem is_active e pode perder
+        # campos durante a serializacao. Dict puro garante fidelidade total ao snapshot.
         fleet_dict = {}
         fleet_rows_for_db = []
         for veh in req.fleet:
             if not veh.veiculo or not veh.veiculo.strip():
                 continue
-            fleet_dict[veh.veiculo] = FleetVehicle(
-                capacidade_kg=float(veh.capacidade_kg or 1000.0),
-                capacidade_vol=float(veh.capacidade_vol or 5.0),
-                custo_km=float(veh.custo_km or 0.5),
-                velocidade_media=float(veh.velocidade_media or 40.0),
-                horario_inicio=str(veh.horario_inicio or "08:00"),
-                horario_fim=str(veh.horario_fim or "18:00"),
-                armazem=str(veh.armazem or "")
-            )
+            fleet_dict[veh.veiculo] = {
+                "capacidade_kg": float(veh.capacidade_kg or 1000.0),
+                "capacidade_vol": float(veh.capacidade_vol or 5.0),
+                "custo_km": float(veh.custo_km or 0.5),
+                "velocidade_media": float(veh.velocidade_media or 40.0),
+                "horario_inicio": str(veh.horario_inicio or "08:00"),
+                "horario_fim": str(veh.horario_fim or "18:00"),
+                "armazem": str(veh.armazem or ""),
+                "is_active": int(veh.is_active if veh.is_active is not None else 1)
+            }
             fleet_rows_for_db.append({
                 "veiculo": veh.veiculo,
                 "capacidade_kg": float(veh.capacidade_kg or 1000.0),

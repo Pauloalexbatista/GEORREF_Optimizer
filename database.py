@@ -125,6 +125,8 @@ def init_database():
                 nivel_qualidade INTEGER DEFAULT 99,
                 fonte_match TEXT DEFAULT 'PENDENTE',
                 morada_encontrada TEXT DEFAULT '',
+                rota TEXT DEFAULT '',
+                ordem INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (projeto_id) REFERENCES projetos (id)
             )
@@ -867,7 +869,9 @@ def ensure_entregas_columns():
                 ("telefone", "TEXT DEFAULT ''"),
                 ("observacoes", "TEXT DEFAULT ''"),
                 ("vendedor", "TEXT DEFAULT ''"),
-                ("volume_m3", "REAL DEFAULT 0.1")
+                ("volume_m3", "REAL DEFAULT 0.1"),
+                ("rota", "TEXT DEFAULT ''"),
+                ("ordem", "INTEGER DEFAULT 0")
             ]:
                 if col not in cols:
                     try:

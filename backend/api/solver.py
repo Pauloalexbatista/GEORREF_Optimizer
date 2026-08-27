@@ -25,7 +25,7 @@ import math
 
 # Resolve imports from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from database import get_db, get_projeto
+from database import get_db, get_projeto, ensure_entregas_columns
 from utils.distance_calculator import calculate_haversine_matrix
 from utils.optimization_solver import AdvancedRouteOptimizer
 from utils.persistence_manager import serialize_state, deserialize_state
