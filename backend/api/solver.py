@@ -1037,16 +1037,17 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
             # Synchronize active database table 'entregas'
-            if req.delivery_id is not None:
-                cursor.execute(
-                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
-                    (new_route_clean, req.project_id, req.delivery_id)
-                )
-            elif req.client_code:
-                cursor.execute(
-                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
-                    (new_route_clean, req.project_id, req.client_code)
-                )
+            for item in req.items:
+                if item.delivery_id is not None:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                        (new_route_clean, req.project_id, item.delivery_id)
+                    )
+                elif item.client_code:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
+                        (new_route_clean, req.project_id, item.client_code)
+                    )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
@@ -1087,12 +1088,16 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
         for item in req.items:
             target_idx = None
             if item.delivery_id is not None:
+                try:
+                    d_id = int(item.delivery_id)
+                except Exception:
+                    d_id = item.delivery_id
                 if "id" in df_routes.columns:
-                    m_id = df_routes[df_routes["id"] == item.delivery_id].index
+                    m_id = df_routes[df_routes["id"] == d_id].index
                     if len(m_id) > 0:
                         target_idx = m_id[0]
                 if target_idx is None and "ID_Original" in df_routes.columns:
-                    m_id = df_routes[df_routes["ID_Original"] == item.delivery_id].index
+                    m_id = df_routes[df_routes["ID_Original"] == d_id].index
                     if len(m_id) > 0:
                         target_idx = m_id[0]
                         
@@ -1100,7 +1105,9 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
                 t_code = str(item.client_code).strip().upper()
                 t_addr = str(item.address).strip().upper()
                 m_both = df_routes[
-                    (df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) &
+                    ((df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) |
+                     (df_routes["Doc_ID"].astype(str).str.strip().str.upper() == t_code) |
+                     (df_routes["Nome_Cliente"].astype(str).str.strip().str.upper() == t_code)) &
                     (df_routes["Morada"].astype(str).str.strip().str.upper() == t_addr)
                 ].index
                 if len(m_both) > 0:
@@ -1108,7 +1115,11 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
                     
             if target_idx is None and item.client_code:
                 t_code = str(item.client_code).strip().upper()
-                m_code = df_routes[df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code].index
+                m_code = df_routes[
+                    (df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) |
+                    (df_routes["Doc_ID"].astype(str).str.strip().str.upper() == t_code) |
+                    (df_routes["Nome_Cliente"].astype(str).str.strip().str.upper() == t_code)
+                ].index
                 if len(m_code) > 0:
                     target_idx = m_code[0]
 
@@ -1171,16 +1182,17 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
             # Synchronize active database table 'entregas'
-            if req.delivery_id is not None:
-                cursor.execute(
-                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
-                    (new_route_clean, req.project_id, req.delivery_id)
-                )
-            elif req.client_code:
-                cursor.execute(
-                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
-                    (new_route_clean, req.project_id, req.client_code)
-                )
+            for item in req.items:
+                if item.delivery_id is not None:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
+                        (new_route_clean, req.project_id, item.delivery_id)
+                    )
+                elif item.client_code:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND (codigo_cliente = ? OR nome_cliente = ?)",
+                        (new_route_clean, req.project_id, item.client_code, item.client_code)
+                    )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records"), "count": len(matched_indices)})
@@ -1279,16 +1291,10 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
                 (req.project_id, current_user.id, 3, snapshot_name, payload)
             )
             # Synchronize active database table 'entregas'
-            if req.delivery_id is not None:
-                cursor.execute(
-                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND id = ?",
-                    (new_route_clean, req.project_id, req.delivery_id)
-                )
-            elif req.client_code:
-                cursor.execute(
-                    "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND codigo_cliente = ?",
-                    (new_route_clean, req.project_id, req.client_code)
-                )
+            cursor.execute(
+                "UPDATE entregas SET rota = ? WHERE projeto_id = ? AND rota = ?",
+                (tgt_clean, req.project_id, src_clean)
+            )
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
