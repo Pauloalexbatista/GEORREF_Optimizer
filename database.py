@@ -726,9 +726,8 @@ def atualizar_utilizador_admin(user_id, empresa_nome, responsavel, email, passwo
             is_active = 1
             data_validade = "2099-12-31"
 
-        cursor.execute("UPDATE empresas SET nome = ?, data_validade = ?, programas = ?, driver_password = ?, is_active = ? WHERE id = ?", (empresa_nome.strip(), data_validade, programas, str(driver_password or "").strip(), is_active, empresa_id))
-        #
-                       (empresa_nome.strip(), data_validade, programas, is_active, empresa_id))
+        cursor.execute("UPDATE empresas SET nome = ?, data_validade = ?, programas = ?, driver_password = ?, is_active = ? WHERE id = ?",
+                       (empresa_nome.strip(), data_validade, programas, str(driver_password or "").strip(), is_active, empresa_id))
         
         if password_hash and password_plain:
             cursor.execute("""
