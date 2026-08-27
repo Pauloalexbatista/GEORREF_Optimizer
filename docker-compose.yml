@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   backend:
@@ -28,6 +28,14 @@ services:
       - "3000"
     depends_on:
       - backend
+    restart: unless-stopped
+
+  driver-app:
+    build:
+      context: .
+      dockerfile: motoristas_webapp/Dockerfile
+    ports:
+      - "8000"
     restart: unless-stopped
 
 volumes:
