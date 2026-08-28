@@ -364,6 +364,7 @@ export default function MapComponent({
     return (filterState?.statusFilter as any) || "all";
   });
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>(filterState?.selectedRoutes || []);
+  const [isRoutesPanelOpen, setIsRoutesPanelOpen] = useState<boolean>(true);
   const [showRoads, setShowRoads] = useState(true);
   const [mapLayer, setMapLayer] = useState<"standard" | "google_sat" | "google_hybrid">("standard");
   const [fitTrigger, setFitTrigger] = useState("");
@@ -660,15 +661,17 @@ export default function MapComponent({
       list = []; // In pending status, only pending chip is shown
     }
 
-    // Sort: Active with deliveries first -> vehicle name
+    // Sort: Vehicles with deliveries first (alphabetical order), empty vehicles at end (alphabetical order)
     return list.sort((a, b) => {
       const countA = clients.filter(c => routesMatch(c.Rota, a)).length;
       const countB = clients.filter(c => routesMatch(c.Rota, b)).length;
-      if ((countA > 0) !== (countB > 0)) {
-        return countA > 0 ? -1 : 1;
-      }
-      if (countA !== countB) return countB - countA;
-      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      const hasA = countA > 0;
+      const hasB = countB > 0;
+      
+      if (hasA && !hasB) return -1;
+      if (!hasA && hasB) return 1;
+      
+      return a.localeCompare(b, "pt", { numeric: true, sensitivity: "base" });
     });
   }, [warehouseVehicles, statusFilter, clients]);
 
@@ -954,101 +957,7 @@ export default function MapComponent({
           </div>
         </div>
 
-        {/* Filtered Vehicle Route Chips Strip */}
-        <div className="flex items-center flex-wrap gap-1 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl pointer-events-auto max-h-24 overflow-y-auto">
-          {/* Todas button */}
-          {(() => {
-            const totalGeocoded = clients.filter(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0).length;
-            return (
-              <button
-                onClick={() => handleRoutesChange([])}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                  selectedRoutes.length === 0
-                    ? "bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/80"
-                    : "bg-zinc-100 dark:bg-zinc-850 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-750"
-                }`}
-                title="Mostrar todas as rotas e clientes"
-              >
-                ✨ Todas ({totalGeocoded}/{clients.length})
-              </button>
-            );
-          })()}
-
-          {/* "Por Distribuir" Pending Deliveries Chip */}
-          {(() => {
-            const pendingStops = clients.filter(c => isPendingRoute(c.Rota));
-            const pendingCount = pendingStops.length;
-            if (pendingCount === 0) return null;
-            if (statusFilter === "with_cargo" || statusFilter === "empty") return null;
-            
-            const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, "Por Distribuir"));
-            const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], "Por Distribuir");
-
-            return (
-              <button
-                key="Por Distribuir"
-                onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
-                title="Clique para ver só encomendas Por Distribuir (Ctrl+Clique para seleção múltipla)"
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
-                  isExclusive
-                    ? "border-amber-500 bg-amber-600 text-white ring-2 ring-amber-400/80 shadow-md"
-                    : isSelected
-                    ? "border-amber-500/50 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 hover:border-amber-400"
-                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 text-amber-600/60 opacity-60 hover:opacity-100"
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm bg-amber-500" />
-                <span className="truncate max-w-[120px] font-bold">⚠️ Por Distribuir</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
-                    isExclusive
-                      ? "bg-white text-amber-900 border-white/80"
-                      : "bg-amber-500/20 text-amber-900 dark:text-amber-200 border-amber-500/40"
-                  }`}
-                >
-                  {pendingCount}
-                </span>
-              </button>
-            );
-          })()}
-
-          {/* Individual Filtered Vehicle Route Chips */}
-          {filteredVehiclesList.map((v, i) => {
-            const routeColor = getRouteColor(v, vehicles);
-            const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, v));
-            const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v);
-            const count = clients.filter(c => routesMatch(c.Rota, v)).length;
-
-            return (
-              <button
-                key={v}
-                onClick={(e) => toggleRouteFilter(v, e)}
-                title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1.5 cursor-pointer border shadow-sm ${
-                  isExclusive
-                    ? "border-indigo-500 bg-indigo-600 text-white ring-2 ring-indigo-400/80 shadow-md"
-                    : isSelected
-                    ? "border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 hover:border-indigo-400 hover:shadow"
-                    : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-400 opacity-60 hover:opacity-100"
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: routeColor }} />
-                <span className="truncate max-w-[110px] font-bold">{v}</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
-                    count > 0
-                      ? isExclusive
-                        ? "bg-white text-indigo-900 border-white/80"
-                        : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
-                      : "bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+{/* Top chips strip moved to left vertical table panel */}
       </div>
 
       <MapContainer key={mapLayer} center={center} zoom={11} className="w-full h-full">
