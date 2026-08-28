@@ -199,8 +199,11 @@ def parse_time_to_minutes(t_val, default=480) -> int:
 
 
 def minutes_to_time_str(m: int) -> str:
-    h = (int(m) // 60) % 24
-    mins = int(m) % 60
+    total_m = int(round(m))
+    h = total_m // 60
+    mins = total_m % 60
+    if h >= 24:
+        return f"+1d {h % 24:02d}:{mins:02d}"
     return f"{h:02d}:{mins:02d}"
 
 def parse_time_window_str(win_str: str) -> tuple:

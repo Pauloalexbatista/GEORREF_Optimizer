@@ -191,8 +191,15 @@ class AdvancedRouteOptimizer:
             cur_t    += (d_ret / max(segment_speed, 15.0)) * 60.0
             duration  = int(round(cur_t - vd["start"]))
 
-            # Real-world Logistics: routes are feasible as long as stop count and vehicle capacities are respected
-            is_feasible = len(nodes) <= MAX_STOPS
+            # Strict Logistics Rules:
+            # 1. Zero customer time window violations (no late deliveries allowed)
+            # 2. Driver shift end respected (vehicle must return to base before shift ends + 15 min buffer)
+            # 3. Maximum stops per vehicle
+            is_feasible = (
+                len(nodes) <= MAX_STOPS
+                and late_count == 0
+                and cur_t <= (vd["end"] + 15)
+            )
             return is_feasible, total_km, late_count, total_wait
 
         def _quick_ok(c, v, cur_w, cur_vol):
@@ -229,10 +236,9 @@ class AdvancedRouteOptimizer:
                     if cd_wh_norm != vd_wh_norm and cd_wh_norm not in vd_wh_norm and vd_wh_norm not in cd_wh_norm:
                         return False
 
-            # 4. Strict time window boundary check (only if strict windows requested)
-            if respect_time_windows:
-                if cd["tw_start"] >= vd["end"]:   return False
-                if cd["tw_end"]   <  vd["start"]: return False
+            # 4. Customer and vehicle time window compatibility
+            if cd["tw_start"] >= vd["end"]:   return False
+            if cd["tw_end"]   <  vd["start"]: return False
                 
             return True
 

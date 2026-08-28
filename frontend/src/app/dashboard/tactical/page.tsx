@@ -141,13 +141,17 @@ function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
 
 function isDeliveryLate(serviceStartTime: string, windowStr: string): boolean {
   if (!serviceStartTime || !windowStr || windowStr === "Qualquer" || windowStr === "--") return false;
+  if (serviceStartTime.startsWith("+1d") || serviceStartTime.startsWith("+2d")) return true;
   const parts = windowStr.split("-");
   if (parts.length < 2) return false;
   const endStr = parts[1].trim().slice(0, 5);
   const [endH, endM] = endStr.split(":").map((x) => parseInt(x, 10) || 0);
-  const [startH, startM] = serviceStartTime.split(":").map((x) => parseInt(x, 10) || 0);
+  const [startH, startM] = serviceStartTime.replace("+1d", "").replace("+2d", "").trim().split(":").map((x) => parseInt(x, 10) || 0);
   const endMin = endH * 60 + endM;
-  const startMin = startH * 60 + startM;
+  let startMin = startH * 60 + startM;
+  if (startH < 6 && endH > 12) {
+    startMin += 1440;
+  }
   if (endMin <= 0 || endMin >= 1440) return false;
   return startMin > endMin;
 }
