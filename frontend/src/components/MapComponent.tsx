@@ -786,11 +786,8 @@ export default function MapComponent({
   return (
     <div className="w-full h-full rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl relative z-10">
       
-      {/* FLOATING FILTER BAR (IDENTICAL TO SYSTEM) */}
-      <div className="absolute top-3 left-4 right-4 z-[1000] flex flex-col gap-1.5 pointer-events-none">
-        
-        {/* Main Filter Toolbar */}
-        <div className="bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl pointer-events-auto flex flex-wrap items-center justify-between gap-2.5">
+      {/* TOP ATTACHED CONTROL BAR (GLUED TO TOP EDGE) */}
+      <div className="absolute top-0 left-0 right-0 z-[1001] w-full bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md px-3 py-1.5 border-b border-zinc-200 dark:border-zinc-800 shadow-md pointer-events-auto flex flex-wrap items-center justify-between gap-2">
           
           {/* Left: Search input, Warehouse dropdown & Status pills */}
           <div className="flex items-center flex-wrap gap-2">
@@ -957,7 +954,178 @@ export default function MapComponent({
           </div>
         </div>
 
-{/* Top chips strip moved to left vertical table panel */}
+      {/* LEFT-SIDE VERTICAL VEHICLE ROUTES PANEL / TABLE */}
+      <div className="absolute left-3 top-14 bottom-4 z-[1000] pointer-events-none flex flex-col justify-start">
+        {isRoutesPanelOpen ? (
+          <div className="pointer-events-auto w-64 md:w-72 max-h-[calc(100vh-130px)] flex flex-col bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden transition-all duration-200">
+            {/* Panel Header */}
+            <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm">🚚</span>
+                <div>
+                  <h3 className="text-xs font-black text-zinc-800 dark:text-zinc-100 tracking-tight">Filtro de Viaturas</h3>
+                  <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+                    {activeVehiclesCount} com carga · {emptyVehiclesCount} vazias
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsRoutesPanelOpen(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all cursor-pointer font-bold text-xs"
+                title="Colapsar painel lateral"
+              >
+                ◀
+              </button>
+            </div>
+
+            {/* Quick Actions / Todas as Rotas */}
+            <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/50 space-y-1">
+              {(() => {
+                const totalGeocoded = clients.filter(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0).length;
+                const isAllSelected = selectedRoutes.length === 0;
+                return (
+                  <button
+                    onClick={() => handleRoutesChange([])}
+                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer border ${
+                      isAllSelected
+                        ? "bg-indigo-600 text-white border-indigo-500 shadow-sm ring-1 ring-indigo-400"
+                        : "bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <span>✨</span>
+                      <span>Todas as Rotas</span>
+                    </span>
+                    <span className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded ${
+                      isAllSelected ? "bg-white/20 text-white" : "bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    }`}>
+                      {totalGeocoded} / {clients.length}
+                    </span>
+                  </button>
+                );
+              })()}
+
+              {/* Por Distribuir Option */}
+              {(() => {
+                const pendingStops = clients.filter(c => isPendingRoute(c.Rota));
+                const pendingCount = pendingStops.length;
+                if (pendingCount === 0) return null;
+                const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, "Por Distribuir"));
+                const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], "Por Distribuir");
+
+                return (
+                  <button
+                    onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
+                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer border ${
+                      isExclusive
+                        ? "bg-amber-600 text-white border-amber-500 shadow-sm ring-1 ring-amber-400"
+                        : isSelected
+                        ? "bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-500/40"
+                        : "bg-white dark:bg-zinc-900 text-zinc-400 border-zinc-200 dark:border-zinc-800 opacity-60 hover:opacity-100"
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                      <span>⚠️ Por Distribuir</span>
+                    </span>
+                    <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30">
+                      {pendingCount}
+                    </span>
+                  </button>
+                );
+              })()}
+            </div>
+
+            {/* Table Header */}
+            <div className="px-3 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+              <span className="flex-1">Viatura / Rota</span>
+              <span className="w-12 text-center">Paragens</span>
+              <span className="w-14 text-right">Carga (kg)</span>
+            </div>
+
+            {/* Table Body - Scrollable list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-900/60 p-1 space-y-0.5">
+              {filteredVehiclesList.map((v) => {
+                const routeColor = getRouteColor(v, vehicles);
+                const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, v));
+                const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v);
+                const vClients = clients.filter(c => routesMatch(c.Rota, v));
+                const count = vClients.length;
+                const totalKg = Math.round(vClients.reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0));
+
+                return (
+                  <button
+                    key={v}
+                    onClick={(e) => toggleRouteFilter(v, e)}
+                    title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
+                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-between cursor-pointer border ${
+                      isExclusive
+                        ? "bg-indigo-600 text-white border-indigo-500 shadow-md ring-2 ring-indigo-400/80"
+                        : isSelected
+                        ? "bg-white dark:bg-zinc-900/90 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 hover:border-indigo-400/60 shadow-sm"
+                        : "bg-transparent text-zinc-400 dark:text-zinc-500 border-transparent opacity-40 hover:opacity-100 hover:bg-zinc-100 dark:hover:bg-zinc-900/50"
+                    }`}
+                  >
+                    {/* Color dot + Vehicle name */}
+                    <div className="flex items-center space-x-2 flex-1 min-w-0 pr-1 text-left">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ring-1 ring-black/20"
+                        style={{ backgroundColor: routeColor }}
+                      />
+                      <span className="truncate font-bold text-[11px]">{v}</span>
+                    </div>
+
+                    {/* Delivery count pill */}
+                    <div className="w-12 flex justify-center">
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                          count > 0
+                            ? isExclusive
+                              ? "bg-white text-indigo-950 border-white/80"
+                              : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
+                            : "bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-600 dark:border-zinc-800"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </div>
+
+                    {/* Cargo kg */}
+                    <div className="w-14 text-right font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
+                      {count > 0 ? `${totalKg.toLocaleString()}k` : "—"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Panel Footer */}
+            <div className="px-3 py-1.5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 flex items-center justify-between text-[10px]">
+              <span className="text-zinc-500 dark:text-zinc-400 font-medium">
+                {selectedRoutes.length === 0 ? "Todas selecionadas" : `${selectedRoutes.length} selecionada(s)`}
+              </span>
+              <button
+                onClick={handleFitAll}
+                className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+              >
+                🎯 Enquadrar
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Minimized Panel Strip */
+          <div className="pointer-events-auto bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl p-1 flex flex-col items-center">
+            <button
+              onClick={() => setIsRoutesPanelOpen(true)}
+              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center space-x-1.5 shadow-md cursor-pointer transition-all"
+              title="Abrir tabela de viaturas"
+            >
+              <span>🚚</span>
+              <span>Viaturas ({activeVehiclesCount})</span>
+              <span>▶</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <MapContainer key={mapLayer} center={center} zoom={11} className="w-full h-full">
