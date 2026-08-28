@@ -87,10 +87,41 @@ function formatTimeWindow(winStr?: string): string {
   return cleaned.slice(0, 13) || "Qualquer";
 }
 
+function normRouteName(name: string): string {
+  if (!name) return "";
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/cuentas/g, "contas")
+    .replace(/customer/g, "costumer")
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function isPendingRoute(routeName: string) {
   if (!routeName) return true;
-  const s = routeName.toUpperCase();
-  return s.includes("PENDENTE") || s.includes("DISTRIBUIR");
+  const n = normRouteName(routeName);
+  return (
+    n === "" ||
+    n === "pordistribuir" ||
+    n === "pendente" ||
+    n === "none" ||
+    n === "null" ||
+    n === "semviatura" ||
+    n.includes("distribuir") ||
+    n.includes("pendente")
+  );
+}
+
+function routesMatch(r1?: string, r2?: string): boolean {
+  if (!r1 && !r2) return true;
+  if (!r1 || !r2) return false;
+  if (isPendingRoute(r1) && isPendingRoute(r2)) return true;
+  if (isPendingRoute(r1) !== isPendingRoute(r2)) return false;
+  const n1 = normRouteName(r1);
+  const n2 = normRouteName(r2);
+  return n1 === n2 || n1.includes(n2) || n2.includes(n1);
 }
 
 // Controller that centers map only once on initial mount/data load, avoiding resetting view on zoom/pan
@@ -156,10 +187,17 @@ const routeColors = [
 ];
 
 function getRouteColor(routeName: string, vehicleList: string[]) {
-  if (isPendingRoute(routeName)) return "#f59e0b"; // Amber for pending
-  const idx = vehicleList.indexOf(routeName);
-  if (idx === -1) return routeColors[0];
-  return routeColors[idx % routeColors.length];
+  if (!routeName || isPendingRoute(routeName)) return "#f59e0b"; // Amber for pending
+  const idx = vehicleList.findIndex(v => routesMatch(v, routeName));
+  if (idx !== -1) return routeColors[idx % routeColors.length];
+  
+  // Deterministic fallback color based on name hash so different route names have distinct colors
+  let hash = 0;
+  const norm = normRouteName(routeName);
+  for (let i = 0; i < norm.length; i++) {
+    hash = norm.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return routeColors[Math.abs(hash) % routeColors.length];
 }
 
 // Marker Icon for Warehouse
@@ -471,7 +509,7 @@ export default function MapComponent({
 
       for (const rName of activeRoutes) {
         const stops = clients
-          .filter(c => c.Rota === rName && c.Latitude !== 0 && c.Longitude !== 0)
+          .filter(c => routesMatch(c.Rota, rName) && Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0)
           .sort((a, b) => a.Ordem - b.Ordem);
 
         if (stops.length === 0) continue;
@@ -535,7 +573,7 @@ export default function MapComponent({
     if (vPrefix.length >= 3 && (selWh.includes(vPrefix) || vPrefix.includes(selWh))) return true;
 
     // C. Check if clients on this route have this warehouse
-    const routeClients = clients.filter(c => c.Rota === v);
+    const routeClients = clients.filter(c => routesMatch(c.Rota, v));
     if (routeClients.length > 0) {
       return routeClients.some(c => {
         const cWh = (c.Armazem || "").trim().toLowerCase();
@@ -581,15 +619,24 @@ export default function MapComponent({
     return Array.from(set);
   }, [warehouses, clients, fleet]);
 
-  // List of vehicles scoped to the currently selected warehouse
+  // List of vehicles scoped to the currently selected warehouse, dynamically including all routes present in clients
   const warehouseVehicles = useMemo(() => {
-    return vehicles.filter(v => isVehicleInWarehouse(v, selectedWarehouse));
+    const list: string[] = [...vehicles.filter(v => !isPendingRoute(v))];
+    clients.forEach(c => {
+      if (c.Rota && !isPendingRoute(c.Rota)) {
+        const found = list.some(v => routesMatch(v, c.Rota));
+        if (!found) {
+          list.push(c.Rota);
+        }
+      }
+    });
+    return list.filter(v => isVehicleInWarehouse(v, selectedWarehouse));
   }, [vehicles, selectedWarehouse, fleet, clients]);
 
-  // Vehicle stats for badges (accurately scoped to selected warehouse!)
+  // Vehicle stats for badges (accurately scoped to selected warehouse with normalized matching!)
   const { totalVehiclesCount, activeVehiclesCount, emptyVehiclesCount, pendingStopsCount } = useMemo(() => {
     const vList = warehouseVehicles;
-    const withCargo = vList.filter(v => clients.some(c => c.Rota === v)).length;
+    const withCargo = vList.filter(v => clients.some(c => routesMatch(c.Rota, v))).length;
     const empty = Math.max(0, vList.length - withCargo);
     const pending = clients.filter(c => isPendingRoute(c.Rota) && isClientInWarehouse(c, selectedWarehouse)).length;
     return {
@@ -602,21 +649,21 @@ export default function MapComponent({
 
   // Filtered vehicles list based on active warehouse & status filter
   const filteredVehiclesList = useMemo(() => {
-    let list = warehouseVehicles;
+    let list = [...warehouseVehicles];
 
     // Status Filter
     if (statusFilter === "with_cargo") {
-      list = list.filter(v => clients.some(c => c.Rota === v));
+      list = list.filter(v => clients.some(c => routesMatch(c.Rota, v)));
     } else if (statusFilter === "empty") {
-      list = list.filter(v => !clients.some(c => c.Rota === v));
+      list = list.filter(v => !clients.some(c => routesMatch(c.Rota, v)));
     } else if (statusFilter === "pending") {
       list = []; // In pending status, only pending chip is shown
     }
 
     // Sort: Active with deliveries first -> vehicle name
     return list.sort((a, b) => {
-      const countA = clients.filter(c => c.Rota === a).length;
-      const countB = clients.filter(c => c.Rota === b).length;
+      const countA = clients.filter(c => routesMatch(c.Rota, a)).length;
+      const countB = clients.filter(c => routesMatch(c.Rota, b)).length;
       if ((countA > 0) !== (countB > 0)) {
         return countA > 0 ? -1 : 1;
       }
@@ -961,9 +1008,9 @@ export default function MapComponent({
           {/* Individual Filtered Vehicle Route Chips */}
           {filteredVehiclesList.map((v, i) => {
             const routeColor = getRouteColor(v, vehicles);
-            const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes(v);
-            const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === v;
-            const count = clients.filter(c => c.Rota === v).length;
+            const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, v));
+            const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v);
+            const count = clients.filter(c => routesMatch(c.Rota, v)).length;
 
             return (
               <button
@@ -1219,7 +1266,7 @@ export default function MapComponent({
         {/* Real OSRM Road Geometry Polylines (Strictly filtered to visible routes only) */}
         {showRoads && Object.entries(roadGeometries).map(([rName, coords]) => {
           if (!visibleRouteNames.has(rName)) return null;
-          if (selectedRoutes.length > 0 && !selectedRoutes.includes(rName)) return null;
+          if (selectedRoutes.length > 0 && !selectedRoutes.some(sel => routesMatch(sel, rName))) return null;
           const color = getRouteColor(rName, vehicles);
 
           return (
