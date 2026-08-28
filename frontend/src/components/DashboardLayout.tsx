@@ -31,23 +31,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     setIsBackingUp(true);
     try {
-      const token = localStorage.getItem("token");
-      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/solver/${selectedProject.id}/export-full`;
-      const res = await fetch(url, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
+      const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/solver/export-full/${selectedProject.id}`, {
+        headers,
       });
+
       if (!res.ok) {
-        throw new Error("N?o existem dados ou rotas no projeto para exportar.");
+        let errorMsg = "N?o existem dados dispon?veis para exportar no projeto.";
+        try {
+          const errJson = await res.json();
+          if (errJson.detail) errorMsg = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
+        } catch (_) {}
+        throw new Error(errorMsg);
       }
+
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
       const now = new Date();
       const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "") + "_" + String(now.getHours()).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0");
-      const cleanProjName = selectedProject.nome.replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
+      const cleanProjName = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
       a.download = `GeoRoutePlan_${cleanProjName}_${dateStr}.xlsx`;
       document.body.appendChild(a);
       a.click();
