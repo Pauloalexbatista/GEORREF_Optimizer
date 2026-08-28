@@ -750,12 +750,21 @@ export default function FleetPage() {
                     filteredFleet.map((v) => {
                       const idx = fleet.indexOf(v);
                       return (
-                        <tr key={idx} className="hover:bg-zinc-850/30">
-                          <td className="py-2 px-3">
+                        <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
+                            <button
+                              onClick={() => deleteVehicle(idx)}
+                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                              title="Eliminar Viatura"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                          <td className="py-1 px-1.5 border-r border-zinc-800">
                             <select
                               value={v.armazem}
                               onChange={(e) => updateVehicle(idx, "armazem", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 w-36 text-xs"
+                              className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded cursor-pointer"
                             >
                               {warehouses.map((wh) => (
                                 <option key={wh.name} value={wh.name}>
@@ -767,127 +776,118 @@ export default function FleetPage() {
                               )}
                             </select>
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-1.5 border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.veiculo}
                               onChange={(e) => updateVehicle(idx, "veiculo", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-32 font-bold"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               value={v.capacidade_kg}
                               onChange={(e) => updateVehicle(idx, "capacidade_kg", parseFloat(e.target.value) || 0)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-20 text-center font-mono"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
                               step="50"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               value={v.capacidade_vol}
                               onChange={(e) => updateVehicle(idx, "capacidade_vol", parseFloat(e.target.value) || 0)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-16 text-center font-mono"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
                               step="0.5"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               value={v.velocidade_media}
                               onChange={(e) => updateVehicle(idx, "velocidade_media", parseFloat(e.target.value) || 0)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-16 text-center font-mono"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.horario_inicio}
                               onChange={(e) => updateVehicle(idx, "horario_inicio", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-zinc-100 w-20 text-center font-mono text-[11px]"
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
                               placeholder="08:00:00"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.horario_fim}
                               onChange={(e) => updateVehicle(idx, "horario_fim", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-zinc-100 w-20 text-center font-mono text-[11px]"
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
                               placeholder="18:00:00"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               step="0.01"
                               value={v.custo_km}
                               onChange={(e) => updateVehicle(idx, "custo_km", parseFloat(e.target.value) || 0)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-16 text-center font-mono"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               step="0.5"
                               value={v.custo_hora}
                               onChange={(e) => updateVehicle(idx, "custo_hora", parseFloat(e.target.value) || 0)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-16 text-center font-mono"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               value={v.max_entregas}
                               onChange={(e) => updateVehicle(idx, "max_entregas", parseInt(e.target.value, 10) || 0)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-16 text-center font-mono"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-1.5 border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.regras}
                               onChange={(e) => updateVehicle(idx, "regras", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 w-28 text-xs"
+                              className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
                               placeholder="Regras..."
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-1.5 border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.motorista_nome}
                               onChange={(e) => updateVehicle(idx, "motorista_nome", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-200 w-32"
+                              className="bg-transparent border-none outline-none text-zinc-200 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
                               placeholder="Nome Motorista..."
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-1.5 border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.motorista_telemovel}
                               onChange={(e) => updateVehicle(idx, "motorista_telemovel", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 w-28 font-mono text-[11px]"
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-[11px] focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                               placeholder="910000000"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-1 text-center">
                             <input
                               type="checkbox"
                               checked={v.is_active === 1}
                               onChange={(e) => updateVehicle(idx, "is_active", e.target.checked ? 1 : 0)}
                               className="w-4 h-4 text-indigo-600 bg-zinc-950 border-zinc-800 rounded focus:ring-indigo-500 cursor-pointer"
                             />
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <button
-                              onClick={() => deleteVehicle(idx)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
-                              title="Eliminar Viatura"
-                            >
-                              🗑️
-                            </button>
                           </td>
                         </tr>
                       );
