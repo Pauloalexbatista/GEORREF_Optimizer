@@ -65,8 +65,8 @@ export interface MapComponentProps {
   warehouses: MapWarehouse[];
   vehicles: string[];
   fleet?: any[];
-  onMoveClientRoute?: (clientName: string, newRoute: string, deliveryId?: number, address?: string) => void;
-  onBulkReassign?: (items: { clientName: string; deliveryId?: number; address?: string }[], newRoute: string) => Promise<void>;
+  onMoveClientRoute?: (clientName: string, newRoute: string, deliveryId?: number, address?: string, lat?: number, lon?: number) => void;
+  onBulkReassign?: (items: { clientName: string; deliveryId?: number; address?: string; lat?: number; lon?: number }[], newRoute: string) => Promise<void>;
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
   filterState?: MapFilterState;
   onFilterChange?: (filters: MapFilterState) => void;
@@ -422,16 +422,20 @@ export default function MapComponent({
     try {
       if (onBulkReassign) {
         await onBulkReassign(
-          selectedStops.map((c) => ({
-            clientName: c.Cliente,
+          selectedStops.map((c: any) => ({
+            clientName: c.Cliente || c.Nome_Cliente || c.Doc_ID || "",
             deliveryId: c.id || c.ID_Original,
-            address: c.Morada,
+            address: c.Morada || "",
+            lat: c.Latitude !== undefined ? Number(c.Latitude) : (c.lat !== undefined ? Number(c.lat) : undefined),
+            lon: c.Longitude !== undefined ? Number(c.Longitude) : (c.lon !== undefined ? Number(c.lon) : (c.lng !== undefined ? Number(c.lng) : undefined)),
           })),
           bulkTargetRoute
         );
       } else if (onMoveClientRoute) {
         for (const s of selectedStops) {
-          onMoveClientRoute(s.Cliente, bulkTargetRoute, s.id || s.ID_Original, s.Morada);
+          const sLat = (s as any).Latitude !== undefined ? Number((s as any).Latitude) : ((s as any).lat !== undefined ? Number((s as any).lat) : undefined);
+          const sLon = (s as any).Longitude !== undefined ? Number((s as any).Longitude) : ((s as any).lon !== undefined ? Number((s as any).lon) : undefined);
+          onMoveClientRoute(s.Cliente || (s as any).Nome_Cliente || "", bulkTargetRoute, s.id || s.ID_Original, s.Morada, sLat, sLon);
         }
       }
       setSelectedClientKeys([]);
@@ -1182,7 +1186,7 @@ export default function MapComponent({
                       <label className="text-[10px] font-bold text-zinc-600 shrink-0">Mover para:</label>
                       <select
                         value={isPending ? "Por Distribuir" : c.Rota}
-                        onChange={(e) => onMoveClientRoute(c.Cliente, e.target.value, c.id || c.ID_Original, c.Morada)}
+                        onChange={(e) => onMoveClientRoute(c.Cliente || (c as any).Nome_Cliente || "", e.target.value, c.id || c.ID_Original, c.Morada, (c as any).Latitude || (c as any).lat, (c as any).Longitude || (c as any).lon)}
                         className="w-full text-[11px] bg-white border border-zinc-300 rounded-lg px-2 py-1 font-semibold text-zinc-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
                       >
                         <option value="Por Distribuir">🟡 Por Distribuir</option>

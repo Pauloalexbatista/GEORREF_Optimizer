@@ -94,6 +94,8 @@ class ReassignRequest(BaseModel):
     delivery_id: Optional[Any] = None
     deliveryId: Optional[Any] = None
     address: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     new_route: str
 
     def get_code(self):
@@ -108,6 +110,8 @@ class BulkReassignSelectionItem(BaseModel):
     delivery_id: Optional[Any] = None
     deliveryId: Optional[Any] = None
     address: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
     def get_code(self):
         return self.client_code or self.clientName or ""
@@ -969,11 +973,25 @@ def _norm_stop_str(s) -> str:
     s = unicodedata.normalize("NFKD", s)
     return "".join(c for c in s if not unicodedata.combining(c))
 
-def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None):
+def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None, lat=None, lon=None):
     if df_r.empty:
         return None
-        
-    # 1. By ID (numeric or string)
+
+    # 1. Match by Coordinates (Highest Precision on Map)
+    if lat is not None and lon is not None:
+        try:
+            f_lat = float(lat)
+            f_lon = float(lon)
+            if f_lat != 0.0 and f_lon != 0.0:
+                for idx, r in df_r.iterrows():
+                    r_lat = float(r.get("Latitude", 0.0) or 0.0)
+                    r_lon = float(r.get("Longitude", 0.0) or 0.0)
+                    if abs(r_lat - f_lat) < 0.0003 and abs(r_lon - f_lon) < 0.0003:
+                        return idx
+        except Exception:
+            pass
+
+    # 2. By ID (numeric or string)
     if deliv_id is not None:
         s_id = str(deliv_id).strip().upper()
         for col in ["id", "ID_Original", "Doc_ID", "Codigo_Cliente"]:
@@ -985,7 +1003,7 @@ def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None):
     n_code = _norm_stop_str(code)
     n_addr = _norm_stop_str(addr)
     
-    # 2. By code + address
+    # 3. By code + address
     if n_code and n_addr:
         for idx, r in df_r.iterrows():
             r_c = _norm_stop_str(r.get("Cliente") or r.get("Nome_Cliente") or r.get("Doc_ID") or r.get("Codigo_Cliente"))
@@ -993,21 +1011,21 @@ def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None):
             if (r_c == n_code or n_code in r_c or r_c in n_code) and (r_a == n_addr or n_addr in r_a or r_a in n_addr):
                 return idx
                 
-    # 3. By code only
+    # 4. By code only
     if n_code:
         for idx, r in df_r.iterrows():
             r_c = _norm_stop_str(r.get("Cliente") or r.get("Nome_Cliente") or r.get("Doc_ID") or r.get("Codigo_Cliente"))
             if r_c == n_code or n_code in r_c or r_c in n_code:
                 return idx
                 
-    # 4. By address only
+    # 5. By address only
     if n_addr:
         for idx, r in df_r.iterrows():
             r_a = _norm_stop_str(r.get("Morada"))
             if r_a == n_addr or n_addr in r_a or r_a in n_addr:
                 return idx
 
-    # 5. Rapidfuzz fallback
+    # 6. Rapidfuzz fallback
     try:
         from rapidfuzz import fuzz
         if n_code:
@@ -1015,7 +1033,7 @@ def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None):
             for idx, r in df_r.iterrows():
                 r_c = _norm_stop_str(r.get("Cliente") or r.get("Nome_Cliente") or r.get("Doc_ID"))
                 score = fuzz.ratio(n_code, r_c)
-                if score > best_score and score >= 65:
+                if score > best_score and score >= 50:
                     best_score = score
                     best_idx = idx
             if best_idx is not None:
@@ -1102,7 +1120,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
         if df_routes.empty:
             raise HTTPException(status_code=400, detail="Não existem entregas ou rotas no projeto para reatribuir.")
             
-        target_idx = _find_stop_match(df_routes, deliv_id=req.get_id(), code=req.get_code(), addr=req.address)
+        target_idx = _find_stop_match(df_routes, deliv_id=req.get_id(), code=req.get_code(), addr=req.address, lat=req.lat, lon=req.lon)
         if target_idx is None:
             if len(df_routes) == 1:
                 target_idx = df_routes.index[0]
@@ -1207,7 +1225,7 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
 
         matched_indices = []
         for item in req.items:
-            target_idx = _find_stop_match(df_routes, deliv_id=item.get_id(), code=item.get_code(), addr=item.address)
+            target_idx = _find_stop_match(df_routes, deliv_id=item.get_id(), code=item.get_code(), addr=item.address, lat=item.lat, lon=item.lon)
             if target_idx is not None and target_idx not in matched_indices:
                 matched_indices.append(target_idx)
 

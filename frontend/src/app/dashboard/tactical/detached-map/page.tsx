@@ -202,7 +202,7 @@ export default function DetachedMapPage() {
     }
   };
 
-  const handleBulkReassign = async (items: { clientName: string; deliveryId?: number; address?: string }[], newRoute: string) => {
+  const handleBulkReassign = async (items: { clientName: string; deliveryId?: number; address?: string; lat?: number; lon?: number }[], newRoute: string) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
     lastMutationTimeRef.current = Date.now();
     const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
@@ -218,6 +218,8 @@ export default function DetachedMapPage() {
             client_code: it.clientName,
             delivery_id: it.deliveryId,
             address: it.address,
+            lat: it.lat,
+            lon: it.lon,
           })),
           new_route: targetRoute,
         }),
