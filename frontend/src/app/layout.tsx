@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ProjectProvider } from "@/context/ProjectContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { I18nProvider } from "@/context/I18nContext";
+import ExtensionErrorSuppressor from "@/components/ExtensionErrorSuppressor";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,6 +34,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-zinc-950 text-zinc-100 transition-colors duration-200">
+        <ExtensionErrorSuppressor />
         <ThemeProvider>
           <I18nProvider>
             <AuthProvider>
