@@ -1458,3 +1458,114 @@ def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserR
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao ordenar sequências de rotas: {str(e)}")
+
+class SingleRouteOptimizeRequest(BaseModel):
+    project_id: int
+    route_name: str
+
+@router.post("/optimize-single-route")
+def optimize_single_route(req: SingleRouteOptimizeRequest, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(req.project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
+            row = cursor.fetchone()
+            state_dict = deserialize_state(row["payload_json"]) if (row and row["payload_json"]) else {}
+
+        df_canonical = _build_routes_from_state_or_db(req.project_id, state_dict)
+        if df_canonical.empty:
+            raise HTTPException(status_code=400, detail="Não existem rotas para otimizar.")
+            
+        warehouses_df = state_dict.get("warehouses_geocoded")
+        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
+            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
+        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
+        
+        target_route = req.route_name.strip()
+        route_mask = df_canonical["Rota"].astype(str).str.strip().str.lower() == target_route.lower()
+        route_stops = df_canonical[route_mask].copy()
+        
+        if len(route_stops) > 1:
+            v_info = fleet_dict.get(target_route, {})
+            wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
+            depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
+            v_start_min = parse_time_to_minutes(v_info.get("start_time", "08:00:00"), 480)
+            v_speed = float(v_info.get("speed", 50.0))
+            
+            stop_indices = list(route_stops.index)
+            curr_lat, curr_lon = depot_lat, depot_lon
+            curr_time_min = v_start_min
+            cum_dist = 0.0
+            order_counter = 1
+            
+            remaining = stop_indices.copy()
+            while remaining:
+                best_idx = None
+                best_dist = float('inf')
+                for s_idx in remaining:
+                    s_lat = float(df_canonical.at[s_idx, "Latitude"])
+                    s_lon = float(df_canonical.at[s_idx, "Longitude"])
+                    d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon)
+                    if d < best_dist:
+                        best_dist = d
+                        best_idx = s_idx
+                        
+                if best_idx is None:
+                    break
+                    
+                remaining.remove(best_idx)
+                s_lat = float(df_canonical.at[best_idx, "Latitude"])
+                s_lon = float(df_canonical.at[best_idx, "Longitude"])
+                
+                travel_time_min = (best_dist / v_speed) * 60.0 if v_speed > 0 else 10.0
+                arr_time_min = curr_time_min + travel_time_min
+                serv_min = 15.0
+                dep_time_min = arr_time_min + serv_min
+                cum_dist += best_dist
+                
+                df_canonical.at[best_idx, "Ordem"] = order_counter
+                df_canonical.at[best_idx, "Ordem_Paragem"] = order_counter
+                df_canonical.at[best_idx, "Distancia_KM"] = round(best_dist, 2)
+                df_canonical.at[best_idx, "Distancia_Acumulada_KM"] = round(cum_dist, 2)
+                df_canonical.at[best_idx, "Tempo_Viagem_Min"] = round(travel_time_min, 1)
+                df_canonical.at[best_idx, "Tempo_Servico_Min"] = serv_min
+                df_canonical.at[best_idx, "Chegada"] = minutes_to_time_str(int(arr_time_min))
+                df_canonical.at[best_idx, "Saida"] = minutes_to_time_str(int(dep_time_min))
+                
+                curr_lat, curr_lon = s_lat, s_lon
+                curr_time_min = dep_time_min
+                order_counter += 1
+
+        state_dict["routes_solution"] = df_canonical
+        payload = serialize_state(state_dict)
+        from datetime import datetime
+        snapshot_name = f"Otimização Trajeto ({target_route}) - {datetime.now().strftime('%H:%M:%S')}"
+        user_id = current_user.id
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
+                (req.project_id, user_id, 3, snapshot_name, payload)
+            )
+            # Sync to SQLite entregas table
+            for _, r in df_canonical.iterrows():
+                r_id = r.get("id") or r.get("ID_Original")
+                if r_id:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ?, ordem_paragem = ? WHERE id = ? AND projeto_id = ?",
+                        (str(r.get("Rota", "Por Distribuir")), int(r.get("Ordem", 0)), r_id, req.project_id)
+                    )
+            conn.commit()
+
+        routes_list = df_canonical.to_dict(orient="records")
+        return sanitize_json_data({"status": "success", "routes": routes_list})
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
