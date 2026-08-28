@@ -1,4 +1,7 @@
 export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
   if (typeof window !== "undefined") {
     // If running on localhost / 127.0.0.1, connect directly to FastAPI port 8000 to eliminate Node proxy timeouts
     if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
