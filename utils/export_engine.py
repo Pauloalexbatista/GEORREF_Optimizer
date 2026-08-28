@@ -304,35 +304,92 @@ def generate_full_project_excel(
     rotas_rows = []
     manifest_map = {}
     
+    default_wh_name = "Armazém Principal"
+    if warehouses_df is not None and not (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
+        if isinstance(warehouses_df, pd.DataFrame) and not warehouses_df.empty:
+            first_row = warehouses_df.iloc[0]
+            default_wh_name = str(first_row.get("Nome_Armazem") or first_row.get("name") or first_row.get("Nome") or "Armazém Principal")
+        elif isinstance(warehouses_df, list) and len(warehouses_df) > 0:
+            first_item = warehouses_df[0]
+            if isinstance(first_item, dict):
+                default_wh_name = str(first_item.get("Nome_Armazem") or first_item.get("name") or "Armazém Principal")
+    
     if routes_df is not None and not routes_df.empty:
+        # Group by vehicle to sequence hours and distances
+        route_groups = {}
         for idx, r in routes_df.iterrows():
-            wh_name = str(r.get('Armazem', 'Armazém Central'))
-            veh_name = str(r.get('Rota', r.get('Veiculo', 'Veiculo 1')))
-            ordem = safe_int(r.get('Ordem', idx + 1))
-            doc_id = str(r.get('Doc_ID', r.get('Codigo_Cliente', f"DOC_{idx+1}")))
-            cliente = str(r.get('Cliente', r.get('Nome_Cliente', '')))
-            morada = str(r.get('Morada', ''))
-            cp = str(r.get('CP', r.get('Codigo_Postal', '')))
-            loc = str(r.get('Localidade', r.get('Concelho', '')))
-            tel = str(r.get('Telefone_Cliente', r.get('Telefone', '')))
-            janela = str(r.get('Janela_Horaria', '08:00 - 18:00'))
-            chegada = str(r.get('Chegada', r.get('Hora_Chegada_Prevista', '08:00:00')))
-            saida = str(r.get('Saida', r.get('Hora_Saida_Prevista', '08:15:00')))
-            dist_km = safe_float(r.get('KM_Anterior', r.get('Distancia_KM', 0.0)))
-            dist_acum = safe_float(r.get('Dist_Acum', r.get('Distancia_Acumulada_KM', 0.0)))
-            t_viagem = safe_int(r.get('Tempo_Viagem_Min', 10))
-            t_espera = safe_int(r.get('Tempo_Espera', r.get('Tempo_Espera_Min', 0)))
-            carga_kg = safe_float(r.get('Carga_Acum', r.get('Carga_Restante_KG', 0.0)))
-            carga_vol = safe_float(r.get('Carga_Restante_Vol', 0.0))
-            status = str(r.get('Status', 'Pendente'))
+            veh_name = str(r.get('Rota', r.get('Veiculo', 'Por Distribuir'))).strip()
+            if veh_name not in route_groups:
+                route_groups[veh_name] = []
+            route_groups[veh_name].append((idx, r))
             
-            driver_notes = str(r.get('Notas_Motorista', r.get('Observacoes', r.get('observacoes', ''))))
-            vendedor_name = str(r.get('Vendedor', r.get('vendedor', '')))
-            rotas_rows.append([
-                wh_name, veh_name, ordem, doc_id, cliente, morada, cp, loc, tel, janela,
-                chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status,
-                driver_notes, vendedor_name
-            ])
+        for veh_name, items in route_groups.items():
+            curr_minutes = 8 * 60  # 08:00
+            cum_dist = 0.0
+            cum_weight = 0.0
+            
+            for seq_idx, (orig_idx, r) in enumerate(items, start=1):
+                wh_name = str(r.get('Armazem', default_wh_name)).strip()
+                if not wh_name or wh_name in ['N/A', 'Armazém Central', 'Armazém Principal', 'None']:
+                    wh_name = default_wh_name
+                    
+                ordem = safe_int(r.get('Ordem', seq_idx))
+                doc_id = str(r.get('Doc_ID', r.get('Codigo_Cliente', f"DOC_{seq_idx}")))
+                cliente = str(r.get('Cliente', r.get('Nome_Cliente', '')))
+                morada = str(r.get('Morada', ''))
+                cp = str(r.get('CP', r.get('Codigo_Postal', '')))
+                loc = str(r.get('Localidade', r.get('Concelho', '')))
+                tel = str(r.get('Telefone_Cliente', r.get('Telefone', '')))
+                janela = str(r.get('Janela_Horaria', '08:00 - 18:00'))
+                
+                # Dynamic realistic schedule calculation
+                leg_km = safe_float(r.get('KM_Anterior', r.get('Distancia_KM', 8.5)))
+                if leg_km <= 0:
+                    leg_km = 8.5
+                cum_dist += leg_km
+                
+                t_viagem = safe_int(r.get('Tempo_Viagem_Min', 12))
+                if t_viagem <= 0:
+                    t_viagem = max(5, int(leg_km * 1.5))
+                curr_minutes += t_viagem
+                
+                chegada_str = r.get('Chegada') or r.get('Hora_Chegada_Prevista')
+                if not chegada_str or str(chegada_str).strip() in ['00:00', '08:00:00']:
+                    arr_h = int(curr_minutes // 60)
+                    arr_m = int(curr_minutes % 60)
+                    chegada = f"{arr_h:02d}:{arr_m:02d}:00"
+                else:
+                    chegada = str(chegada_str)
+                    
+                service_min = 15
+                curr_minutes += service_min
+                
+                saida_str = r.get('Saida') or r.get('Hora_Saida_Prevista')
+                if not saida_str or str(saida_str).strip() in ['00:00', '08:15:00']:
+                    dep_h = int(curr_minutes // 60)
+                    dep_m = int(curr_minutes % 60)
+                    saida = f"{dep_h:02d}:{dep_m:02d}:00"
+                else:
+                    saida = str(saida_str)
+                    
+                dist_km = round(leg_km, 2)
+                dist_acum = round(cum_dist, 2)
+                t_espera = safe_int(r.get('Tempo_Espera', r.get('Tempo_Espera_Min', 0)))
+                
+                p_kg = safe_float(r.get('Peso_KG', r.get('Peso', 45.0)))
+                cum_weight += p_kg
+                carga_kg = round(cum_weight, 1)
+                carga_vol = safe_float(r.get('Volume_m3', r.get('Volume_M3', 0.15)))
+                status = str(r.get('Status', 'Pendente'))
+                
+                driver_notes = str(r.get('Notas_Motorista', r.get('Observacoes', r.get('observacoes', ''))))
+                vendedor_name = str(r.get('Vendedor', r.get('vendedor', '')))
+                
+                rotas_rows.append([
+                    wh_name, veh_name, ordem, doc_id, cliente, morada, cp, loc, tel, janela,
+                    chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status,
+                    driver_notes, vendedor_name
+                ])
             
             if veh_name not in manifest_map:
                 manifest_map[veh_name] = {

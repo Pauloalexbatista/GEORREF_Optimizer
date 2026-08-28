@@ -1270,9 +1270,8 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
                 
             state_dict = deserialize_state(row["payload_json"])
             
-            routes_df = state_dict.get('routes_solution')
-            if routes_df is None or (isinstance(routes_df, pd.DataFrame) and routes_df.empty):
-                routes_df = state_dict.get('routes_df')
+            df_canonical = _build_routes_from_state_or_db(project_id, state_dict)
+            routes_df = df_canonical
                 
             wh_raw = state_dict.get('warehouses_geocoded')
             if wh_raw is None or (isinstance(wh_raw, pd.DataFrame) and wh_raw.empty):
