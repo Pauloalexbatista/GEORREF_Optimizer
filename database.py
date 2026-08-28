@@ -383,13 +383,13 @@ def save_frota_projeto(projeto_id, frota_data):
             cursor.execute("""
                 INSERT INTO frota (
                     projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
-                    velocidade_media, horario_inicio, horario_fim, armazem, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    velocidade_media, horario_inicio, horario_fim, armazem, regras, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, f.get('veiculo'), float(f.get('capacidade_kg') or 1000.0),
                 float(f.get('capacidade_volume') or f.get('capacidade_vol') or 5.0), float(f.get('custo_km') or 0.5),
                 float(f.get('velocidade_media') or 40.0), str(f.get('horario_inicio') or '08:00'), str(f.get('horario_fim') or '18:00'),
-                str(f.get('armazem') or ''), int(f.get('is_active', 1) if f.get('is_active') is not None else 1)
+                str(f.get('armazem') or ''), str(f.get('regras') or f.get('Regras') or ''), int(f.get('is_active', 1) if f.get('is_active') is not None else 1)
             ))
         
         conn.commit()

@@ -45,6 +45,8 @@ class AdvancedRouteOptimizer:
         solving_depth   = str(params.get("solving_depth",  "balanced") or "balanced").lower()
         time_limit      = float(params.get("time_limit_seconds", 45)   or 45)
 
+        respect_tw = bool(params.get("respect_time_windows", False))
+
         return self._solve_layered_vrptw(
             distance_matrix, demands, vehicle_capacities, depot_indices,
             num_warehouses, volume_demands, vehicle_volume_capacities,
@@ -55,6 +57,10 @@ class AdvancedRouteOptimizer:
             load_mode=load_mode,
             solving_depth=solving_depth,
             time_limit_seconds=time_limit,
+            client_rules=client_rules,
+            vehicle_rules=vehicle_rules,
+            rules_matrix=rules_matrix,
+            respect_time_windows=respect_tw
         )
 
     def _solve_layered_vrptw(
@@ -68,6 +74,10 @@ class AdvancedRouteOptimizer:
         load_mode="full",
         solving_depth="balanced",
         time_limit_seconds=45.0,
+        client_rules=None,
+        vehicle_rules=None,
+        rules_matrix=None,
+        respect_time_windows=False,
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_clients  = len(demands) - num_warehouses
@@ -110,6 +120,7 @@ class AdvancedRouteOptimizer:
             if client_time_windows and (c - num_warehouses) < len(client_time_windows):
                 tw_s, tw_e = client_time_windows[c - num_warehouses]
 
+            c_rule = client_rules[c - num_warehouses] if client_rules and (c - num_warehouses) < len(client_rules) else ""
             client_data[c] = {
                 "idx":           c,
                 "lat":           lat,
@@ -121,7 +132,8 @@ class AdvancedRouteOptimizer:
                 "tw_start":      tw_s,
                 "tw_end":        tw_e,
                 "wh":            c_wh,
-                "depot_idx":     c_depot_idx
+                "depot_idx":     c_depot_idx,
+                "rules":         c_rule
             }
 
         # Build vehicle data
@@ -134,9 +146,11 @@ class AdvancedRouteOptimizer:
             wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
             v_depot_idx = depot_indices[v] if depot_indices and v < len(depot_indices) else 0
 
+            v_rule = vehicle_rules[v] if vehicle_rules and v < len(vehicle_rules) else ""
             vehicle_data.append({
                 "id": v, "start": vs, "end": ve,
-                "cap_w": cw, "cap_v": cv, "wh": wh, "depot_idx": v_depot_idx
+                "cap_w": cw, "cap_v": cv, "wh": wh, "depot_idx": v_depot_idx,
+                "rules": v_rule
             })
 
         # ------------------------------------------------------------------
@@ -162,7 +176,6 @@ class AdvancedRouteOptimizer:
                 cd = client_data[c]
                 d  = distance_matrix[cur_l][c] * ROAD_FACTOR
                 total_km += d
-                # Hybrid speed: 75 km/h for highway segments (>15km), else SPEED_KMH
                 segment_speed = 75.0 if (d / ROAD_FACTOR) > 15.0 else SPEED_KMH
                 cur_t    += (d / max(segment_speed, 15.0)) * 60.0
                 if cur_t < cd["tw_start"]:
@@ -174,26 +187,59 @@ class AdvancedRouteOptimizer:
                 cur_l  = c
             d_ret     = distance_matrix[cur_l][v_depot] * ROAD_FACTOR
             total_km += d_ret
-            # Hybrid speed: 75 km/h for highway segments (>15km), else SPEED_KMH
             segment_speed = 75.0 if (d_ret / ROAD_FACTOR) > 15.0 else SPEED_KMH
             cur_t    += (d_ret / max(segment_speed, 15.0)) * 60.0
             duration  = int(round(cur_t - vd["start"]))
-            is_feasible = (
-                late_count == 0
-                and cur_t <= vd["end"] + 30
-                and duration <= (vd["end"] - vd["start"] + 60)
-                and len(nodes) <= MAX_STOPS
-            )
+
+            is_feasible = len(nodes) <= MAX_STOPS
+            if respect_time_windows:
+                is_feasible = (
+                    is_feasible
+                    and late_count == 0
+                    and cur_t <= vd["end"] + 30
+                    and duration <= (vd["end"] - vd["start"] + 60)
+                )
             return is_feasible, total_km, late_count, total_wait
 
         def _quick_ok(c, v, cur_w, cur_vol):
             vd = vehicle_data[v]
             cd = client_data[c]
-            if cd["tw_start"] >= vd["end"]:   return False
-            if cd["tw_end"]   <  vd["start"]: return False
-            if cd["wh"] and vd["wh"] and cd["wh"] != vd["wh"]: return False
+            
+            # 1. Rules / Tags compatibility check
+            c_rules = cd.get("rules", "")
+            v_rules = vd.get("rules", "")
+            
+            if c_rules or v_rules:
+                if not is_vehicle_compatible(v_rules, c_rules, rules_matrix):
+                    return False
+                # If vehicle is specialized with rules, preserve its capacity for matching tagged clients
+                if v_rules and not c_rules:
+                    has_unassigned_matching = any(
+                        client_data[uc].get("rules")
+                        and is_vehicle_compatible(v_rules, client_data[uc].get("rules"), rules_matrix)
+                        for uc in dropped
+                        if uc != c
+                    )
+                    if has_unassigned_matching:
+                        return False
+
+            # 2. Capacity checks
             if cur_w   + cd["weight"] > vd["cap_w"]: return False
             if cur_vol + cd["volume"] > vd["cap_v"]: return False
+
+            # 3. Warehouse match check (flexible if 1 warehouse or unassigned)
+            if num_warehouses > 1 and cd["wh"] and vd["wh"]:
+                cd_wh_norm = cd["wh"].strip().lower()
+                vd_wh_norm = vd["wh"].strip().lower()
+                if cd_wh_norm and vd_wh_norm and cd_wh_norm not in ["armazém central", "armazém principal", "n/a", "none"] and vd_wh_norm not in ["armazém central", "armazém principal", "n/a", "none"]:
+                    if cd_wh_norm != vd_wh_norm and cd_wh_norm not in vd_wh_norm and vd_wh_norm not in cd_wh_norm:
+                        return False
+
+            # 4. Strict time window boundary check (only if strict windows requested)
+            if respect_time_windows:
+                if cd["tw_start"] >= vd["end"]:   return False
+                if cd["tw_end"]   <  vd["start"]: return False
+                
             return True
 
         def _insert_cost(c, route, v):
@@ -231,10 +277,11 @@ class AdvancedRouteOptimizer:
             return lates
 
         # ------------------------------------------------------------------
-        # PHASE 1 — FAR-FIRST GREEDY FILL
+        # PHASE 1 — FAR-FIRST GREEDY FILL (Prioritizing Tagged Deliveries)
         # ------------------------------------------------------------------
         all_clients = sorted(client_data.keys(),
-                             key=lambda c: -client_data[c]["dist_to_depot"])
+                             key=lambda c: (1 if client_data[c].get("rules") else 0, -client_data[c]["dist_to_depot"]),
+                             reverse=True)
 
         routes:   List[List[int]] = [[] for _ in range(num_vehicles)]
         veh_w:    List[float]     = [0.0] * num_vehicles
@@ -255,6 +302,15 @@ class AdvancedRouteOptimizer:
                 if not feas:
                     continue
                 cost = _insert_cost(c, routes[v], v) + wait * 0.5
+                
+                # Tag preference bonus: if vehicle has exact tag match with client, prioritize it
+                c_rules = cd.get("rules", "")
+                v_rules = vehicle_data[v].get("rules", "")
+                if c_rules and v_rules:
+                    cost -= 500.0  # Strong affinity bonus for matching tags
+                elif not c_rules and v_rules:
+                    cost += 200.0  # Preserve specialized vehicles for tagged clients
+                
                 if cost < best_cost:
                     best_cost = cost
                     best_v    = v
@@ -286,13 +342,8 @@ class AdvancedRouteOptimizer:
                             acd = client_data[asgn_c]
                             if drop_cd["dist_to_depot"] <= acd["dist_to_depot"]:
                                 continue
-                            new_w   = veh_w[v] - acd["weight"] + drop_cd["weight"]
-                            new_vol = veh_v[v] - acd["volume"] + drop_cd["volume"]
-                            if new_w   > vd["cap_w"]: continue
-                            if new_vol > vd["cap_v"]: continue
-                            if drop_cd["tw_start"] >= vd["end"]:   continue
-                            if drop_cd["tw_end"]   <  vd["start"]: continue
-                            if drop_cd["wh"] and vd["wh"] and drop_cd["wh"] != vd["wh"]: continue
+                            if not _quick_ok(drop_c, v, veh_w[v] - acd["weight"], veh_v[v] - acd["volume"]):
+                                continue
                             test_r = _sequence([x for x in routes[v] if x != asgn_c] + [drop_c], v)
                             feas, _, lates, _ = _eval(test_r, v)
                             if not feas:
@@ -343,6 +394,8 @@ class AdvancedRouteOptimizer:
                         if new_v_a > vehicle_data[va]["cap_v"]: continue
                         if new_w_b > vehicle_data[vb]["cap_w"]: continue
                         if new_v_b > vehicle_data[vb]["cap_v"]: continue
+                        if any(not is_vehicle_compatible(vehicle_data[va]["rules"], client_data[c]["rules"], rules_matrix) for c in routes[vb]): continue
+                        if any(not is_vehicle_compatible(vehicle_data[vb]["rules"], client_data[c]["rules"], rules_matrix) for c in routes[va]): continue
 
                         feas_asw, km_asw, late_asw, _ = _eval(routes[vb], va)
                         feas_bsw, km_bsw, late_bsw, _ = _eval(routes[va], vb)

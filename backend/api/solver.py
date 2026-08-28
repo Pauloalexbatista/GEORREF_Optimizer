@@ -411,7 +411,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 df_rows.append({
                     "id": dr["id"],
                     "Codigo_Cliente": dr["codigo_cliente"],
-                "Nome_Cliente": dr.get("nome_cliente") or dr["codigo_cliente"],
+                    "Nome_Cliente": dr.get("nome_cliente") or dr["codigo_cliente"],
                     "Morada": dr["morada"],
                     "Codigo_Postal": dr["codigo_postal"],
                     "Localidade": dr.get("_concelho") or dr.get("concelho", ""),
@@ -423,7 +423,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     "Latitude": float(dr["latitude"]),
                     "Longitude": float(dr["longitude"]),
                     "Nivel_Qualidade": int(dr.get("nivel_qualidade") or 0),
-                    "Armazem": dr.get("armazem")
+                    "Armazem": dr.get("armazem"),
+                    "Regras": str(dr.get("regras") or "")
                 })
             deliveries_df = pd.DataFrame(df_rows)
             
@@ -452,7 +453,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "start_time": str(dict_f.get("horario_inicio") or "08:00:00"),
                         "end_time": str(dict_f.get("horario_fim") or "18:00:00"),
                         "warehouse": str(dict_f.get("armazem") or ""),
-                        "regras": ""
+                        "regras": str(dict_f.get("regras") or "")
                     }
         
         # Fallback to snapshot if database table is empty
