@@ -725,7 +725,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             })
             pending_order += 1
             
-        # 8. Save snapshot with optimized solution
+        # 8. Save snapshot with optimized solution and sync to SQLite entregas table
         df_routes = pd.DataFrame(routes_list)
         state_dict["routes_solution"] = df_routes
         state_dict["fleet_config_used"] = fleet_dict
@@ -742,6 +742,14 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
                 (req.project_id, user_id, 3, snapshot_name, payload)
             )
+            # Sync optimized route and stop order into SQLite table 'entregas'
+            for r in routes_list:
+                r_id = r.get("id") or r.get("ID_Original")
+                if r_id:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ?, ordem_paragem = ? WHERE id = ? AND projeto_id = ?",
+                        (str(r.get("Rota", "Por Distribuir")), int(r.get("Ordem", 0)), r_id, req.project_id)
+                    )
             conn.commit()
             
         resp_obj = {

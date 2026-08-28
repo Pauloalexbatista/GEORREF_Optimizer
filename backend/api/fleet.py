@@ -631,6 +631,7 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "horario_inicio": str(veh.horario_inicio or "08:00"),
                 "horario_fim": str(veh.horario_fim or "18:00"),
                 "armazem": str(veh.armazem or ""),
+                "regras": str(veh.regras or ""),
                 "is_active": int(veh.is_active if veh.is_active is not None else 1)
             })
 
@@ -1246,8 +1247,8 @@ async def import_fleet_warehouses(
                             projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
                             peso_kg, volume_m3, prioridade, janela_inicio, janela_fim,
                             latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem,
-                            telefone, observacoes, vendedor, rota, ordem_paragem
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            telefone, observacoes, vendedor, rota, ordem_paragem, regras
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
                         d.get("CP", ""), d.get("Localidade", ""), _clean_coord(d.get("Peso_KG", 50.0)),
@@ -1258,7 +1259,8 @@ async def import_fleet_warehouses(
                         d.get("Notas_Motorista", d.get("Observacoes", "")),
                         d.get("Vendedor", d.get("vendedor", "")),
                         d.get("Rota", "Por Distribuir"),
-                        int(_clean_coord(d.get("Ordem", 1)) or 1)
+                        int(_clean_coord(d.get("Ordem", 1)) or 1),
+                        str(d.get("Regras", d.get("regras", "")) or "")
                     ))
                 conn.commit()
 
@@ -1270,10 +1272,13 @@ async def import_fleet_warehouses(
                 fleet_rows_for_db.append({
                     "veiculo": v_name,
                     "capacidade_kg": v_data.capacidade_kg,
+                    "capacidade_volume": getattr(v_data, "capacidade_vol", 10.0),
                     "custo_km": v_data.custo_km,
                     "velocidade_media": v_data.velocidade_media,
                     "horario_inicio": v_data.horario_inicio,
-                    "horario_fim": v_data.horario_fim
+                    "horario_fim": v_data.horario_fim,
+                    "armazem": getattr(v_data, "armazem", ""),
+                    "regras": str(getattr(v_data, "regras", "") or "")
                 })
             save_frota_projeto(project_id, fleet_rows_for_db)
 
