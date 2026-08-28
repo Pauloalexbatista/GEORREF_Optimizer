@@ -90,14 +90,30 @@ class ReorderRequest(BaseModel):
 class ReassignRequest(BaseModel):
     project_id: int
     client_code: Optional[str] = None
-    delivery_id: Optional[int] = None
+    clientName: Optional[str] = None
+    delivery_id: Optional[Any] = None
+    deliveryId: Optional[Any] = None
     address: Optional[str] = None
     new_route: str
 
+    def get_code(self):
+        return self.client_code or self.clientName or ""
+
+    def get_id(self):
+        return self.delivery_id if self.delivery_id is not None else self.deliveryId
+
 class BulkReassignSelectionItem(BaseModel):
     client_code: Optional[str] = None
-    delivery_id: Optional[int] = None
+    clientName: Optional[str] = None
+    delivery_id: Optional[Any] = None
+    deliveryId: Optional[Any] = None
     address: Optional[str] = None
+
+    def get_code(self):
+        return self.client_code or self.clientName or ""
+
+    def get_id(self):
+        return self.delivery_id if self.delivery_id is not None else self.deliveryId
 
 class BulkReassignSelectionRequest(BaseModel):
     project_id: int
@@ -944,6 +960,71 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def _norm_stop_str(s) -> str:
+    if s is None:
+        return ""
+    import unicodedata
+    s = str(s).strip().lower().replace("_x000d_", "").replace("\r", "").replace("\n", "")
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None):
+    if df_r.empty:
+        return None
+        
+    # 1. By ID (numeric or string)
+    if deliv_id is not None:
+        s_id = str(deliv_id).strip().upper()
+        for col in ["id", "ID_Original", "Doc_ID", "Codigo_Cliente"]:
+            if col in df_r.columns:
+                m = df_r[df_r[col].astype(str).str.strip().str.upper() == s_id].index
+                if len(m) > 0:
+                    return m[0]
+                    
+    n_code = _norm_stop_str(code)
+    n_addr = _norm_stop_str(addr)
+    
+    # 2. By code + address
+    if n_code and n_addr:
+        for idx, r in df_r.iterrows():
+            r_c = _norm_stop_str(r.get("Cliente") or r.get("Nome_Cliente") or r.get("Doc_ID") or r.get("Codigo_Cliente"))
+            r_a = _norm_stop_str(r.get("Morada"))
+            if (r_c == n_code or n_code in r_c or r_c in n_code) and (r_a == n_addr or n_addr in r_a or r_a in n_addr):
+                return idx
+                
+    # 3. By code only
+    if n_code:
+        for idx, r in df_r.iterrows():
+            r_c = _norm_stop_str(r.get("Cliente") or r.get("Nome_Cliente") or r.get("Doc_ID") or r.get("Codigo_Cliente"))
+            if r_c == n_code or n_code in r_c or r_c in n_code:
+                return idx
+                
+    # 4. By address only
+    if n_addr:
+        for idx, r in df_r.iterrows():
+            r_a = _norm_stop_str(r.get("Morada"))
+            if r_a == n_addr or n_addr in r_a or r_a in n_addr:
+                return idx
+
+    # 5. Rapidfuzz fallback
+    try:
+        from rapidfuzz import fuzz
+        if n_code:
+            best_score, best_idx = 0, None
+            for idx, r in df_r.iterrows():
+                r_c = _norm_stop_str(r.get("Cliente") or r.get("Nome_Cliente") or r.get("Doc_ID"))
+                score = fuzz.ratio(n_code, r_c)
+                if score > best_score and score >= 65:
+                    best_score = score
+                    best_idx = idx
+            if best_idx is not None:
+                return best_idx
+    except Exception:
+        pass
+        
+    return None
+
 def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.DataFrame:
     """Helper to obtain or build df_routes from snapshot or database."""
     raw_routes = state_dict.get("routes_solution")
@@ -1021,51 +1102,8 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
         if df_routes.empty:
             raise HTTPException(status_code=400, detail="Não existem entregas ou rotas no projeto para reatribuir.")
             
-        target_idx = None
-        
-        # Match by delivery_id / ID_Original if supplied
-        if req.delivery_id is not None:
-            try:
-                d_id = int(req.delivery_id)
-            except Exception:
-                d_id = req.delivery_id
-            if "id" in df_routes.columns:
-                m_id = df_routes[df_routes["id"] == d_id].index
-                if len(m_id) > 0:
-                    target_idx = m_id[0]
-            if target_idx is None and "ID_Original" in df_routes.columns:
-                m_id = df_routes[df_routes["ID_Original"] == d_id].index
-                if len(m_id) > 0:
-                    target_idx = m_id[0]
-                    
-        # Match by client_code AND address if supplied
-        if target_idx is None and req.client_code and req.address:
-            t_code = str(req.client_code).strip().upper()
-            t_addr = str(req.address).strip().upper()
-            m_both = df_routes[
-                ((df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) |
-                 (df_routes["Doc_ID"].astype(str).str.strip().str.upper() == t_code) |
-                 (df_routes["Nome_Cliente"].astype(str).str.strip().str.upper() == t_code)) &
-                (df_routes["Morada"].astype(str).str.strip().str.upper() == t_addr)
-            ].index
-            if len(m_both) > 0:
-                target_idx = m_both[0]
-                
-        # Match by client_code / Doc_ID / Nome_Cliente
-        if target_idx is None and req.client_code:
-            t_code = str(req.client_code).strip().upper()
-            m_code = df_routes[
-                (df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) |
-                (df_routes["Doc_ID"].astype(str).str.strip().str.upper() == t_code) |
-                (df_routes["Nome_Cliente"].astype(str).str.strip().str.upper() == t_code)
-            ].index
-            if len(m_code) == 0:
-                m_code = df_routes[df_routes["Cliente"].astype(str).str.contains(t_code, case=False, na=False)].index
-            if len(m_code) > 0:
-                target_idx = m_code[0]
-                
+        target_idx = _find_stop_match(df_routes, deliv_id=req.get_id(), code=req.get_code(), addr=req.address)
         if target_idx is None:
-            # Fallback: take the first index if only 1 delivery, or 0
             if len(df_routes) == 1:
                 target_idx = df_routes.index[0]
             else:
@@ -1169,43 +1207,7 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
 
         matched_indices = []
         for item in req.items:
-            target_idx = None
-            if item.delivery_id is not None:
-                try:
-                    d_id = int(item.delivery_id)
-                except Exception:
-                    d_id = item.delivery_id
-                if "id" in df_routes.columns:
-                    m_id = df_routes[df_routes["id"] == d_id].index
-                    if len(m_id) > 0:
-                        target_idx = m_id[0]
-                if target_idx is None and "ID_Original" in df_routes.columns:
-                    m_id = df_routes[df_routes["ID_Original"] == d_id].index
-                    if len(m_id) > 0:
-                        target_idx = m_id[0]
-                        
-            if target_idx is None and item.client_code and item.address:
-                t_code = str(item.client_code).strip().upper()
-                t_addr = str(item.address).strip().upper()
-                m_both = df_routes[
-                    ((df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) |
-                     (df_routes["Doc_ID"].astype(str).str.strip().str.upper() == t_code) |
-                     (df_routes["Nome_Cliente"].astype(str).str.strip().str.upper() == t_code)) &
-                    (df_routes["Morada"].astype(str).str.strip().str.upper() == t_addr)
-                ].index
-                if len(m_both) > 0:
-                    target_idx = m_both[0]
-                    
-            if target_idx is None and item.client_code:
-                t_code = str(item.client_code).strip().upper()
-                m_code = df_routes[
-                    (df_routes["Cliente"].astype(str).str.strip().str.upper() == t_code) |
-                    (df_routes["Doc_ID"].astype(str).str.strip().str.upper() == t_code) |
-                    (df_routes["Nome_Cliente"].astype(str).str.strip().str.upper() == t_code)
-                ].index
-                if len(m_code) > 0:
-                    target_idx = m_code[0]
-
+            target_idx = _find_stop_match(df_routes, deliv_id=item.get_id(), code=item.get_code(), addr=item.address)
             if target_idx is not None and target_idx not in matched_indices:
                 matched_indices.append(target_idx)
 
