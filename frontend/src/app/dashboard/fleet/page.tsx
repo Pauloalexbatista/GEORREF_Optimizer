@@ -7,7 +7,7 @@ import { apiRequest } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
 import dynamic from "next/dynamic";
 
-const WarehouseGeoModal = dynamic(() => import("@/components/WarehouseGeoModal"), { ssr: false });
+const UnifiedGeocodingModal = dynamic(() => import("@/components/UnifiedGeocodingModal"), { ssr: false });
 
 interface Warehouse {
   name: string;
@@ -17,6 +17,10 @@ interface Warehouse {
   lat: number;
   lon: number;
   quality: number;
+  open_time?: string;
+  close_time?: string;
+  load_time?: number;
+  contact?: string;
 }
 
 interface Vehicle {
@@ -874,22 +878,27 @@ export default function TablesFleetPage() {
           </div>
         )}
 
-        {/* Modal de Geocodificação Manual do Armazém */}
+        {/* Modal de Geocodificação Manual do Armazém (Unificado) */}
         {geoModalOpen && editingWhIndex !== null && (
-          <WarehouseGeoModal
+          <UnifiedGeocodingModal
             isOpen={geoModalOpen}
-            warehouseName={warehouses[editingWhIndex].name}
-            initialAddress={warehouses[editingWhIndex].address}
-            initialCp={warehouses[editingWhIndex].cp}
-            initialLocality={warehouses[editingWhIndex].locality}
-            initialLat={warehouses[editingWhIndex].lat}
-            initialLon={warehouses[editingWhIndex].lon}
-            onConfirm={(address, cp, locality, lat, lon) => {
-              updateWarehouse(editingWhIndex, "address", address);
-              updateWarehouse(editingWhIndex, "cp", cp);
-              updateWarehouse(editingWhIndex, "locality", locality);
-              updateWarehouse(editingWhIndex, "lat", lat);
-              updateWarehouse(editingWhIndex, "lon", lon);
+            title={`Georreferenciação Manual do Armazém: ${warehouses[editingWhIndex]?.name || "Armazém"}`}
+            entityType="warehouse"
+            initialData={{
+              name: warehouses[editingWhIndex]?.name || "",
+              address: warehouses[editingWhIndex]?.address || "",
+              cp: warehouses[editingWhIndex]?.cp || "",
+              locality: warehouses[editingWhIndex]?.locality || "",
+              lat: warehouses[editingWhIndex]?.lat || 0,
+              lon: warehouses[editingWhIndex]?.lon || 0,
+            }}
+            onSave={(data) => {
+              updateWarehouse(editingWhIndex, "address", data.address);
+              updateWarehouse(editingWhIndex, "cp", data.cp);
+              updateWarehouse(editingWhIndex, "locality", data.locality);
+              updateWarehouse(editingWhIndex, "lat", data.lat);
+              updateWarehouse(editingWhIndex, "lon", data.lon);
+              updateWarehouse(editingWhIndex, "quality", data.lat !== 0 && data.lon !== 0 ? 1 : 99);
               setGeoModalOpen(false);
               setEditingWhIndex(null);
               persistAllTables();

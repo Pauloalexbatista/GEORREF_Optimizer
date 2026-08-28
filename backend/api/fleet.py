@@ -1,4 +1,13 @@
 import unicodedata
+def _clean_coord(val) -> float:
+    if val is None or pd.isna(val):
+        return 0.0
+    s = str(val).strip().replace(",", ".")
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
 def _norm_col(s: str) -> str:
     if not s:
         return ""
@@ -109,6 +118,10 @@ class WarehouseGeocoded(BaseModel):
     lat: Optional[float] = 0.0
     lon: Optional[float] = 0.0
     quality: Optional[int] = 1
+    open_time: Optional[str] = "06:00:00"
+    close_time: Optional[str] = "22:00:00"
+    load_time: Optional[int] = 30
+    contact: Optional[str] = ""
 
 class VehicleItem(BaseModel):
     veiculo: str
@@ -343,14 +356,23 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                     
                 if not df_wh.empty:
                     for idx, r in df_wh.iterrows():
+                        lat_w = _clean_coord(r.get("Latitude", r.get("lat", 0.0)))
+                        lon_w = _clean_coord(r.get("Longitude", r.get("lon", 0.0)))
+                        cp_w = str(r.get("CP", r.get("cp", r.get("Codigo_Postal", ""))) or "").strip()
+                        if cp_w.endswith(".0"):
+                            cp_w = cp_w[:-2]
                         warehouses_res.append({
                             "name": str(r.get("Nome_Armazem", r.get("name", ""))),
                             "address": str(r.get("Morada", r.get("address", ""))),
-                            "cp": str(r.get("CP", r.get("cp", ""))),
+                            "cp": cp_w,
                             "locality": str(r.get("Localidade", r.get("locality", ""))),
-                            "lat": float(r.get("Latitude", r.get("lat", 0.0)) or 0.0),
-                            "lon": float(r.get("Longitude", r.get("lon", 0.0)) or 0.0),
-                            "quality": int(r.get("Nivel_Qualidade", r.get("quality", 1)) or 1)
+                            "lat": lat_w,
+                            "lon": lon_w,
+                            "open_time": str(r.get("Hora_Abertura", r.get("open_time", "06:00:00")) or "06:00:00"),
+                            "close_time": str(r.get("Hora_Fecho", r.get("close_time", "22:00:00")) or "22:00:00"),
+                            "load_time": int(r.get("Tempo_Carga_Min", r.get("load_time", 30)) or 30),
+                            "contact": str(r.get("Contacto_Responsavel", r.get("contact", "")) or ""),
+                            "quality": 1 if (lat_w != 0.0 and lon_w != 0.0) else int(r.get("Nivel_Qualidade", r.get("quality", 99)) or 99)
                         })
             
             raw_fleet = _pick_first_valid(
@@ -524,14 +546,24 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 
         wh_rows = []
         for wh in req.warehouses:
+            lat_w = _clean_coord(wh.lat)
+            lon_w = _clean_coord(wh.lon)
+            cp_w = str(wh.cp or "").strip()
+            if cp_w.endswith(".0"):
+                cp_w = cp_w[:-2]
             wh_rows.append({
                 "Nome_Armazem": wh.name,
                 "Morada": wh.address,
-                "CP": wh.cp or "",
+                "CP": cp_w,
+                "Codigo_Postal": cp_w,
                 "Localidade": wh.locality or "",
-                "Latitude": float(wh.lat or 0.0),
-                "Longitude": float(wh.lon or 0.0),
-                "Nivel_Qualidade": int(wh.quality or 1)
+                "Latitude": lat_w,
+                "Longitude": lon_w,
+                "Hora_Abertura": getattr(wh, "open_time", "06:00:00") or "06:00:00",
+                "Hora_Fecho": getattr(wh, "close_time", "22:00:00") or "22:00:00",
+                "Tempo_Carga_Min": getattr(wh, "load_time", 30) or 30,
+                "Contacto_Responsavel": getattr(wh, "contact", "") or "",
+                "Nivel_Qualidade": 1 if (lat_w != 0.0 and lon_w != 0.0) else int(wh.quality or 99)
             })
         df_wh = pd.DataFrame(wh_rows)
 
@@ -644,7 +676,7 @@ async def import_fleet_warehouses(
         sheet_wh = None
         for s in xls.sheet_names:
             sn = _norm_col(s)
-            if 'armazem' in sn or 'warehouse' in sn or 'depot' in sn or 'origem' in sn:
+            if any(k in sn for k in ['armaz', 'warehouse', 'depot', 'origem']):
                 sheet_wh = s
                 break
                 
@@ -676,11 +708,10 @@ async def import_fleet_warehouses(
                         
                         lat_val, lon_val = 0.0, 0.0
                         if col_wh_lat and col_wh_lon and pd.notna(row[col_wh_lat]) and pd.notna(row[col_wh_lon]):
-                            try:
-                                lat_val = float(row[col_wh_lat])
-                                lon_val = float(row[col_wh_lon])
-                            except Exception:
-                                pass
+                            lat_val = _clean_coord(row[col_wh_lat])
+                            lon_val = _clean_coord(row[col_wh_lon])
+                        if cp and str(cp).endswith(".0"):
+                            cp = str(cp)[:-2]
                                 
                         if (lat_val == 0 or lon_val == 0) and addr:
                             try:
@@ -711,7 +742,7 @@ async def import_fleet_warehouses(
         sheet_fleet = None
         for s in xls.sheet_names:
             sn = _norm_col(s)
-            if 'frota' in sn or 'veiculo' in sn or 'fleet' in sn or 'vehicle' in sn or 'viatura' in sn:
+            if any(k in sn for k in ['frota', 'veicul', 'viatur', 'fleet', 'vehicle', 'carro']):
                 sheet_fleet = s
                 break
                 
@@ -773,7 +804,7 @@ async def import_fleet_warehouses(
         sheet_rules = None
         for s in xls.sheet_names:
             sn = _norm_col(s)
-            if 'regra' in sn or 'rule' in sn or 'restricao' in sn or 'matriz' in sn:
+            if any(k in sn for k in ['regr', 'rule', 'restri', 'matriz']):
                 sheet_rules = s
                 break
                 
@@ -803,7 +834,7 @@ async def import_fleet_warehouses(
         sheet_entregas = None
         for s in xls.sheet_names:
             sn = _norm_col(s)
-            if 'entrega' in sn or 'cliente' in sn or 'delivery' in sn or 'order' in sn or 'encomenda' in sn:
+            if any(k in sn for k in ['entreg', 'client', 'order', 'delivery', 'encomend']):
                 sheet_entregas = s
                 break
                 
@@ -907,7 +938,7 @@ async def import_fleet_warehouses(
         sheet_rotas = None
         for s in xls.sheet_names:
             sn = _norm_col(s)
-            if 'rota' in sn or 'route' in sn or 'planeamento' in sn or 'plano' in sn:
+            if any(k in sn for k in ['rota', 'route', 'plano', 'planea']):
                 sheet_rotas = s
                 break
                 
