@@ -240,8 +240,8 @@ export default function TacticalPage() {
   const [strategy, setStrategy] = useState("clusters");
   const [loadMode, setLoadMode] = useState("full");
   const [solvingDepth, setSolvingDepth] = useState<"fast" | "balanced" | "deep">("balanced");
-  const [maxTravelTime, setMaxTravelTime] = useState("09:00");
-  const [respectWindows, setRespectWindows] = useState(true);
+  const [maxTravelTime, setMaxTravelTime] = useState("12:00");
+  const [respectWindows, setRespectWindows] = useState(false);
 
   const channelRef = useRef<BroadcastChannel | null>(null);
   const lastMutationTimeRef = useRef<number>(0);

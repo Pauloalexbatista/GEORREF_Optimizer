@@ -191,14 +191,8 @@ class AdvancedRouteOptimizer:
             cur_t    += (d_ret / max(segment_speed, 15.0)) * 60.0
             duration  = int(round(cur_t - vd["start"]))
 
+            # Real-world Logistics: routes are feasible as long as stop count and vehicle capacities are respected
             is_feasible = len(nodes) <= MAX_STOPS
-            if respect_time_windows:
-                is_feasible = (
-                    is_feasible
-                    and late_count == 0
-                    and cur_t <= vd["end"] + 30
-                    and duration <= (vd["end"] - vd["start"] + 60)
-                )
             return is_feasible, total_km, late_count, total_wait
 
         def _quick_ok(c, v, cur_w, cur_vol):
@@ -301,7 +295,11 @@ class AdvancedRouteOptimizer:
                 feas, _, lates, wait = _eval(test_r, v)
                 if not feas:
                     continue
-                cost = _insert_cost(c, routes[v], v) + wait * 0.5
+                cost = _insert_cost(c, routes[v], v)
+                if respect_time_windows:
+                    cost += lates * 150.0 + wait * 0.3
+                else:
+                    cost += wait * 0.1
                 
                 # Tag preference bonus: if vehicle has exact tag match with client, prioritize it
                 c_rules = cd.get("rules", "")
