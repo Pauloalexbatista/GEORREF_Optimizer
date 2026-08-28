@@ -217,11 +217,14 @@ export default function GeoreferencingPage() {
   const filteredAndSortedDeliveries = useMemo(() => {
     let result = [...deliveries];
     if (searchTerm) {
-      const term = searchTerm.toLowerCase();
+      const term = searchTerm.toLowerCase().trim();
       result = result.filter(d => 
+        (d.nome_cliente || "").toLowerCase().includes(term) ||
         (d.codigo_cliente || "").toLowerCase().includes(term) ||
         (d.morada || "").toLowerCase().includes(term) ||
-        (d.concelho && d.concelho.toLowerCase().includes(term))
+        (d.codigo_postal || "").toLowerCase().includes(term) ||
+        (d.concelho && d.concelho.toLowerCase().includes(term)) ||
+        (d.armazem && d.armazem.toLowerCase().includes(term))
       );
     }
     if (statusFilter === "success") {
@@ -230,6 +233,20 @@ export default function GeoreferencingPage() {
       result = result.filter(d => (d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99));
     }
     result.sort((a, b) => {
+      // Prioritize exact or prefix matches on client name and code
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase().trim();
+        const nameA = (a.nome_cliente || a.codigo_cliente || "").toLowerCase();
+        const nameB = (b.nome_cliente || b.codigo_cliente || "").toLowerCase();
+        const aStarts = nameA.startsWith(term);
+        const bStarts = nameB.startsWith(term);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        const aHas = nameA.includes(term);
+        const bHas = nameB.includes(term);
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+      }
       const isFailedA = a.latitude === 0.0 || a.longitude === 0.0 || a.nivel_qualidade === 99;
       const isFailedB = b.latitude === 0.0 || b.longitude === 0.0 || b.nivel_qualidade === 99;
       if (sortField === "status") {
