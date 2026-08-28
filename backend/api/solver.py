@@ -89,32 +89,34 @@ class ReorderRequest(BaseModel):
 
 class ReassignRequest(BaseModel):
     project_id: int
-    client_code: Optional[str] = None
-    clientName: Optional[str] = None
+    client_code: Optional[Any] = None
+    clientName: Optional[Any] = None
     delivery_id: Optional[Any] = None
     deliveryId: Optional[Any] = None
-    address: Optional[str] = None
-    lat: Optional[float] = None
-    lon: Optional[float] = None
-    new_route: str
+    address: Optional[Any] = None
+    lat: Optional[Any] = None
+    lon: Optional[Any] = None
+    new_route: Any
 
     def get_code(self):
-        return self.client_code or self.clientName or ""
+        val = self.client_code if self.client_code is not None else self.clientName
+        return str(val).strip() if val is not None else ""
 
     def get_id(self):
         return self.delivery_id if self.delivery_id is not None else self.deliveryId
 
 class BulkReassignSelectionItem(BaseModel):
-    client_code: Optional[str] = None
-    clientName: Optional[str] = None
+    client_code: Optional[Any] = None
+    clientName: Optional[Any] = None
     delivery_id: Optional[Any] = None
     deliveryId: Optional[Any] = None
-    address: Optional[str] = None
-    lat: Optional[float] = None
-    lon: Optional[float] = None
+    address: Optional[Any] = None
+    lat: Optional[Any] = None
+    lon: Optional[Any] = None
 
     def get_code(self):
-        return self.client_code or self.clientName or ""
+        val = self.client_code if self.client_code is not None else self.clientName
+        return str(val).strip() if val is not None else ""
 
     def get_id(self):
         return self.delivery_id if self.delivery_id is not None else self.deliveryId

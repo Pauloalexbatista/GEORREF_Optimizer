@@ -423,9 +423,9 @@ export default function MapComponent({
       if (onBulkReassign) {
         await onBulkReassign(
           selectedStops.map((c: any) => ({
-            clientName: c.Cliente || c.Nome_Cliente || c.Doc_ID || "",
+            clientName: String(c.Cliente || c.Nome_Cliente || c.Doc_ID || ""),
             deliveryId: c.id || c.ID_Original,
-            address: c.Morada || "",
+            address: String(c.Morada || ""),
             lat: c.Latitude !== undefined ? Number(c.Latitude) : (c.lat !== undefined ? Number(c.lat) : undefined),
             lon: c.Longitude !== undefined ? Number(c.Longitude) : (c.lon !== undefined ? Number(c.lon) : (c.lng !== undefined ? Number(c.lng) : undefined)),
           })),

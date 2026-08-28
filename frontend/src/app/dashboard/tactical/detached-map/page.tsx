@@ -255,12 +255,14 @@ export default function DetachedMapPage() {
         method: "POST",
         body: JSON.stringify({
           project_id: projId,
-          items: items.map(it => ({
-            client_code: it.clientName,
-            delivery_id: it.deliveryId,
-            address: it.address,
-            lat: it.lat,
-            lon: it.lon,
+          items: items.map((it: any) => ({
+            client_code: String(it.clientName || it.client_code || ""),
+            clientName: String(it.clientName || it.client_code || ""),
+            delivery_id: it.deliveryId !== undefined ? it.deliveryId : it.delivery_id,
+            deliveryId: it.deliveryId !== undefined ? it.deliveryId : it.delivery_id,
+            address: String(it.address || ""),
+            lat: it.lat !== undefined ? Number(it.lat) : undefined,
+            lon: it.lon !== undefined ? Number(it.lon) : undefined,
           })),
           new_route: targetRoute,
         }),
