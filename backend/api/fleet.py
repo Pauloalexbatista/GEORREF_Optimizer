@@ -124,23 +124,28 @@ class WarehouseGeocoded(BaseModel):
     contact: Optional[str] = ""
 
 class VehicleItem(BaseModel):
-    veiculo: str
     armazem: Optional[str] = ""
-    matricula: Optional[str] = ""
-    motorista: Optional[str] = ""
+    veiculo: str
     capacidade_kg: Optional[float] = 1000.0
-    capacidade_vol: Optional[float] = 5.0
-    custo_km: Optional[float] = 0.5
-    velocidade_media: Optional[float] = 40.0
-    horario_inicio: Optional[str] = "08:00"
-    horario_fim: Optional[str] = "18:00"
+    capacidade_vol: Optional[float] = 10.0
+    velocidade_media: Optional[float] = 50.0
+    horario_inicio: Optional[str] = "08:00:00"
+    horario_fim: Optional[str] = "18:00:00"
+    custo_km: Optional[float] = 0.65
+    custo_hora: Optional[float] = 12.50
+    max_entregas: Optional[int] = 30
+    regras: Optional[str] = ""
+    motorista_nome: Optional[str] = ""
+    motorista_telemovel: Optional[str] = ""
     is_active: Optional[int] = 1
 
 class DriverItem(BaseModel):
     name: str
     pin: Optional[str] = "1234"
-    phone: Optional[str] = ""
     vehicle: Optional[str] = ""
+    matricula: Optional[str] = ""
+    phone: Optional[str] = ""
+    route: Optional[str] = ""
     is_active: Optional[int] = 1
 
 class ReasonItem(BaseModel):
@@ -385,55 +390,75 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                     for veh_name, veh in raw_fleet.items():
                         if hasattr(veh, "capacidade_kg"):
                             fleet_res.append({
-                                "veiculo": str(veh_name),
                                 "armazem": str(getattr(veh, "armazem", "") or ""),
+                                "veiculo": str(veh_name),
                                 "capacidade_kg": float(getattr(veh, "capacidade_kg", 1000.0) or 1000.0),
-                                "capacidade_vol": float(getattr(veh, "capacidade_vol", 5.0) or 5.0),
-                                "custo_km": float(getattr(veh, "custo_km", 0.5) or 0.5),
-                                "velocidade_media": float(getattr(veh, "velocidade_media", 40.0) or 40.0),
-                                "horario_inicio": str(getattr(veh, "horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(getattr(veh, "horario_fim", "18:00") or "18:00"),
+                                "capacidade_vol": float(getattr(veh, "capacidade_vol", 10.0) or 10.0),
+                                "velocidade_media": float(getattr(veh, "velocidade_media", 50.0) or 50.0),
+                                "horario_inicio": str(getattr(veh, "horario_inicio", "08:00:00") or "08:00:00"),
+                                "horario_fim": str(getattr(veh, "horario_fim", "18:00:00") or "18:00:00"),
+                                "custo_km": float(getattr(veh, "custo_km", 0.65) or 0.65),
+                                "custo_hora": float(getattr(veh, "custo_hora", 12.50) or 12.50),
+                                "max_entregas": int(getattr(veh, "max_entregas", 30) or 30),
+                                "regras": str(getattr(veh, "regras", "") or ""),
+                                "motorista_nome": str(getattr(veh, "motorista_nome", "") or ""),
+                                "motorista_telemovel": str(getattr(veh, "motorista_telemovel", "") or ""),
                                 "is_active": int(getattr(veh, "is_active", 1) if getattr(veh, "is_active", None) is not None else 1)
                             })
                         elif isinstance(veh, dict):
                             fleet_res.append({
-                                "veiculo": str(veh_name),
                                 "armazem": str(veh.get("armazem", "") or ""),
+                                "veiculo": str(veh_name),
                                 "capacidade_kg": float(veh.get("capacidade_kg", 1000.0) or 1000.0),
-                                "capacidade_vol": float(veh.get("capacidade_vol", veh.get("capacidade_volume", 5.0)) or 5.0),
-                                "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
-                                "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
-                                "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00"),
+                                "capacidade_vol": float(veh.get("capacidade_vol", veh.get("capacidade_volume", 10.0)) or 10.0),
+                                "velocidade_media": float(veh.get("velocidade_media", 50.0) or 50.0),
+                                "horario_inicio": str(veh.get("horario_inicio", "08:00:00") or "08:00:00"),
+                                "horario_fim": str(veh.get("horario_fim", "18:00:00") or "18:00:00"),
+                                "custo_km": float(veh.get("custo_km", 0.65) or 0.65),
+                                "custo_hora": float(veh.get("custo_hora", 12.50) or 12.50),
+                                "max_entregas": int(veh.get("max_entregas", 30) or 30),
+                                "regras": str(veh.get("regras", "") or ""),
+                                "motorista_nome": str(veh.get("motorista_nome", veh.get("motorista", "")) or ""),
+                                "motorista_telemovel": str(veh.get("motorista_telemovel", "") or ""),
                                 "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1)
                             })
                 elif isinstance(raw_fleet, pd.DataFrame):
                     for _, veh in raw_fleet.iterrows():
-                        v_name = str(veh.get("veiculo", veh.get("Nome_Veiculo", "")))
+                        v_name = str(veh.get("veiculo", veh.get("Veiculo", veh.get("Nome_Veiculo", ""))))
                         if v_name:
                             fleet_res.append({
+                                "armazem": str(veh.get("armazem", veh.get("Armazem", veh.get("Nome_Armazem", ""))) or ""),
                                 "veiculo": v_name,
-                                "armazem": str(veh.get("armazem", veh.get("Nome_Armazem", "")) or ""),
-                                "capacidade_kg": float(veh.get("capacidade_kg", 1000.0) or 1000.0),
-                                "capacidade_vol": float(veh.get("capacidade_volume", veh.get("capacidade_vol", 5.0)) or 5.0),
-                                "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
-                                "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
-                                "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00"),
+                                "capacidade_kg": float(veh.get("capacidade_kg", veh.get("Capacidade_KG", 1000.0)) or 1000.0),
+                                "capacidade_vol": float(veh.get("capacidade_volume", veh.get("capacidade_vol", veh.get("Capacidade_Vol", 10.0))) or 10.0),
+                                "velocidade_media": float(veh.get("velocidade_media", veh.get("Velocidade_Media", 50.0)) or 50.0),
+                                "horario_inicio": str(veh.get("horario_inicio", veh.get("Hora_Inicio_Turno", "08:00:00")) or "08:00:00"),
+                                "horario_fim": str(veh.get("horario_fim", veh.get("Hora_Fim_Turno", "18:00:00")) or "18:00:00"),
+                                "custo_km": float(veh.get("custo_km", veh.get("Custo_KM", 0.65)) or 0.65),
+                                "custo_hora": float(veh.get("custo_hora", veh.get("Custo_Hora", 12.50)) or 12.50),
+                                "max_entregas": int(veh.get("max_entregas", veh.get("Max_Entregas", 30)) or 30),
+                                "regras": str(veh.get("regras", veh.get("Regras", "")) or ""),
+                                "motorista_nome": str(veh.get("motorista_nome", veh.get("Motorista_Nome", veh.get("motorista", ""))) or ""),
+                                "motorista_telemovel": str(veh.get("motorista_telemovel", veh.get("Motorista_Telemovel", "")) or ""),
                                 "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1)
                             })
                 elif isinstance(raw_fleet, list):
                     for veh in raw_fleet:
                         if isinstance(veh, dict):
                             fleet_res.append({
-                                "veiculo": str(veh.get("veiculo", "")),
                                 "armazem": str(veh.get("armazem", "") or ""),
+                                "veiculo": str(veh.get("veiculo", "")),
                                 "capacidade_kg": float(veh.get("capacidade_kg", 1000.0) or 1000.0),
-                                "capacidade_vol": float(veh.get("capacidade_vol", veh.get("capacidade_volume", 5.0)) or 5.0),
-                                "custo_km": float(veh.get("custo_km", 0.5) or 0.5),
-                                "velocidade_media": float(veh.get("velocidade_media", 40.0) or 40.0),
-                                "horario_inicio": str(veh.get("horario_inicio", "08:00") or "08:00"),
-                                "horario_fim": str(veh.get("horario_fim", "18:00") or "18:00"),
+                                "capacidade_vol": float(veh.get("capacidade_vol", veh.get("capacidade_volume", 10.0)) or 10.0),
+                                "velocidade_media": float(veh.get("velocidade_media", 50.0) or 50.0),
+                                "horario_inicio": str(veh.get("horario_inicio", "08:00:00") or "08:00:00"),
+                                "horario_fim": str(veh.get("horario_fim", "18:00:00") or "18:00:00"),
+                                "custo_km": float(veh.get("custo_km", 0.65) or 0.65),
+                                "custo_hora": float(veh.get("custo_hora", 12.50) or 12.50),
+                                "max_entregas": int(veh.get("max_entregas", 30) or 30),
+                                "regras": str(veh.get("regras", "") or ""),
+                                "motorista_nome": str(veh.get("motorista_nome", veh.get("motorista", "")) or ""),
+                                "motorista_telemovel": str(veh.get("motorista_telemovel", "") or ""),
                                 "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1)
                             })
 
@@ -578,13 +603,19 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
             if not veh.veiculo or not veh.veiculo.strip():
                 continue
             fleet_dict[veh.veiculo] = {
-                "capacidade_kg": float(veh.capacidade_kg or 1000.0),
-                "capacidade_vol": float(veh.capacidade_vol or 5.0),
-                "custo_km": float(veh.custo_km or 0.5),
-                "velocidade_media": float(veh.velocidade_media or 40.0),
-                "horario_inicio": str(veh.horario_inicio or "08:00"),
-                "horario_fim": str(veh.horario_fim or "18:00"),
                 "armazem": str(veh.armazem or ""),
+                "veiculo": veh.veiculo,
+                "capacidade_kg": float(veh.capacidade_kg or 1000.0),
+                "capacidade_vol": float(veh.capacidade_vol or 10.0),
+                "velocidade_media": float(veh.velocidade_media or 50.0),
+                "horario_inicio": str(veh.horario_inicio or "08:00:00"),
+                "horario_fim": str(veh.horario_fim or "18:00:00"),
+                "custo_km": float(veh.custo_km or 0.65),
+                "custo_hora": float(veh.custo_hora or 12.50),
+                "max_entregas": int(veh.max_entregas or 30),
+                "regras": str(veh.regras or ""),
+                "motorista_nome": str(veh.motorista_nome or ""),
+                "motorista_telemovel": str(veh.motorista_telemovel or ""),
                 "is_active": int(veh.is_active if veh.is_active is not None else 1)
             }
             fleet_rows_for_db.append({
