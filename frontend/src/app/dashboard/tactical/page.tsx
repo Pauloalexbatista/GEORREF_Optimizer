@@ -173,6 +173,20 @@ export default function TacticalPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(false);
   const [solving, setSolving] = useState(false);
+  const [solvingSeconds, setSolvingSeconds] = useState(0);
+
+  useEffect(() => {
+    let interval: any = null;
+    if (solving) {
+      setSolvingSeconds(0);
+      interval = setInterval(() => {
+        setSolvingSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [solving]);
   const [reorderingAll, setReorderingAll] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
@@ -434,6 +448,7 @@ export default function TacticalPage() {
     if (!selectedProject) return;
     setSolving(true);
     setError(null);
+    const startTimestamp = Date.now();
     try {
       const res = await apiRequest("/api/solver/solve", {
         method: "POST",
@@ -449,6 +464,11 @@ export default function TacticalPage() {
           },
         }),
       });
+
+      const elapsedSec = Math.max(1, Math.round((Date.now() - startTimestamp) / 1000));
+      const mins = Math.floor(elapsedSec / 60);
+      const secs = elapsedSec % 60;
+      const timeDisplay = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
       // Reload fresh fleet, warehouses, vehicles and routes
        // Apply routes directly from solver response (avoids React state race condition)
@@ -479,8 +499,8 @@ export default function TacticalPage() {
 
       const numVehicles = res.vehicles?.length || vList2.length;
       const alertMsg = pendingCount > 0
-        ? `Otimização concluída: ${assignedCount} paragens atribuídas à frota. ${pendingCount} encomendas ficaram na rota "Por Distribuir" para gestão manual.`
-        : `Otimização concluída com sucesso: Todas as ${assignedCount} paragens foram distribuídas pelas ${numVehicles} viaturas.`;
+        ? `Otimização concluída em ${timeDisplay}: ${assignedCount} paragens atribuídas à frota. ${pendingCount} encomendas ficaram na rota "Por Distribuir" para gestão manual.`
+        : `Otimização concluída com sucesso em ${timeDisplay}: Todas as ${assignedCount} paragens foram distribuídas pelas ${numVehicles} viaturas.`;
 
       alert(alertMsg);
     } catch (e: any) {
@@ -937,7 +957,7 @@ export default function TacticalPage() {
               {solving ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  <span>A Otimizar...</span>
+                  <span>A Otimizar... ({solvingSeconds}s)</span>
                 </>
               ) : (
                 <>
