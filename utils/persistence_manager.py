@@ -10,15 +10,24 @@ from datetime import datetime
 # Define which session keys we actually want to save between phases
 CRITICAL_KEYS = [
     'clients_geocoded',
+    'clients_used',
     'phase_1_complete',
     'warehouses',
     'warehouses_geocoded',
+    'df_warehouses',
     'fleet_config',
     'phase_2_complete',
     'routes_solution',
+    'routes_df',
     'fleet_config_used',
     'warehouses_used',
-    'optimization_params'
+    'optimization_params',
+    'drivers',
+    'motoristas',
+    'reasons',
+    'failure_reasons',
+    'rules_matrix',
+    'phase_3_complete'
 ]
 
 def serialize_state(session_state):

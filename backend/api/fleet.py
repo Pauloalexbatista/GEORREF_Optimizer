@@ -1,3 +1,24 @@
+import unicodedata
+def _norm_col(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+def _match_col(df_columns, candidates):
+    cand_norms = [_norm_col(c) for c in candidates]
+    for col in df_columns:
+        if _norm_col(col) in cand_norms:
+            return col
+    # Fallback partial match
+    for col in df_columns:
+        c_norm = _norm_col(col)
+        for cand in cand_norms:
+            if cand in c_norm or c_norm in cand:
+                return col
+    return None
+
 from fastapi import UploadFile, File
 
 
@@ -411,7 +432,74 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                         "is_active": int(f["is_active"] if f.get("is_active") is not None else 1)
                     })
 
-            return {"fleet": fleet_res, "warehouses": warehouses_res}
+            # Extract DRIVERS
+            raw_drivers = _pick_first_valid(
+                state_dict.get("drivers"),
+                state_dict.get("motoristas")
+            )
+            drivers_res = []
+            if raw_drivers is not None:
+                if isinstance(raw_drivers, list):
+                    for d in raw_drivers:
+                        if isinstance(d, dict):
+                            drivers_res.append({
+                                "name": str(d.get("name", d.get("Motorista", ""))),
+                                "pin": str(d.get("pin", d.get("PIN/Password", d.get("PIN", "1234")))),
+                                "phone": str(d.get("phone", d.get("Telemovel", d.get("Telem?vel", d.get("telefone", ""))))),
+                                "vehicle": str(d.get("vehicle", d.get("Viatura", ""))),
+                                "is_active": int(d.get("is_active", 1) if d.get("is_active") is not None else 1)
+                            })
+                elif isinstance(raw_drivers, pd.DataFrame):
+                    for _, d in raw_drivers.iterrows():
+                        drivers_res.append({
+                            "name": str(d.get("Motorista", d.get("name", ""))),
+                            "pin": str(d.get("PIN/Password", d.get("pin", "1234"))),
+                            "phone": str(d.get("Telemovel", d.get("Telem?vel", d.get("phone", "")))),
+                            "vehicle": str(d.get("Viatura", d.get("vehicle", ""))),
+                            "is_active": int(d.get("is_active", 1) if d.get("is_active") is not None else 1)
+                        })
+            
+            # Fallback for drivers from fleet vehicles if no explicit list
+            if not drivers_res and fleet_res:
+                for v in fleet_res:
+                    mot = v.get("motorista", "")
+                    if mot:
+                        drivers_res.append({
+                            "name": str(mot),
+                            "pin": "1111",
+                            "phone": "910000000",
+                            "vehicle": v["veiculo"],
+                            "is_active": 1
+                        })
+
+            # Extract REASONS
+            raw_reasons = _pick_first_valid(
+                state_dict.get("reasons"),
+                state_dict.get("failure_reasons"),
+                state_dict.get("justificacoes")
+            )
+            reasons_res = []
+            if raw_reasons is not None:
+                if isinstance(raw_reasons, list):
+                    for r in raw_reasons:
+                        if isinstance(r, dict):
+                            reasons_res.append({
+                                "reason": str(r.get("reason", r.get("Motivo de N?o Entrega", r.get("motivo", "")))),
+                                "category": str(r.get("category", r.get("Categoria / A??o", r.get("categoria", "Geral"))))
+                            })
+                elif isinstance(raw_reasons, pd.DataFrame):
+                    for _, r in raw_reasons.iterrows():
+                        reasons_res.append({
+                            "reason": str(r.get("Motivo de N?o Entrega", r.get("reason", ""))),
+                            "category": str(r.get("Categoria / A??o", r.get("category", "Geral")))
+                        })
+
+            return {
+                "fleet": fleet_res, 
+                "warehouses": warehouses_res,
+                "drivers": drivers_res,
+                "reasons": reasons_res if reasons_res else None
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -481,6 +569,33 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
 
         state_dict["fleet_config"] = fleet_dict
         state_dict["phase_2_complete"] = True
+
+        # Save Drivers
+        drivers_list = []
+        for d in req.drivers:
+            if not d.name or not d.name.strip():
+                continue
+            drivers_list.append({
+                "name": str(d.name).strip(),
+                "pin": str(d.pin or "1234").strip(),
+                "phone": str(d.phone or "").strip(),
+                "vehicle": str(d.vehicle or "").strip(),
+                "is_active": int(d.is_active if d.is_active is not None else 1)
+            })
+        state_dict["drivers"] = drivers_list
+        state_dict["motoristas"] = drivers_list
+
+        # Save Reasons
+        reasons_list = []
+        for r in req.reasons:
+            if not r.reason or not r.reason.strip():
+                continue
+            reasons_list.append({
+                "reason": str(r.reason).strip(),
+                "category": str(r.category or "Geral").strip()
+            })
+        state_dict["reasons"] = reasons_list
+        state_dict["failure_reasons"] = reasons_list
 
         # Save to SQLite frota table
         from database import save_frota_projeto
@@ -1026,7 +1141,100 @@ async def import_fleet_warehouses(
                 })
             save_frota_projeto(project_id, fleet_rows_for_db)
 
-        # 6. Persist Complete Snapshot
+                # 6. Sheet: Motoristas e Carros
+        sheet_drivers = None
+        for s in xls.sheet_names:
+            sn = _norm_col(s)
+            if 'motorista' in sn or 'driver' in sn or 'condutor' in sn or 'equipa' in sn:
+                sheet_drivers = s
+                break
+                
+        drivers_list = []
+        if sheet_drivers:
+            df_drivers_raw = pd.read_excel(xls, sheet_name=sheet_drivers)
+            if not df_drivers_raw.empty:
+                col_dr_name = _match_col(df_drivers_raw.columns, ['Motorista', 'Nome', 'Nome_Motorista', 'Driver', 'Driver_Name'])
+                col_dr_pin = _match_col(df_drivers_raw.columns, ['PIN/Password', 'PIN', 'Password', 'Pin', 'Senha', 'Codigo', 'Pin_Code'])
+                col_dr_veh = _match_col(df_drivers_raw.columns, ['Viatura', 'Veiculo', 'Veiculo', 'Vehicle', 'Carro', 'Nome_Veiculo'])
+                col_dr_mat = _match_col(df_drivers_raw.columns, ['Matricula', 'Matricula', 'Plate', 'License_Plate'])
+                col_dr_tel = _match_col(df_drivers_raw.columns, ['Telemovel', 'Telemovel', 'Telefone', 'Phone', 'Contacto', 'Driver_Phone', 'Telemovel_Motorista'])
+                col_dr_route = _match_col(df_drivers_raw.columns, ['Rota Atribuida', 'Rota_Atribuida', 'Rota', 'Route', 'Plano'])
+                
+                for idx, r_row in df_drivers_raw.iterrows():
+                    dr_name = str(r_row[col_dr_name]).replace("_x000D_", "").strip() if col_dr_name and pd.notna(r_row[col_dr_name]) else ""
+                    if not dr_name or dr_name.lower() == 'nan':
+                        continue
+                    
+                    dr_pin = str(r_row[col_dr_pin]).strip() if col_dr_pin and pd.notna(r_row[col_dr_pin]) else "1234"
+                    if dr_pin.endswith('.0'):
+                        dr_pin = dr_pin[:-2]
+                    dr_veh = str(r_row[col_dr_veh]).strip() if col_dr_veh and pd.notna(r_row[col_dr_veh]) else ""
+                    if dr_veh.lower() == 'nan':
+                        dr_veh = ""
+                    dr_tel = str(r_row[col_dr_tel]).strip() if col_dr_tel and pd.notna(r_row[col_dr_tel]) else ""
+                    if dr_tel.lower() == 'nan':
+                        dr_tel = ""
+                    dr_mat = str(r_row[col_dr_mat]).strip() if col_dr_mat and pd.notna(r_row[col_dr_mat]) else ""
+                    if dr_mat.lower() == 'nan':
+                        dr_mat = ""
+                    dr_route = str(r_row[col_dr_route]).strip() if col_dr_route and pd.notna(r_row[col_dr_route]) else ""
+                    if dr_route.lower() == 'nan':
+                        dr_route = ""
+                        
+                    drivers_list.append({
+                        "name": dr_name,
+                        "pin": dr_pin,
+                        "phone": dr_tel,
+                        "vehicle": dr_veh,
+                        "matricula": dr_mat,
+                        "route": dr_route,
+                        "is_active": 1
+                    })
+                    
+        # Fallback for drivers from fleet if no Sheet 7
+        if not drivers_list and fleet_dict:
+            for v_name, v_data in fleet_dict.items():
+                m_name = getattr(v_data, 'motorista_nome', '') if hasattr(v_data, 'motorista_nome') else (v_data.get('motorista_nome', '') if isinstance(v_data, dict) else '')
+                m_tel = getattr(v_data, 'motorista_telemovel', '') if hasattr(v_data, 'motorista_telemovel') else (v_data.get('motorista_telemovel', '') if isinstance(v_data, dict) else '')
+                if m_name and m_name.lower() != 'nan':
+                    drivers_list.append({
+                        "name": m_name,
+                        "pin": "1111",
+                        "phone": m_tel or "910000000",
+                        "vehicle": v_name,
+                        "matricula": "",
+                        "route": "",
+                        "is_active": 1
+                    })
+
+        # 7. Sheet: Justifica??o entregas
+        sheet_reasons = None
+        for s in xls.sheet_names:
+            sn = _norm_col(s)
+            if 'justifica' in sn or 'motivo' in sn or 'reason' in sn or 'falha' in sn or 'nao entrega' in sn or 'recusa' in sn:
+                sheet_reasons = s
+                break
+                
+        reasons_list = []
+        if sheet_reasons:
+            df_reasons_raw = pd.read_excel(xls, sheet_name=sheet_reasons)
+            if not df_reasons_raw.empty:
+                col_rs_reason = _match_col(df_reasons_raw.columns, ['Motivo de Nao Entrega', 'Motivo de N?o Entrega', 'Motivo', 'Reason', 'Descricao', 'Justificacao', 'Motivo_Falha'])
+                col_rs_cat = _match_col(df_reasons_raw.columns, ['Categoria / Acao', 'Categoria / A??o', 'Categoria', 'Category', 'Acao', 'Tipo'])
+                
+                for idx, r_row in df_reasons_raw.iterrows():
+                    r_val = str(r_row[col_rs_reason]).strip() if col_rs_reason and pd.notna(r_row[col_rs_reason]) else ""
+                    if not r_val or r_val.lower() == 'nan':
+                        continue
+                    c_val = str(r_row[col_rs_cat]).strip() if col_rs_cat and pd.notna(r_row[col_rs_cat]) else "Geral"
+                    if c_val.lower() == 'nan':
+                        c_val = "Geral"
+                    reasons_list.append({
+                        "reason": r_val,
+                        "category": c_val
+                    })
+
+        # 8. Persist Complete Snapshot
         df_wh = pd.DataFrame(wh_rows) if wh_rows else pd.DataFrame()
         df_routes_imported = pd.DataFrame(routes_solution_list) if routes_solution_list else pd.DataFrame()
         has_routes = not df_routes_imported.empty
@@ -1038,6 +1246,10 @@ async def import_fleet_warehouses(
             "clients_geocoded": pd.DataFrame(deliveries_list) if deliveries_list else pd.DataFrame(),
             "routes_solution": df_routes_imported if has_routes else None,
             "routes_df": df_routes_imported if has_routes else None,
+            "drivers": drivers_list,
+            "motoristas": drivers_list,
+            "reasons": reasons_list,
+            "failure_reasons": reasons_list,
             "phase_1_complete": bool(deliveries_list),
             "phase_2_complete": bool(fleet_dict),
             "phase_3_complete": has_routes
@@ -1056,7 +1268,7 @@ async def import_fleet_warehouses(
         # Check if warehouses need geocoding
         wh_needs_geo = [w["Nome_Armazem"] for w in wh_rows if float(w.get("Latitude", 0)) == 0]
         
-        msg = f"Ficheiro importado com sucesso ({len(wh_rows)} armazéns, {len(fleet_dict)} veículos, {len(deliveries_list)} entregas georreferenciadas, {len(routes_solution_list)} paragens atribuídas)."
+        msg = f"Ficheiro importado com sucesso ({len(wh_rows)} armaz?ns, {len(fleet_dict)} ve?culos, {len(deliveries_list)} entregas georreferenciadas, {len(drivers_list)} motoristas, {len(reasons_list)} motivos de n?o entrega, {len(routes_solution_list)} paragens atribu?das)."
         if wh_needs_geo:
             msg += f" ⚠️ Atenção: O armazém '{wh_needs_geo[0]}' precisa de confirmação da morada na aba Frota e Armazéns."
             

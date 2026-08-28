@@ -22,6 +22,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isDeletingProj, setIsDeletingProj] = useState(false);
   const [createProjError, setCreateProjError] = useState<string | null>(null);
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+
+  const handleBackupProject = async () => {
+    if (!selectedProject) {
+      alert("Por favor, selecione um projeto primeiro.");
+      return;
+    }
+    setIsBackingUp(true);
+    try {
+      const token = localStorage.getItem("token");
+      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/solver/${selectedProject.id}/export-full`;
+      const res = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      if (!res.ok) {
+        throw new Error("N?o existem dados ou rotas no projeto para exportar.");
+      }
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "") + "_" + String(now.getHours()).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0");
+      const cleanProjName = selectedProject.nome.replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
+      a.download = `GeoRoutePlan_${cleanProjName}_${dateStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      alert("Erro ao descarregar backup: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
 
   const menuItems = [
     {
@@ -321,6 +358,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center space-x-3">
+            {/* Backup do Projeto (Excel 9 Abas) */}
+            <button
+              type="button"
+              onClick={handleBackupProject}
+              disabled={!selectedProject || isBackingUp}
+              className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-all shadow-md shadow-indigo-600/20 border border-indigo-500 cursor-pointer"
+              title="Descarregar Backup Completo (Excel 9 Abas: Armaz?ns, Frota, Entregas, Regras, Rotas, Manifestos, Motoristas, Justifica??es, Instru??es)"
+            >
+              <svg className="w-4 h-4 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>{isBackingUp ? "A gerar..." : "?? Backup Excel"}</span>
+            </button>
+
             {/* App Motoristas Direct Link (High Contrast for Light & Dark Mode) */}
             <a
               href="https://driver.testeweb.cloud"

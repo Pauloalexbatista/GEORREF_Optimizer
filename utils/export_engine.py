@@ -51,7 +51,9 @@ def generate_full_project_excel(
     warehouses_df=None,
     fleet_config=None,
     optimization_params=None,
-    rules_matrix=None
+    rules_matrix=None,
+    drivers_data=None,
+    reasons_data=None
 ) -> bytes:
     wb = openpyxl.Workbook()
     
@@ -401,7 +403,103 @@ def generate_full_project_excel(
                          center_cols=(4, 7, 9), right_cols=(5, 6, 8), currency_cols=(10,))
     autofit_columns(ws_manifest, len(manifest_headers_spec))
     
-    # 7. Instruções
+        # 7. Motoristas e Carros
+    ws_drivers = wb.create_sheet('Motoristas e Carros')
+    drivers_headers_spec = [
+        ('Motorista', COLOR_REQ),
+        ('PIN/Password', COLOR_REQ),
+        ('Viatura', COLOR_REC),
+        ('Matrícula', COLOR_OPT),
+        ('Telemóvel', COLOR_REC),
+        ('Rota Atribuída', COLOR_OPT)
+    ]
+    apply_sheet_headers_tiered(ws_drivers, drivers_headers_spec)
+    
+    drivers_rows = []
+    if drivers_data:
+        if isinstance(drivers_data, list):
+            for d in drivers_data:
+                if isinstance(d, dict):
+                    drivers_rows.append([
+                        str(d.get('name', d.get('Motorista', ''))),
+                        str(d.get('pin', d.get('PIN/Password', d.get('PIN', '1234')))),
+                        str(d.get('vehicle', d.get('Viatura', ''))),
+                        str(d.get('matricula', d.get('Matrícula', ''))),
+                        str(d.get('phone', d.get('Telemóvel', d.get('telefone', '')))),
+                        str(d.get('route', d.get('Rota Atribuída', '')))
+                    ])
+        elif isinstance(drivers_data, pd.DataFrame):
+            for _, d in drivers_data.iterrows():
+                drivers_rows.append([
+                    str(d.get('Motorista', d.get('name', ''))),
+                    str(d.get('PIN/Password', d.get('pin', '1234'))),
+                    str(d.get('Viatura', d.get('vehicle', ''))),
+                    str(d.get('Matrícula', d.get('matricula', ''))),
+                    str(d.get('Telemóvel', d.get('phone', ''))),
+                    str(d.get('Rota Atribuída', d.get('route', '')))
+                ])
+                
+    if not drivers_rows and fleet_config:
+        # Fallback to fleet driver names if no explicit driver list
+        if isinstance(fleet_config, dict):
+            for v_name, v_data in fleet_config.items():
+                d_name = v_data.get('motorista_nome', '') if isinstance(v_data, dict) else getattr(v_data, 'motorista_nome', '')
+                d_tel = v_data.get('motorista_telemovel', '') if isinstance(v_data, dict) else getattr(v_data, 'motorista_telemovel', '')
+                if d_name:
+                    drivers_rows.append([d_name, '1111', v_name, '', d_tel, ''])
+                    
+    if not drivers_rows:
+        drivers_rows = [
+            ['Motorista 1', '1111', 'Viatura 1', '', '910000001', 'Rota 1']
+        ]
+        
+    for r_idx, row_vals in enumerate(drivers_rows, start=2):
+        for c_idx, val in enumerate(row_vals, start=1):
+            ws_drivers.cell(row=r_idx, column=c_idx, value=val)
+    format_data_rows(ws_drivers, 2, 1 + len(drivers_rows), len(drivers_headers_spec), center_cols=(2, 4, 5, 6))
+    autofit_columns(ws_drivers, len(drivers_headers_spec))
+    
+    # 8. Justificação entregas
+    ws_reasons = wb.create_sheet('Justificação entregas')
+    reasons_headers_spec = [
+        ('Motivo de Não Entrega', COLOR_REQ),
+        ('Categoria / Ação', COLOR_REC)
+    ]
+    apply_sheet_headers_tiered(ws_reasons, reasons_headers_spec)
+    
+    reasons_rows = []
+    if reasons_data:
+        if isinstance(reasons_data, list):
+            for r in reasons_data:
+                if isinstance(r, dict):
+                    reasons_rows.append([
+                        str(r.get('reason', r.get('Motivo de Não Entrega', r.get('motivo', '')))),
+                        str(r.get('category', r.get('Categoria / Ação', r.get('categoria', 'Geral'))))
+                    ])
+        elif isinstance(reasons_data, pd.DataFrame):
+            for _, r in reasons_data.iterrows():
+                reasons_rows.append([
+                    str(r.get('Motivo de Não Entrega', r.get('reason', ''))),
+                    str(r.get('Categoria / Ação', r.get('category', 'Geral')))
+                ])
+                
+    if not reasons_rows:
+        reasons_rows = [
+            ['Cliente Ausente / Fechado', 'Ausência'],
+            ['Cliente Recusou a Carga', 'Recusa'],
+            ['Morada Não Encontrada / Errada', 'Morada'],
+            ['Mercadoria Danificada', 'Avaria'],
+            ['Falta de Tempo / Fora de Horas', 'Operacional'],
+            ['Sem Dinheiro para Cobrança', 'Financeiro']
+        ]
+        
+    for r_idx, row_vals in enumerate(reasons_rows, start=2):
+        for c_idx, val in enumerate(row_vals, start=1):
+            ws_reasons.cell(row=r_idx, column=c_idx, value=val)
+    format_data_rows(ws_reasons, 2, 1 + len(reasons_rows), len(reasons_headers_spec), center_cols=(2,))
+    autofit_columns(ws_reasons, len(reasons_headers_spec))
+
+    # 9. Instruções
     build_sheet_instrucoes(wb)
     
     buffer = io.BytesIO()

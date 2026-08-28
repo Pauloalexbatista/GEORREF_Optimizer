@@ -1588,6 +1588,7 @@ def optimize_single_route(req: OptimizeRouteRequest, current_user: UserResponse 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/export-full/{project_id}")
+@router.get("/{project_id}/export-full")
 def export_full_project(project_id: int, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(project_id)
     if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
@@ -1638,7 +1639,9 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
             warehouses_df=warehouses_df,
             fleet_config=fleet_config,
             optimization_params=optimization_params,
-            rules_matrix=rules_matrix
+            rules_matrix=rules_matrix,
+            drivers_data=state_dict.get('drivers', state_dict.get('motoristas', [])),
+            reasons_data=state_dict.get('reasons', state_dict.get('failure_reasons', []))
         )
         
         from fastapi import Response
