@@ -170,14 +170,16 @@ export default function DetachedMapPage() {
     } catch (e) {}
   };
 
-  const handleMoveClientRoute = async (clientName: string, newRoute: string, delivId?: number, address?: string) => {
+  const handleMoveClientRoute = async (clientName: string, newRoute: string, delivId?: number, address?: string, lat?: number, lon?: number) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
     lastMutationTimeRef.current = Date.now();
     const targetRoute = isPendingRoute(newRoute) ? "Por Distribuir" : newRoute;
 
     // Optimistic state update
     const updated = clients.map((c) => {
-      if (c.Cliente === clientName || (delivId && (c.id === delivId || c.ID_Original === delivId))) {
+      const matchId = delivId !== undefined && (c.id === delivId || c.ID_Original === delivId);
+      const matchName = String(c.Cliente || c.Nome_Cliente) === String(clientName);
+      if (matchId || matchName) {
         return { ...c, Rota: targetRoute };
       }
       return c;
@@ -199,9 +201,13 @@ export default function DetachedMapPage() {
         method: "POST",
         body: JSON.stringify({
           project_id: projId,
-          client_code: clientName,
+          client_code: String(clientName || ""),
+          clientName: String(clientName || ""),
           delivery_id: delivId,
-          address: address,
+          deliveryId: delivId,
+          address: String(address || ""),
+          lat: lat !== undefined ? Number(lat) : undefined,
+          lon: lon !== undefined ? Number(lon) : undefined,
           new_route: targetRoute,
         }),
       });
