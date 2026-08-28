@@ -704,12 +704,12 @@ export default function MapComponent({
       if (statusFilter === "with_cargo" && isPending) return false;
       if (statusFilter === "empty" && isPending) return false;
 
-      // 4. Route selection pills
+      // 4. Route selection pills (Normalized & Case-Insensitive Matching)
       if (selectedRoutes.length === 0) return true;
       if (isPending) {
-        return selectedRoutes.includes("Por Distribuir");
+        return selectedRoutes.some(sel => routesMatch(sel, "Por Distribuir"));
       }
-      return selectedRoutes.includes(c.Rota);
+      return selectedRoutes.some(sel => routesMatch(sel, c.Rota));
     });
   }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes, fleet]);
 
@@ -731,17 +731,24 @@ export default function MapComponent({
     });
     return { selectedStopsTotalKg: Math.round(kg), selectedStopsTotalVol: vol };
   }, [visibleClients, selectedClientKeys]);
-  // Points for auto fit bounds
+  // Points for auto fit bounds (focuses directly on active route stops when single route selected)
   const visiblePoints: [number, number][] = useMemo(() => {
     const pts: [number, number][] = [];
-    warehouses.forEach(w => {
-      if (w.lat && w.lon) pts.push([w.lat, w.lon]);
-    });
+    if (selectedRoutes.length === 0) {
+      warehouses.forEach(w => {
+        if (w.lat && w.lon) pts.push([w.lat, w.lon]);
+      });
+    }
     visibleClients.forEach(c => {
       pts.push([c.Latitude, c.Longitude]);
     });
+    if (pts.length === 0) {
+      warehouses.forEach(w => {
+        if (w.lat && w.lon) pts.push([w.lat, w.lon]);
+      });
+    }
     return pts;
-  }, [warehouses, visibleClients]);
+  }, [warehouses, visibleClients, selectedRoutes]);
 
   const handleFitAll = () => {
     setFitTrigger(Date.now().toString());
@@ -750,17 +757,17 @@ export default function MapComponent({
   const toggleRouteFilter = (v: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
-      if (selectedRoutes.includes(v)) {
-        const next = selectedRoutes.filter(r => r !== v);
-        setSelectedRoutes(next);
+      if (selectedRoutes.some(r => routesMatch(r, v))) {
+        const next = selectedRoutes.filter(r => !routesMatch(r, v));
+        handleRoutesChange(next);
       } else {
-        setSelectedRoutes(selectedRoutes.length === 0 ? [v] : [...selectedRoutes, v]);
+        handleRoutesChange([...selectedRoutes, v]);
       }
     } else {
-      if (selectedRoutes.length === 1 && selectedRoutes[0] === v) {
-        setSelectedRoutes([]); // Reset to all
+      if (selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v)) {
+        handleRoutesChange([]); // Reset to all
       } else {
-        setSelectedRoutes([v]); // Select only this one
+        handleRoutesChange([v]); // Select only this one
       }
     }
   };
@@ -974,8 +981,8 @@ export default function MapComponent({
             if (pendingCount === 0) return null;
             if (statusFilter === "with_cargo" || statusFilter === "empty") return null;
             
-            const isSelected = selectedRoutes.length === 0 || selectedRoutes.includes("Por Distribuir");
-            const isExclusive = selectedRoutes.length === 1 && selectedRoutes[0] === "Por Distribuir";
+            const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, "Por Distribuir"));
+            const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], "Por Distribuir");
 
             return (
               <button
