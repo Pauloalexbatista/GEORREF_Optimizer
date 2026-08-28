@@ -537,26 +537,27 @@ export default function FleetPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-x-auto rounded-xl border border-zinc-800">
+              <table className="w-full text-left text-xs border-collapse min-w-[1100px]">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/80 text-zinc-400 font-bold uppercase text-[10px]">
+                  <tr className="border-b border-zinc-800 bg-zinc-950/90 text-zinc-400 font-bold uppercase text-[10px]">
                     <th className="py-2.5 px-3">Nome Armazém</th>
                     <th className="py-2.5 px-3">Morada</th>
                     <th className="py-2.5 px-3">Código Postal</th>
                     <th className="py-2.5 px-3">Localidade</th>
+                    <th className="py-2.5 px-3 text-center">Latitude</th>
+                    <th className="py-2.5 px-3 text-center">Longitude</th>
                     <th className="py-2.5 px-3 text-center">Abertura</th>
                     <th className="py-2.5 px-3 text-center">Fecho</th>
                     <th className="py-2.5 px-3 text-center">Carga (min)</th>
                     <th className="py-2.5 px-3">Contacto</th>
-                    <th className="py-2.5 px-3 text-center">Coordenadas</th>
-                    <th className="py-2.5 px-3 text-right">Ações</th>
+                    <th className="py-2.5 px-3 text-center">Mapa / Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/40">
                   {warehouses.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-8 text-center text-zinc-500">
+                      <td colSpan={11} className="py-8 text-center text-zinc-500">
                         Nenhum armazém configurado. Clique em "+ Adicionar Armazém" ou importe o ficheiro Excel.
                       </td>
                     </tr>
@@ -576,7 +577,7 @@ export default function FleetPage() {
                             type="text"
                             value={wh.address}
                             onChange={(e) => updateWarehouse(idx, "address", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-56"
+                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-52"
                             placeholder="Estrada / Rua..."
                           />
                         </td>
@@ -596,6 +597,24 @@ export default function FleetPage() {
                             onChange={(e) => updateWarehouse(idx, "locality", e.target.value)}
                             className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-32"
                             placeholder="Forte da Casa"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <input
+                            type="text"
+                            value={wh.lat !== undefined && wh.lat !== 0 ? wh.lat : ""}
+                            onChange={(e) => updateWarehouse(idx, "lat", parseFloat(e.target.value.replace(',', '.')) || 0)}
+                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-28 font-mono text-[11px] text-center"
+                            placeholder="38.872732"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <input
+                            type="text"
+                            value={wh.lon !== undefined && wh.lon !== 0 ? wh.lon : ""}
+                            onChange={(e) => updateWarehouse(idx, "lon", parseFloat(e.target.value.replace(',', '.')) || 0)}
+                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-28 font-mono text-[11px] text-center"
+                            placeholder="-9.053075"
                           />
                         </td>
                         <td className="py-2 px-3 text-center">
@@ -630,50 +649,29 @@ export default function FleetPage() {
                             type="text"
                             value={wh.contact || ""}
                             onChange={(e) => updateWarehouse(idx, "contact", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-28 text-[11px]"
+                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-24 text-[11px]"
                             placeholder="912345678"
                           />
                         </td>
                         <td className="py-2 px-3 text-center">
-                          {wh.lat !== 0 && wh.lon !== 0 ? (
+                          <div className="flex items-center justify-center space-x-1.5">
                             <button
                               onClick={() => {
                                 setEditingWhIndex(idx);
                                 setGeoModalOpen(true);
                               }}
-                              className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-400 hover:text-emerald-300 rounded-lg text-[11px] font-mono border border-emerald-800/60 flex items-center gap-1.5 mx-auto transition-all cursor-pointer"
-                              title="Coordenadas válidas. Clique para abrir o georreferenciador no mapa."
+                              className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                                wh.lat !== 0 && wh.lon !== 0
+                                  ? "bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800"
+                                  : "bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-800 animate-pulse"
+                              }`}
+                              title={wh.lat !== 0 && wh.lon !== 0 ? "Coordenadas definidas. Clique para ajustar no mapa." : "Sem coordenadas. Clique para georreferenciar no mapa."}
                             >
-                              <span>📍</span> {wh.lat.toFixed(4)}, {wh.lon.toFixed(4)}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                setEditingWhIndex(idx);
-                                setGeoModalOpen(true);
-                              }}
-                              className="px-2.5 py-1 bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 hover:text-amber-200 rounded-lg text-[11px] font-semibold border border-amber-800/80 animate-pulse flex items-center gap-1 mx-auto transition-all cursor-pointer"
-                              title="Armazém sem coordenadas. Clique para georreferenciar no mapa."
-                            >
-                              <span>⚠️</span> Georreferenciar
-                            </button>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 text-right">
-                          <div className="flex items-center justify-end space-x-1">
-                            <button
-                              onClick={() => {
-                                setEditingWhIndex(idx);
-                                setGeoModalOpen(true);
-                              }}
-                              className="p-1 text-zinc-400 hover:text-indigo-400 transition-colors cursor-pointer"
-                              title="Abrir Georreferenciação Manual"
-                            >
-                              🗺️
+                              📍
                             </button>
                             <button
                               onClick={() => deleteWarehouse(idx)}
-                              className="p-1 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
+                              className="p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
                               title="Eliminar Armazém"
                             >
                               🗑️
