@@ -44,154 +44,102 @@ interface Driver {
   name: string;
   pin: string;
   vehicle: string;
-  matricula: string;
   phone: string;
-  route: string;
+  shift_start: string;
+  shift_end: string;
   is_active: number;
 }
 
-interface Reason {
+interface NonDeliveryReason {
+  id?: number;
+  code: string;
   reason: string;
   category: string;
+  action_required: string;
+  is_active: number;
 }
+
+type TabType = "warehouses" | "fleet" | "drivers" | "reasons";
 
 export default function FleetPage() {
   const { selectedProject } = useProjects();
   const { t } = useI18n();
+  const [activeTab, setActiveTab] = useState<TabType>("warehouses");
 
-  const [activeTab, setActiveTab] = useState<"warehouses" | "fleet" | "drivers" | "reasons">("warehouses");
+  // State for all 4 tables
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [fleet, setFleet] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [reasons, setReasons] = useState<Reason[]>([]);
+  const [reasons, setReasons] = useState<NonDeliveryReason[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [geocodingWh, setGeocodingWh] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  // Search filters
+  // Search/Filters per tab
   const [searchFleet, setSearchFleet] = useState("");
   const [searchDrivers, setSearchDrivers] = useState("");
   const [searchReasons, setSearchReasons] = useState("");
 
-  // Geocoding modal for warehouse
+  // Geocoding Modal State
   const [geoModalOpen, setGeoModalOpen] = useState(false);
   const [editingWhIndex, setEditingWhIndex] = useState<number | null>(null);
-  const [geocodingWh, setGeocodingWh] = useState(false);
 
-  // Load project configuration
-  const loadFleetConfig = async () => {
-    if (!selectedProject) return;
-    setLoading(true);
-    try {
-      const data = await apiRequest(`/api/fleet/${selectedProject.id}`);
-
-      if (data.warehouses) {
-        setWarehouses(
-          data.warehouses.map((w: any) => ({
-            name: w.name || "Armazém Principal",
-            address: w.address || "",
-            cp: w.cp || "",
-            locality: w.locality || "",
-            lat: Number(w.lat) || 0,
-            lon: Number(w.lon) || 0,
-            quality: w.quality || 1,
-            open_time: w.open_time || "06:00:00",
-            close_time: w.close_time || "22:00:00",
-            load_time: w.load_time !== undefined ? Number(w.load_time) : 30,
-            contact: w.contact || "",
-          }))
-        );
-      } else {
-        setWarehouses([]);
-      }
-
-      if (data.fleet) {
-        setFleet(
-          data.fleet.map((v: any) => ({
-            armazem: v.armazem || (data.warehouses?.[0]?.name || "Armazém Principal"),
-            veiculo: v.veiculo || "Viatura Nova",
-            capacidade_kg: Number(v.capacidade_kg) || 1000,
-            capacidade_vol: Number(v.capacidade_vol || v.capacidade_volume) || 10,
-            velocidade_media: Number(v.velocidade_media) || 50,
-            horario_inicio: v.horario_inicio || "08:00:00",
-            horario_fim: v.horario_fim || "18:00:00",
-            custo_km: Number(v.custo_km) || 0.65,
-            custo_hora: Number(v.custo_hora) || 12.50,
-            max_entregas: Number(v.max_entregas) || 30,
-            regras: v.regras || "",
-            motorista_nome: v.motorista_nome || v.motorista || "",
-            motorista_telemovel: v.motorista_telemovel || "",
-            is_active: v.is_active !== undefined ? Number(v.is_active) : 1,
-          }))
-        );
-      } else {
-        setFleet([]);
-      }
-
-      if (data.drivers) {
-        setDrivers(
-          data.drivers.map((d: any) => ({
-            name: d.name || "Motorista Novo",
-            pin: d.pin || "1234",
-            vehicle: d.vehicle || d.viatura || "",
-            matricula: d.matricula || "",
-            phone: d.phone || d.telemovel || "",
-            route: d.route || d.rota || "",
-            is_active: d.is_active !== undefined ? Number(d.is_active) : 1,
-          }))
-        );
-      } else {
-        setDrivers([]);
-      }
-
-      if (data.reasons) {
-        setReasons(
-          data.reasons.map((r: any) => ({
-            reason: r.reason || r.motivo || "",
-            category: r.category || r.categoria || "Geral",
-          }))
-        );
-      } else {
-        setReasons([]);
-      }
-    } catch (err: any) {
-      console.error("Failed to load fleet config:", err);
-      setFeedback({ type: "error", msg: "Erro ao carregar dados do projeto." });
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Load all tables on project change
   useEffect(() => {
-    loadFleetConfig();
+    if (!selectedProject) return;
+
+    const loadAllTables = async () => {
+      setLoading(true);
+      setFeedback(null);
+      try {
+        const data = await apiRequest(`/api/fleet/${selectedProject.id}`);
+        if (data) {
+          if (data.warehouses) setWarehouses(data.warehouses);
+          if (data.fleet) setFleet(data.fleet);
+          if (data.drivers) setDrivers(data.drivers);
+          if (data.reasons) setReasons(data.reasons);
+        }
+      } catch (err: any) {
+        console.error("Erro ao carregar tabelas de frota:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAllTables();
   }, [selectedProject]);
 
-  // Persist all tables to backend
+  // Persist all tables back to backend
   const persistAllTables = async () => {
     if (!selectedProject) return;
     setSaving(true);
     setFeedback(null);
     try {
-      await apiRequest(`/api/fleet/${selectedProject.id}/save`, {
+      const payload = {
+        warehouses,
+        fleet,
+        drivers,
+        reasons,
+      };
+
+      await apiRequest(`/api/fleet/${selectedProject.id}`, {
         method: "POST",
-        body: JSON.stringify({
-          warehouses,
-          fleet,
-          drivers,
-          reasons,
-        }),
+        body: JSON.stringify(payload),
       });
-      setFeedback({ type: "success", msg: "Todas as tabelas foram guardadas com sucesso!" });
-      setTimeout(() => setFeedback(null), 3000);
+
+      setFeedback({ type: "success", msg: "Todas as tabelas de suporte e frota foram guardadas com sucesso!" });
+      setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
-      setFeedback({ type: "error", msg: "Erro ao guardar tabelas: " + (err.message || "Erro desconhecido") });
+      console.error("Erro ao guardar tabelas:", err);
+      setFeedback({ type: "error", msg: err.message || "Erro ao guardar alterações na frota." });
     } finally {
       setSaving(false);
     }
   };
 
-  // Warehouse handlers
+  // --- WAREHOUSE HANDLERS ---
   const updateWarehouse = (index: number, field: keyof Warehouse, value: any) => {
     setWarehouses((prev) => {
       const updated = [...prev];
@@ -208,7 +156,7 @@ export default function FleetPage() {
       locality: "",
       lat: 0,
       lon: 0,
-      quality: 99,
+      quality: 1,
       open_time: "06:00:00",
       close_time: "22:00:00",
       load_time: 30,
@@ -255,38 +203,31 @@ export default function FleetPage() {
         }
       }
       setWarehouses(updated);
-      if (geocodedCount > 0) {
-        setFeedback({
-          type: "success",
-          msg: `?? Georreferencia??o conclu?da! ${geocodedCount} armaz?m(ns) localizado(s) com sucesso. A gravar...`,
-        });
-        // Automatically persist to backend
-        await apiRequest(`/api/fleet/${selectedProject.id}/save`, {
-          method: "POST",
-          body: JSON.stringify({
-            warehouses: updated,
-            fleet,
-            drivers,
-            reasons,
-          }),
-        });
-      } else {
-        setFeedback({
-          type: "error",
-          msg: "N?o foi poss?vel encontrar coordenadas autom?ticas. Clique no bot?o de coordenadas do armaz?m para posicionar no mapa.",
-        });
-      }
-    } catch (err: any) {
-      setFeedback({
-        type: "error",
-        msg: "Erro ao georreferenciar armaz?ns: " + (err.message || "Erro"),
+
+      // Auto persist geocoded warehouses to backend snapshot
+      await apiRequest(`/api/fleet/${selectedProject.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          warehouses: updated,
+          fleet,
+          drivers,
+          reasons,
+        }),
       });
+
+      setFeedback({
+        type: "success",
+        msg: `Georreferenciação de armazéns concluída! ${geocodedCount} armazém(ns) localizados e guardados.`,
+      });
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err: any) {
+      setFeedback({ type: "error", msg: "Erro ao georreferenciar armazéns." });
     } finally {
       setGeocodingWh(false);
     }
   };
 
-  // Vehicle handlers
+  // --- VEHICLE HANDLERS ---
   const updateVehicle = (index: number, field: keyof Vehicle, value: any) => {
     setFleet((prev) => {
       const updated = [...prev];
@@ -297,30 +238,30 @@ export default function FleetPage() {
 
   const addVehicle = () => {
     const defaultWh = warehouses[0]?.name || "Armazém Principal";
-    const newVeh: Vehicle = {
+    const newV: Vehicle = {
       armazem: defaultWh,
       veiculo: `Viatura ${fleet.length + 1}`,
       capacidade_kg: 1000,
-      capacidade_vol: 10,
+      capacidade_vol: 10.0,
       velocidade_media: 50,
       horario_inicio: "08:00:00",
       horario_fim: "18:00:00",
       custo_km: 0.65,
-      custo_hora: 12.50,
+      custo_hora: 12.5,
       max_entregas: 30,
       regras: "",
       motorista_nome: "",
       motorista_telemovel: "",
       is_active: 1,
     };
-    setFleet((prev) => [...prev, newVeh]);
+    setFleet((prev) => [...prev, newV]);
   };
 
   const deleteVehicle = (index: number) => {
     setFleet((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Driver handlers
+  // --- DRIVER HANDLERS ---
   const updateDriver = (index: number, field: keyof Driver, value: any) => {
     setDrivers((prev) => {
       const updated = [...prev];
@@ -330,24 +271,24 @@ export default function FleetPage() {
   };
 
   const addDriver = () => {
-    const newDriver: Driver = {
+    const newD: Driver = {
       name: `Motorista ${drivers.length + 1}`,
-      pin: "1234",
+      pin: Math.floor(1000 + Math.random() * 9000).toString(),
       vehicle: fleet[0]?.veiculo || "",
-      matricula: "",
       phone: "",
-      route: "",
+      shift_start: "08:00:00",
+      shift_end: "18:00:00",
       is_active: 1,
     };
-    setDrivers((prev) => [...prev, newDriver]);
+    setDrivers((prev) => [...prev, newD]);
   };
 
   const deleteDriver = (index: number) => {
     setDrivers((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Reason handlers
-  const updateReason = (index: number, field: keyof Reason, value: any) => {
+  // --- NON DELIVERY REASONS HANDLERS ---
+  const updateReason = (index: number, field: keyof NonDeliveryReason, value: any) => {
     setReasons((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
@@ -356,18 +297,21 @@ export default function FleetPage() {
   };
 
   const addReason = () => {
-    const newReason: Reason = {
+    const newR: NonDeliveryReason = {
+      code: `MOT_${reasons.length + 1}`,
       reason: "Novo Motivo de Não Entrega",
-      category: "Geral",
+      category: "Cliente",
+      action_required: "Reagendar",
+      is_active: 1,
     };
-    setReasons((prev) => [...prev, newReason]);
+    setReasons((prev) => [...prev, newR]);
   };
 
   const deleteReason = (index: number) => {
     setReasons((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Filtered lists
+  // Filtered views
   const filteredFleet = useMemo(() => {
     const q = searchFleet.toLowerCase().trim();
     if (!q) return fleet;
@@ -388,8 +332,7 @@ export default function FleetPage() {
         d.name.toLowerCase().includes(q) ||
         d.phone.toLowerCase().includes(q) ||
         d.vehicle.toLowerCase().includes(q) ||
-        d.matricula.toLowerCase().includes(q) ||
-        d.route.toLowerCase().includes(q)
+        d.pin.toLowerCase().includes(q)
     );
   }, [drivers, searchDrivers]);
 
@@ -403,14 +346,14 @@ export default function FleetPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      <div className="p-4 md:p-6 space-y-5 w-full mx-auto font-sans">
         {/* Header Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900 border border-zinc-800 p-4 rounded-2xl shadow-xl">
           <div>
-            <h1 className="text-xl font-bold text-zinc-100 flex items-center gap-2.5">
+            <h1 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
               <span>📋</span> 2. Tabelas de Suporte & Frota
             </h1>
-            <p className="text-xs text-zinc-400 mt-1">
+            <p className="text-xs text-zinc-400 mt-0.5">
               Configure armazéns de partida, viaturas, motoristas com PINs diários e motivos de não entrega.
             </p>
           </div>
@@ -419,12 +362,12 @@ export default function FleetPage() {
             <button
               onClick={persistAllTables}
               disabled={saving}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center space-x-2 transition-all cursor-pointer"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center space-x-2 transition-all cursor-pointer"
             >
               {saving ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>A Gravar Tabelas...</span>
+                  <span>A Gravar...</span>
                 </>
               ) : (
                 <>
@@ -439,7 +382,7 @@ export default function FleetPage() {
         {/* Feedback Alert */}
         {feedback && (
           <div
-            className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in duration-200 border ${
+            className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in duration-200 border ${
               feedback.type === "success"
                 ? "bg-emerald-950/60 border-emerald-800 text-emerald-300"
                 : "bg-rose-950/60 border-rose-800 text-rose-300"
@@ -459,10 +402,10 @@ export default function FleetPage() {
         )}
 
         {/* Tabs Navigation */}
-        <div className="flex items-center space-x-2 border-b border-zinc-800 pb-1 overflow-x-auto">
+        <div className="flex items-center space-x-1.5 border-b border-zinc-800 pb-1 overflow-x-auto">
           <button
             onClick={() => setActiveTab("warehouses")}
-            className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-2 ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
               activeTab === "warehouses"
                 ? "bg-zinc-850 border-indigo-500 text-indigo-400"
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -473,7 +416,7 @@ export default function FleetPage() {
 
           <button
             onClick={() => setActiveTab("fleet")}
-            className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-2 ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
               activeTab === "fleet"
                 ? "bg-zinc-850 border-indigo-500 text-indigo-400"
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -484,7 +427,7 @@ export default function FleetPage() {
 
           <button
             onClick={() => setActiveTab("drivers")}
-            className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-2 ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
               activeTab === "drivers"
                 ? "bg-zinc-850 border-indigo-500 text-indigo-400"
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -495,7 +438,7 @@ export default function FleetPage() {
 
           <button
             onClick={() => setActiveTab("reasons")}
-            className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-2 ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
               activeTab === "reasons"
                 ? "bg-zinc-850 border-indigo-500 text-indigo-400"
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
@@ -506,10 +449,10 @@ export default function FleetPage() {
         </div>
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 1: WAREHOUSES (Aba Armazéns)                              */}
+        {/* TAB 1: WAREHOUSES (Aba Armazéns) - Formato Excel em Ecrã Total */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "warehouses" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-5 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
@@ -523,8 +466,8 @@ export default function FleetPage() {
                 <button
                   onClick={geocodeAllWarehouses}
                   disabled={geocodingWh || warehouses.length === 0}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50"
-                  title="Georreferenciar automaticamente todos os armazéns a partir da morada/código postal"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                  title="Georreferenciar automaticamente todos os armazéns"
                 >
                   {geocodingWh ? "📍 A georreferenciar..." : "📍 Georreferenciar Armazéns"}
                 </button>
@@ -537,24 +480,25 @@ export default function FleetPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-zinc-800">
-              <table className="w-full text-left text-xs border-collapse min-w-[1100px]">
+            {/* Grelha Excel para Armazéns - Ferramentas à Esquerda e 100% da Largura */}
+            <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+              <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/90 text-zinc-400 font-bold uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Nome Armazém</th>
-                    <th className="py-2.5 px-3">Morada</th>
-                    <th className="py-2.5 px-3">Código Postal</th>
-                    <th className="py-2.5 px-3">Localidade</th>
-                    <th className="py-2.5 px-3 text-center">Latitude</th>
-                    <th className="py-2.5 px-3 text-center">Longitude</th>
-                    <th className="py-2.5 px-3 text-center">Abertura</th>
-                    <th className="py-2.5 px-3 text-center">Fecho</th>
-                    <th className="py-2.5 px-3 text-center">Carga (min)</th>
-                    <th className="py-2.5 px-3">Contacto</th>
-                    <th className="py-2.5 px-3 text-center">Mapa / Ações</th>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10.5px]">
+                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
+                    <th className="py-2 px-2 w-36 border-r border-zinc-800">Nome Armazém</th>
+                    <th className="py-2 px-2 border-r border-zinc-800">Morada</th>
+                    <th className="py-2 px-1.5 w-24 text-center border-r border-zinc-800">Cód. Postal</th>
+                    <th className="py-2 px-2 w-32 border-r border-zinc-800">Localidade</th>
+                    <th className="py-2 px-1.5 w-28 text-center border-r border-zinc-800">Latitude</th>
+                    <th className="py-2 px-1.5 w-28 text-center border-r border-zinc-800">Longitude</th>
+                    <th className="py-2 px-1 w-20 text-center border-r border-zinc-800">Abertura</th>
+                    <th className="py-2 px-1 w-20 text-center border-r border-zinc-800">Fecho</th>
+                    <th className="py-2 px-1 w-16 text-center border-r border-zinc-800">Carga(m)</th>
+                    <th className="py-2 px-2 w-28">Contacto</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/40">
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {warehouses.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="py-8 text-center text-zinc-500">
@@ -563,107 +507,19 @@ export default function FleetPage() {
                     </tr>
                   ) : (
                     warehouses.map((wh, idx) => (
-                      <tr key={idx} className="hover:bg-zinc-850/30">
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={wh.name}
-                            onChange={(e) => updateWarehouse(idx, "name", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-36 font-bold"
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={wh.address}
-                            onChange={(e) => updateWarehouse(idx, "address", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-52"
-                            placeholder="Estrada / Rua..."
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={wh.cp}
-                            onChange={(e) => updateWarehouse(idx, "cp", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-24 font-mono"
-                            placeholder="2625-441"
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={wh.locality}
-                            onChange={(e) => updateWarehouse(idx, "locality", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-32"
-                            placeholder="Forte da Casa"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="text"
-                            value={wh.lat !== undefined && wh.lat !== 0 ? wh.lat : ""}
-                            onChange={(e) => updateWarehouse(idx, "lat", parseFloat(e.target.value.replace(',', '.')) || 0)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-28 font-mono text-[11px] text-center"
-                            placeholder="38.872732"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="text"
-                            value={wh.lon !== undefined && wh.lon !== 0 ? wh.lon : ""}
-                            onChange={(e) => updateWarehouse(idx, "lon", parseFloat(e.target.value.replace(',', '.')) || 0)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-28 font-mono text-[11px] text-center"
-                            placeholder="-9.053075"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="text"
-                            value={wh.open_time || "06:00:00"}
-                            onChange={(e) => updateWarehouse(idx, "open_time", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-zinc-100 w-20 text-center font-mono text-[11px]"
-                            placeholder="06:00:00"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="text"
-                            value={wh.close_time || "22:00:00"}
-                            onChange={(e) => updateWarehouse(idx, "close_time", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-zinc-100 w-20 text-center font-mono text-[11px]"
-                            placeholder="22:00:00"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <input
-                            type="number"
-                            value={wh.load_time !== undefined ? wh.load_time : 30}
-                            onChange={(e) => updateWarehouse(idx, "load_time", parseInt(e.target.value, 10) || 30)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-zinc-100 w-16 text-center font-mono text-[11px]"
-                            min={1}
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={wh.contact || ""}
-                            onChange={(e) => updateWarehouse(idx, "contact", e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-24 text-[11px]"
-                            placeholder="912345678"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <div className="flex items-center justify-center space-x-1.5">
+                      <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
+                        {/* 1. FERRAMENTAS À ESQUERDA */}
+                        <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
+                          <div className="flex items-center justify-center space-x-1">
                             <button
                               onClick={() => {
                                 setEditingWhIndex(idx);
                                 setGeoModalOpen(true);
                               }}
-                              className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                              className={`p-1 rounded text-xs transition-all cursor-pointer ${
                                 wh.lat !== 0 && wh.lon !== 0
-                                  ? "bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800"
-                                  : "bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-800 animate-pulse"
+                                  ? "text-emerald-400 hover:bg-emerald-950/60"
+                                  : "text-amber-400 hover:bg-amber-950/60 animate-pulse"
                               }`}
                               title={wh.lat !== 0 && wh.lon !== 0 ? "Coordenadas definidas. Clique para ajustar no mapa." : "Sem coordenadas. Clique para georreferenciar no mapa."}
                             >
@@ -671,12 +527,121 @@ export default function FleetPage() {
                             </button>
                             <button
                               onClick={() => deleteWarehouse(idx)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                               title="Eliminar Armazém"
                             >
                               🗑️
                             </button>
                           </div>
+                        </td>
+
+                        {/* 2. NOME ARMAZÉM */}
+                        <td className="py-1 px-2 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.name}
+                            onChange={(e) => updateWarehouse(idx, "name", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-100 w-full font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
+                          />
+                        </td>
+
+                        {/* 3. MORADA */}
+                        <td className="py-1 px-2 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.address}
+                            onChange={(e) => updateWarehouse(idx, "address", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-200 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
+                            placeholder="Morada completa..."
+                          />
+                        </td>
+
+                        {/* 4. CÓDIGO POSTAL */}
+                        <td className="py-1 px-1.5 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.cp}
+                            onChange={(e) => updateWarehouse(idx, "cp", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-200 w-full font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
+                            placeholder="2625-441"
+                          />
+                        </td>
+
+                        {/* 5. LOCALIDADE */}
+                        <td className="py-1 px-2 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.locality}
+                            onChange={(e) => updateWarehouse(idx, "locality", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-200 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
+                            placeholder="Localidade..."
+                          />
+                        </td>
+
+                        {/* 6. LATITUDE */}
+                        <td className="py-1 px-1.5 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.lat !== undefined && wh.lat !== 0 ? wh.lat : ""}
+                            onChange={(e) => updateWarehouse(idx, "lat", parseFloat(e.target.value.replace(',', '.')) || 0)}
+                            className="bg-transparent border-none outline-none text-emerald-400 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full font-semibold"
+                            placeholder="38.872732"
+                          />
+                        </td>
+
+                        {/* 7. LONGITUDE */}
+                        <td className="py-1 px-1.5 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.lon !== undefined && wh.lon !== 0 ? wh.lon : ""}
+                            onChange={(e) => updateWarehouse(idx, "lon", parseFloat(e.target.value.replace(',', '.')) || 0)}
+                            className="bg-transparent border-none outline-none text-emerald-400 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full font-semibold"
+                            placeholder="-9.053075"
+                          />
+                        </td>
+
+                        {/* 8. ABERTURA */}
+                        <td className="py-1 px-1 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.open_time || "06:00:00"}
+                            onChange={(e) => updateWarehouse(idx, "open_time", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
+                            placeholder="06:00:00"
+                          />
+                        </td>
+
+                        {/* 9. FECHO */}
+                        <td className="py-1 px-1 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={wh.close_time || "22:00:00"}
+                            onChange={(e) => updateWarehouse(idx, "close_time", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
+                            placeholder="22:00:00"
+                          />
+                        </td>
+
+                        {/* 10. CARGA (MIN) */}
+                        <td className="py-1 px-1 border-r border-zinc-800">
+                          <input
+                            type="number"
+                            value={wh.load_time !== undefined ? wh.load_time : 30}
+                            onChange={(e) => updateWarehouse(idx, "load_time", parseInt(e.target.value, 10) || 30)}
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
+                            min={1}
+                          />
+                        </td>
+
+                        {/* 11. CONTACTO */}
+                        <td className="py-1 px-2">
+                          <input
+                            type="text"
+                            value={wh.contact || ""}
+                            onChange={(e) => updateWarehouse(idx, "contact", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            placeholder="Contacto..."
+                          />
                         </td>
                       </tr>
                     ))
@@ -688,10 +653,10 @@ export default function FleetPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 2: FLEET (Aba Frota)                                      */}
+        {/* TAB 2: FLEET (Aba Frota) - Formato Excel em Ecrã Total        */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "fleet" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-5 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
@@ -718,28 +683,28 @@ export default function FleetPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+              <table className="w-full text-left text-xs border-collapse border border-zinc-800 min-w-[1200px]">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/80 text-zinc-400 font-bold uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Armazém Origem</th>
-                    <th className="py-2.5 px-3">Veículo</th>
-                    <th className="py-2.5 px-3 text-center">Capacidade (kg)</th>
-                    <th className="py-2.5 px-3 text-center">Volume (m³)</th>
-                    <th className="py-2.5 px-3 text-center">Velocidade (km/h)</th>
-                    <th className="py-2.5 px-3 text-center">Início Turno</th>
-                    <th className="py-2.5 px-3 text-center">Fim Turno</th>
-                    <th className="py-2.5 px-3 text-center">Custo KM (€)</th>
-                    <th className="py-2.5 px-3 text-center">Custo Hora (€)</th>
-                    <th className="py-2.5 px-3 text-center">Máx. Entregas</th>
-                    <th className="py-2.5 px-3">Regras</th>
-                    <th className="py-2.5 px-3">Motorista Nome</th>
-                    <th className="py-2.5 px-3">Motorista Telemóvel</th>
-                    <th className="py-2.5 px-3 text-center">Ativo</th>
-                    <th className="py-2.5 px-3 text-right">Ações</th>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
+                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
+                    <th className="py-2 px-2 border-r border-zinc-800 w-36">Armazém Origem</th>
+                    <th className="py-2 px-2 border-r border-zinc-800 w-32">Veículo</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Capacidade(kg)</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Volume(m³)</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Veloc.(km/h)</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Início Turno</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Fim Turno</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Custo KM(€)</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Custo Hora(€)</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Máx.Entregas</th>
+                    <th className="py-2 px-2 border-r border-zinc-800">Regras</th>
+                    <th className="py-2 px-2 border-r border-zinc-800 w-32">Motorista Nome</th>
+                    <th className="py-2 px-2 border-r border-zinc-800 w-28">Motorista Telemóvel</th>
+                    <th className="py-2 px-1 text-center w-12">Ativo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/40">
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredFleet.length === 0 ? (
                     <tr>
                       <td colSpan={15} className="py-8 text-center text-zinc-500">
@@ -903,23 +868,23 @@ export default function FleetPage() {
         {/* TAB 3: DRIVERS (Aba Motoristas e Carros)                      */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "drivers" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-5 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
                   <span>👤</span> Motoristas & Credenciais App ({drivers.length})
                 </h2>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Gira o acesso à Mobile WebApp dos motoristas, PINs de autenticação, matrículas e rotas atribuídas.
+                  Gira os acessos móveis dos motoristas com PIN individual de 4 dígitos para a aplicação de entregas.
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="🔍 Filtrar por nome, telemóvel, viatura, matrícula..."
+                  placeholder="🔍 Filtrar motoristas, telemóvel, viatura..."
                   value={searchDrivers}
                   onChange={(e) => setSearchDrivers(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-64 outline-none focus:border-indigo-500"
+                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-60 outline-none focus:border-indigo-500"
                 />
                 <button
                   onClick={addDriver}
@@ -930,108 +895,104 @@ export default function FleetPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+              <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/80 text-zinc-400 font-bold uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Nome Motorista</th>
-                    <th className="py-2.5 px-3 text-center">PIN App</th>
-                    <th className="py-2.5 px-3">Viatura Atribuída</th>
-                    <th className="py-2.5 px-3">Matrícula</th>
-                    <th className="py-2.5 px-3">Telemóvel</th>
-                    <th className="py-2.5 px-3">Rota Atribuída</th>
-                    <th className="py-2.5 px-3 text-center">Ativo</th>
-                    <th className="py-2.5 px-3 text-right">Ações</th>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
+                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
+                    <th className="py-2 px-3 border-r border-zinc-800">Nome do Motorista</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-28 text-center">PIN App (4 Dígitos)</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-44">Viatura Atribuída</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-36">Telemóvel</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-24 text-center">Início Turno</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-24 text-center">Fim Turno</th>
+                    <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/40">
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredDrivers.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-zinc-500">
-                        Nenhum motorista registado.
+                        Nenhum motorista registado. Clique em "+ Adicionar Motorista".
                       </td>
                     </tr>
                   ) : (
                     filteredDrivers.map((d) => {
                       const idx = drivers.indexOf(d);
                       return (
-                        <tr key={idx} className="hover:bg-zinc-850/30">
-                          <td className="py-2 px-3">
+                        <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
+                            <button
+                              onClick={() => deleteDriver(idx)}
+                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                              title="Eliminar Motorista"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
                               value={d.name}
                               onChange={(e) => updateDriver(idx, "name", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-44 font-bold"
+                              className="bg-transparent border-none outline-none text-zinc-100 w-full font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-2 text-center border-r border-zinc-800">
                             <input
                               type="text"
+                              maxLength={6}
                               value={d.pin}
                               onChange={(e) => updateDriver(idx, "pin", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-indigo-400 font-mono text-center font-bold w-20"
+                              className="bg-transparent border-none outline-none text-amber-400 font-mono font-bold text-center tracking-widest text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-2 border-r border-zinc-800">
                             <select
                               value={d.vehicle}
                               onChange={(e) => updateDriver(idx, "vehicle", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 w-40 text-xs"
+                              className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded cursor-pointer"
                             >
-                              <option value="">-- Nenhuma Viatura --</option>
+                              <option value="">Sem Viatura</option>
                               {fleet.map((v) => (
                                 <option key={v.veiculo} value={v.veiculo}>
                                   {v.veiculo}
                                 </option>
                               ))}
-                              {!fleet.some((f) => f.veiculo === d.vehicle) && d.vehicle && (
-                                <option value={d.vehicle}>{d.vehicle}</option>
-                              )}
                             </select>
                           </td>
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={d.matricula || ""}
-                              onChange={(e) => updateDriver(idx, "matricula", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-emerald-400 font-mono font-bold w-28"
-                              placeholder="54-TG-22"
-                            />
-                          </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
                               value={d.phone}
                               onChange={(e) => updateDriver(idx, "phone", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 font-mono w-32"
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                               placeholder="910000000"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1 px-2 text-center border-r border-zinc-800">
                             <input
                               type="text"
-                              value={d.route || ""}
-                              onChange={(e) => updateDriver(idx, "route", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 w-36"
-                              placeholder="Rota 1..."
+                              value={d.shift_start}
+                              onChange={(e) => updateDriver(idx, "shift_start", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
-                          <td className="py-2 px-3 text-center">
+                          <td className="py-1 px-2 text-center border-r border-zinc-800">
+                            <input
+                              type="text"
+                              value={d.shift_end}
+                              onChange={(e) => updateDriver(idx, "shift_end", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center">
                             <input
                               type="checkbox"
                               checked={d.is_active === 1}
                               onChange={(e) => updateDriver(idx, "is_active", e.target.checked ? 1 : 0)}
                               className="w-4 h-4 text-indigo-600 bg-zinc-950 border-zinc-800 rounded focus:ring-indigo-500 cursor-pointer"
                             />
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <button
-                              onClick={() => deleteDriver(idx)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
-                              title="Eliminar Motorista"
-                            >
-                              🗑️
-                            </button>
                           </td>
                         </tr>
                       );
@@ -1044,26 +1005,26 @@ export default function FleetPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 4: REASONS (Aba Justificação de Entregas)                 */}
+        {/* TAB 4: REASONS (Aba Motivos Não Entrega)                      */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "reasons" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-5 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
                   <span>⚠️</span> Motivos de Não Entrega ({reasons.length})
                 </h2>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Configure as justificações que os motoristas podem selecionar na App Mobile ao falhar uma paragem.
+                  Configure os códigos e opções que surgem aos motoristas na App quando uma entrega não é concluída.
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="🔍 Filtrar motivos..."
+                  placeholder="🔍 Filtrar motivos e categorias..."
                   value={searchReasons}
                   onChange={(e) => setSearchReasons(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-52 outline-none focus:border-indigo-500"
+                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-60 outline-none focus:border-indigo-500"
                 />
                 <button
                   onClick={addReason}
@@ -1074,51 +1035,86 @@ export default function FleetPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+              <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/80 text-zinc-400 font-bold uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Motivo de Não Entrega</th>
-                    <th className="py-2.5 px-3">Categoria / Ação</th>
-                    <th className="py-2.5 px-3 text-right">Ações</th>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
+                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-28">Código</th>
+                    <th className="py-2 px-3 border-r border-zinc-800">Descrição do Motivo</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-36">Categoria</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-36">Ação Requerida</th>
+                    <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/40">
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredReasons.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="py-8 text-center text-zinc-500">
-                        Nenhum motivo configurado.
+                      <td colSpan={6} className="py-8 text-center text-zinc-500">
+                        Nenhum motivo configurado. Clique em "+ Adicionar Motivo".
                       </td>
                     </tr>
                   ) : (
                     filteredReasons.map((r) => {
                       const idx = reasons.indexOf(r);
                       return (
-                        <tr key={idx} className="hover:bg-zinc-850/30">
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={r.reason}
-                              onChange={(e) => updateReason(idx, "reason", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 w-80 font-bold"
-                            />
-                          </td>
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={r.category}
-                              onChange={(e) => updateReason(idx, "category", e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 w-52"
-                            />
-                          </td>
-                          <td className="py-2 px-3 text-right">
+                        <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
                             <button
                               onClick={() => deleteReason(idx)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
+                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                               title="Eliminar Motivo"
                             >
                               🗑️
                             </button>
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <input
+                              type="text"
+                              value={r.code}
+                              onChange={(e) => updateReason(idx, "code", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <input
+                              type="text"
+                              value={r.reason}
+                              onChange={(e) => updateReason(idx, "reason", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-100 font-semibold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <select
+                              value={r.category}
+                              onChange={(e) => updateReason(idx, "category", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full cursor-pointer"
+                            >
+                              <option value="Cliente">Cliente</option>
+                              <option value="Operacional">Operacional</option>
+                              <option value="Trânsito">Trânsito</option>
+                              <option value="Outro">Outro</option>
+                            </select>
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <select
+                              value={r.action_required}
+                              onChange={(e) => updateReason(idx, "action_required", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full cursor-pointer"
+                            >
+                              <option value="Reagendar">Reagendar</option>
+                              <option value="Devolver">Devolver</option>
+                              <option value="Avisar Vendedor">Avisar Vendedor</option>
+                              <option value="Nenhuma">Nenhuma</option>
+                            </select>
+                          </td>
+                          <td className="py-1 px-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={r.is_active === 1}
+                              onChange={(e) => updateReason(idx, "is_active", e.target.checked ? 1 : 0)}
+                              className="w-4 h-4 text-indigo-600 bg-zinc-950 border-zinc-800 rounded focus:ring-indigo-500 cursor-pointer"
+                            />
                           </td>
                         </tr>
                       );
@@ -1130,7 +1126,7 @@ export default function FleetPage() {
           </div>
         )}
 
-        {/* Modal de Geocodificação Manual do Armazém (Unificado) */}
+        {/* Modal de Georreferenciação Manual do Armazém (Unificado) */}
         {geoModalOpen && editingWhIndex !== null && (
           <UnifiedGeocodingModal
             isOpen={geoModalOpen}
