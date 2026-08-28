@@ -57,6 +57,16 @@ def generate_full_project_excel(
 ) -> bytes:
     wb = openpyxl.Workbook()
     
+    default_wh_name = "Armazém Principal"
+    if warehouses_df is not None and not (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
+        if isinstance(warehouses_df, pd.DataFrame) and not warehouses_df.empty:
+            first_row = warehouses_df.iloc[0]
+            default_wh_name = str(first_row.get("Nome_Armazem") or first_row.get("name") or first_row.get("Nome") or "Armazém Principal")
+        elif isinstance(warehouses_df, list) and len(warehouses_df) > 0:
+            first_item = warehouses_df[0]
+            if isinstance(first_item, dict):
+                default_wh_name = str(first_item.get("Nome_Armazem") or first_item.get("name") or "Armazém Principal")
+
     # 1. Armazéns
     ws_wh = wb.active
     ws_wh.title = 'Armazéns'
@@ -122,7 +132,7 @@ def generate_full_project_excel(
         if isinstance(fleet_config, pd.DataFrame):
             for _, r in fleet_config.iterrows():
                 fleet_rows.append([
-                    str(r.get('Armazem', 'Armazém Central')),
+                    str(r.get('Armazem', default_wh_name) if str(r.get('Armazem', '')).strip() not in ['', 'N/A', 'None', 'Armazém Central'] else default_wh_name),
                     str(r.get('Veiculo', '')),
                     safe_float(r.get('Capacidade_KG', 1000.0)),
                     safe_float(r.get('Capacidade_Vol', r.get('Cap_Volume_m3', 10.0))),
@@ -213,7 +223,7 @@ def generate_full_project_excel(
     if src_deliv is not None and not src_deliv.empty:
         for _, r in src_deliv.iterrows():
             deliv_rows.append([
-                str(r.get('Armazem', 'Armazém Central')),
+                str(r.get('Armazem', default_wh_name) if str(r.get('Armazem', '')).strip() not in ['', 'N/A', 'None', 'Armazém Central'] else default_wh_name),
                 str(r.get('Doc_ID', r.get('Codigo_Cliente', r.get('Cliente', '')))),
                 str(r.get('Cliente', r.get('Nome_Cliente', ''))),
                 str(r.get('Morada', '')),
@@ -390,24 +400,26 @@ def generate_full_project_excel(
                     chegada, saida, dist_km, dist_acum, t_viagem, t_espera, carga_kg, carga_vol, status,
                     driver_notes, vendedor_name
                 ])
-            
-            if veh_name not in manifest_map:
-                manifest_map[veh_name] = {
-                    'armazem': wh_name,
-                    'veiculo': veh_name,
-                    'motorista': '',
-                    'total_clientes': 0,
-                    'total_vol': 0.0,
-                    'total_peso': 0.0,
-                    'total_km': 0.0,
-                    'docs': []
-                }
-            manifest_map[veh_name]['total_clientes'] += 1
-            manifest_map[veh_name]['total_peso'] += safe_float(r.get('Peso_KG', 0.0))
-            manifest_map[veh_name]['total_vol'] += safe_float(r.get('Volume_M3', 0.0))
-            manifest_map[veh_name]['total_km'] = max(manifest_map[veh_name]['total_km'], dist_acum)
-            if doc_id and doc_id not in ['PARTIDA', 'RETORNO']:
-                manifest_map[veh_name]['docs'].append(doc_id)
+                
+                if veh_name not in manifest_map:
+                    manifest_map[veh_name] = {
+                        'armazem': wh_name,
+                        'veiculo': veh_name,
+                        'motorista': '',
+                        'total_clientes': 0,
+                        'total_vol': 0.0,
+                        'total_peso': 0.0,
+                        'total_km': 0.0,
+                        'total_tempo_min': 0,
+                        'docs': []
+                    }
+                manifest_map[veh_name]['total_clientes'] += 1
+                manifest_map[veh_name]['total_peso'] += p_kg
+                manifest_map[veh_name]['total_vol'] += carga_vol
+                manifest_map[veh_name]['total_km'] = dist_acum
+                manifest_map[veh_name]['total_tempo_min'] = curr_minutes - (8 * 60)
+                if doc_id and doc_id not in ['PARTIDA', 'RETORNO']:
+                    manifest_map[veh_name]['docs'].append(doc_id)
     
     if rotas_rows:
         for r_idx, row_vals in enumerate(rotas_rows, start=2):
@@ -437,18 +449,43 @@ def generate_full_project_excel(
     
     manifest_rows = []
     for v_name, m_info in manifest_map.items():
-        doc_summary = ', '.join(m_info['docs'][:15]) + ('...' if len(m_info['docs']) > 15 else '')
+        doc_summary = ', '.join(m_info['docs'][:20]) + ('...' if len(m_info['docs']) > 20 else '')
+        
+        # Cross reference fleet config for driver name, costs, capacity
+        v_conf = {}
+        if isinstance(fleet_config, dict):
+            v_conf = fleet_config.get(v_name, {})
+        elif isinstance(fleet_config, pd.DataFrame) and not fleet_config.empty:
+            match = fleet_config[fleet_config['veiculo'] == v_name]
+            if not match.empty:
+                v_conf = match.iloc[0].to_dict()
+                
+        mot_nome = str(v_conf.get('motorista_nome') or m_info.get('motorista', ''))
+        cap_kg = safe_float(v_conf.get('capacidade_kg', 1000.0))
+        if cap_kg <= 0:
+            cap_kg = 1000.0
+        pct_ocup = f"{min(100.0, round((m_info['total_peso'] / cap_kg) * 100, 1))}%"
+        
+        total_min = m_info.get('total_tempo_min', 0)
+        h_dur = total_min // 60
+        m_dur = total_min % 60
+        tempo_turno_str = f"{h_dur:02d}h {m_dur:02d}m" if total_min > 0 else "--:--"
+        
+        custo_km_rate = safe_float(v_conf.get('custo_km', 0.50))
+        custo_hr_rate = safe_float(v_conf.get('custo_hora', 12.50))
+        custo_estimado = round((m_info['total_km'] * custo_km_rate) + ((total_min / 60.0) * custo_hr_rate), 2)
+        
         manifest_rows.append([
             m_info['armazem'],
             v_name,
-            m_info.get('motorista', ''),
+            mot_nome,
             m_info['total_clientes'],
             round(m_info['total_vol'], 2),
             round(m_info['total_peso'], 1),
-            'N/D',
+            pct_ocup,
             round(m_info['total_km'], 1),
-            '--:--',
-            0.0,
+            tempo_turno_str,
+            custo_estimado,
             doc_summary
         ])
     
