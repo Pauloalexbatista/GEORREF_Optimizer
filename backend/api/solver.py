@@ -762,205 +762,19 @@ def get_solver_solution(project_id: int, current_user: UserResponse = Depends(ge
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # 1. Fetch all deliveries from db for this project
-            cursor.execute("SELECT * FROM entregas WHERE projeto_id = ? ORDER BY id ASC", (project_id,))
-            deliv_rows = cursor.fetchall()
-            col_names = [d[0] for d in cursor.description] if cursor.description else []
-            all_deliveries = [dict(zip(col_names, r)) for r in deliv_rows]
-            
-            # Map of valid deliveries (with coords)
-            valid_deliv_by_id = {}
-            valid_deliv_by_code = {}
-            valid_deliv_by_name = {}
-            for d in all_deliveries:
-                d_id = clean_int(d.get("id"))
-                d_code = str(d.get("codigo_cliente", "")).strip().upper().replace("_X000D_", "").strip()
-                d_name = str(d.get("nome_cliente", "")).strip().upper().replace("_X000D_", "").strip()
-                valid_deliv_by_id[d_id] = d
-                if d_code:
-                    valid_deliv_by_code[d_code] = d
-                if d_name:
-                    valid_deliv_by_name[d_name] = d
-
-            # 2. Get latest snapshot
-            cursor.execute("SELECT id, payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
             row = cursor.fetchone()
-            
-            routes_list = []
-            state_dict = {}
-            seen_deliv_ids = set()
-            seen_deliv_codes = set()
-            seen_deliv_names = set()
-            
-            if row and row["payload_json"]:
-                state_dict = deserialize_state(row["payload_json"])
-                raw_routes = state_dict.get("routes_solution")
-                if raw_routes is None or (isinstance(raw_routes, pd.DataFrame) and raw_routes.empty):
-                    raw_routes = state_dict.get("routes_df")
-                
-                if raw_routes is not None:
-                    df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-                    if not df_routes.empty:
-                        for idx, r in df_routes.iterrows():
-                            r_name = str(r.get("Rota", "Por Distribuir") if pd.notna(r.get("Rota")) else "Por Distribuir")
-                            if "PENDENTE" in r_name.upper():
-                                r_name = "Por Distribuir"
-                            d_id = clean_int(r.get("id") or r.get("ID_Original"), idx + 1)
-                            
-                            c_doc = str(r.get("Doc_ID") or r.get("Codigo_Cliente") or "").strip().upper().replace("_X000D_", "").strip()
-                            c_cli = str(r.get("Cliente") or r.get("Nome_Cliente") or "").strip().upper().replace("_X000D_", "").strip()
-                            
-                            # Match with db delivery to get fresh geocoded coordinates & info
-                            match_deliv = valid_deliv_by_id.get(d_id) or valid_deliv_by_code.get(c_doc) or valid_deliv_by_code.get(c_cli) or valid_deliv_by_name.get(c_cli) or valid_deliv_by_name.get(c_doc)
-                            
-                            doc_id_val = str(r.get("Doc_ID") or (match_deliv.get("codigo_cliente") if match_deliv else "") or r.get("Codigo_Cliente") or f"CLI_{idx+1}")
-                            codigo_cliente_val = str((match_deliv.get("codigo_cliente") if match_deliv else "") or r.get("Codigo_Cliente") or r.get("Doc_ID") or doc_id_val)
-                            tel_val = str((match_deliv.get("telefone") if match_deliv else "") or r.get("Telefone_Cliente") or r.get("Telefone") or "")
-                            
-                            # Driver notes extraction: check all possible keys
-                            obs_val = str(
-                                r.get("Notas_Motorista") or 
-                                r.get("notas_motorista") or 
-                                r.get("Observacoes") or 
-                                r.get("observacoes") or 
-                                (match_deliv.get("observacoes") if match_deliv else "") or 
-                                r.get("Regras") or 
-                                ""
-                            )
-                            
-                            vendedor_val = str((match_deliv.get("vendedor") if match_deliv else "") or r.get("Vendedor") or r.get("vendedor") or "")
-                            peso_val = clean_num(r.get("Peso_KG") if pd.notna(r.get("Peso_KG")) else (match_deliv.get("peso_kg") if match_deliv else 50.0), 50.0)
-                            vol_val = clean_num(r.get("Volume_m3") if pd.notna(r.get("Volume_m3")) else (r.get("Volume_M3") if pd.notna(r.get("Volume_M3")) else (match_deliv.get("volume_m3") if match_deliv else 0.1)), 0.1)
+            state_dict = deserialize_state(row["payload_json"]) if (row and row["payload_json"]) else {}
 
-                            if match_deliv:
-                                seen_deliv_ids.add(clean_int(match_deliv.get("id")))
-                                if match_deliv.get("codigo_cliente"):
-                                    seen_deliv_codes.add(str(match_deliv.get("codigo_cliente")).strip().upper())
-                                if match_deliv.get("nome_cliente"):
-                                    seen_deliv_names.add(str(match_deliv.get("nome_cliente")).strip().upper())
-                                lat_val = clean_num(match_deliv.get("latitude"))
-                                lon_val = clean_num(match_deliv.get("longitude"))
-                                morada_val = str(match_deliv.get("morada") or r.get("Morada") or "")
-                                cp_val = str(match_deliv.get("codigo_postal") or r.get("CP") or "")
-                                loc_val = str(match_deliv.get("_concelho") or match_deliv.get("concelho") or r.get("Localidade") or "")
-                                nome_val = str(match_deliv.get("nome_cliente") or r.get("Nome_Cliente") or match_deliv.get("codigo_cliente") or c_cli)
-                                qual_val = clean_int(match_deliv.get("nivel_qualidade"), 1)
-                            else:
-                                lat_val = clean_num(r.get("Latitude"), 0.0)
-                                lon_val = clean_num(r.get("Longitude"), 0.0)
-                                morada_val = str(r.get("Morada", "") if pd.notna(r.get("Morada")) else "")
-                                cp_val = str(r.get("CP", "") if pd.notna(r.get("CP")) else "")
-                                loc_val = str(r.get("Localidade", "") if pd.notna(r.get("Localidade")) else "")
-                                nome_val = str(r.get("Nome_Cliente", r.get("Cliente", "")) if pd.notna(r.get("Nome_Cliente")) else str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else ""))
-                                qual_val = clean_int(r.get("Nivel_Qualidade"), 1)
-
-                            chegada_val = str(r.get("Hora_Chegada_Prevista") or r.get("Chegada") or "00:00").strip()
-                            saida_val = str(r.get("Hora_Saida_Prevista") or r.get("Saida") or "00:00").strip()
-                            km_ant = clean_num(r.get("Distancia_KM") if pd.notna(r.get("Distancia_KM")) else r.get("KM_Anterior"), 0.0)
-                            dist_acum = clean_num(r.get("Distancia_Acumulada_KM") if pd.notna(r.get("Distancia_Acumulada_KM")) else r.get("Dist_Acum"), 0.0)
-                            t_esp = clean_int(r.get("Tempo_Espera_Min") if pd.notna(r.get("Tempo_Espera_Min")) else r.get("Tempo_Espera"), 0)
-                            t_ent = clean_int(r.get("Tempo_Viagem_Min") if pd.notna(r.get("Tempo_Viagem_Min")) else r.get("Tempo_Entrega"), 15)
-                            ordem_val = clean_int(r.get("Ordem_Paragem") if pd.notna(r.get("Ordem_Paragem")) else r.get("Ordem"), 1)
-                            
-                            routes_list.append({
-                                "id": d_id,
-                                "ID_Original": d_id,
-                                "Doc_ID": doc_id_val,
-                                "Codigo_Cliente": codigo_cliente_val,
-                                "Rota": r_name,
-                                "Armazem": str(r.get("Armazem", "N/A") if pd.notna(r.get("Armazem")) else "N/A"),
-                                "Ordem": ordem_val,
-                                "Cliente": str(r.get("Cliente", "") if pd.notna(r.get("Cliente")) else nome_val),
-                                "Nome_Cliente": nome_val,
-                                "Morada": morada_val,
-                                "CP": cp_val,
-                                "Localidade": loc_val,
-                                "Telefone_Cliente": tel_val,
-                                "Telefone": tel_val,
-                                "Observacoes": obs_val,
-                                "observacoes": obs_val,
-                                "Notas_Motorista": obs_val,
-                                "notas_motorista": obs_val,
-                                "Notas": obs_val,
-                                "Vendedor": vendedor_val,
-                                "vendedor": vendedor_val,
-                                "Janela_Horaria": str(r.get("Janela_Horaria", "Qualquer") if pd.notna(r.get("Janela_Horaria")) else "Qualquer"),
-                                "Latitude": lat_val,
-                                "Longitude": lon_val,
-                                "Chegada": chegada_val if chegada_val else "00:00",
-                                "Tempo_Espera": t_esp,
-                                "Tempo_Entrega": t_ent,
-                                "Saida": saida_val if saida_val else "00:00",
-                                "Nivel_Qualidade": qual_val,
-                                "KM_Anterior": km_ant,
-                                "Dist_Acum": dist_acum,
-                                "Peso_KG": peso_val,
-                                "Volume_m3": vol_val,
-                                "Carga_Acum": clean_num(r.get("Carga_Acum"), peso_val),
-                                "Carga_Vol_Acum": clean_num(r.get("Carga_Vol_Acum"), vol_val)
-                            })
-            
-            # 3. Synchronize only genuinely unassigned deliveries
-            has_existing_routes = (raw_routes is not None and not df_routes.empty) if 'df_routes' in locals() else False
-            if not has_existing_routes or len(routes_list) < len(valid_deliv_by_id):
-                pending_order = len([r for r in routes_list if is_pending_route(r["Rota"])]) + 1
-                for d_id, d in valid_deliv_by_id.items():
-                    d_code = str(d.get("codigo_cliente", "")).strip().upper().replace("_X000D_", "").strip()
-                    d_name = str(d.get("nome_cliente", "")).strip().upper().replace("_X000D_", "").strip()
+        df_canonical = _build_routes_from_state_or_db(project_id, state_dict)
+        routes_list = df_canonical.to_dict(orient="records") if not df_canonical.empty else []
                     
-                    if d_id not in seen_deliv_ids and d_code not in seen_deliv_codes and d_name not in seen_deliv_names:
-                        win_s = str(d.get("janela_inicio", "") or "").strip()
-                        win_e = str(d.get("janela_fim", "") or "").strip()
-                        combined_window = f"{win_s} - {win_e}" if (win_s and win_e) else "Qualquer"
-                        obs_deliv = str(d.get("observacoes", "") or d.get("notas_motorista", "") or "")
-                        vend_deliv = str(d.get("vendedor", "") or "")
-                        
-                        routes_list.append({
-                            "id": d_id,
-                            "ID_Original": d_id,
-                            "Doc_ID": str(d.get("codigo_cliente", f"Doc_{d_id}")),
-                            "Codigo_Cliente": str(d.get("codigo_cliente", f"Cliente_{d_id}")),
-                            "Rota": str(d.get("rota", "Por Distribuir") if d.get("rota") else "Por Distribuir"),
-                            "Armazem": str(d.get("armazem", "N/A")),
-                            "Ordem": clean_int(d.get("ordem_paragem") or d.get("ordem"), pending_order),
-                            "Cliente": str(d.get("codigo_cliente", f"Cliente_{d_id}")),
-                            "Nome_Cliente": str(d.get("nome_cliente") or d.get("codigo_cliente", f"Cliente_{d_id}")),
-                            "Morada": str(d.get("morada", "N/A")),
-                            "CP": str(d.get("codigo_postal", "N/A")),
-                            "Localidade": str(d.get("_concelho") or d.get("concelho", "")),
-                            "Telefone_Cliente": str(d.get("telefone", "")),
-                            "Telefone": str(d.get("telefone", "")),
-                            "Observacoes": obs_deliv,
-                            "observacoes": obs_deliv,
-                            "Notas_Motorista": obs_deliv,
-                            "notas_motorista": obs_deliv,
-                            "Notas": obs_deliv,
-                            "Vendedor": vend_deliv,
-                            "vendedor": vend_deliv,
-                            "Janela_Horaria": combined_window,
-                            "Latitude": clean_num(d.get("latitude")),
-                            "Longitude": clean_num(d.get("longitude")),
-                            "Chegada": "00:00",
-                            "Tempo_Espera": 0,
-                            "Tempo_Entrega": 0,
-                            "Saida": "00:00",
-                            "Nivel_Qualidade": clean_int(d.get("nivel_qualidade"), 1),
-                            "KM_Anterior": 0.0,
-                            "Dist_Acum": 0.0,
-                            "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
-                            "Volume_m3": round(clean_num(d.get("volume_m3"), 0.1), 2),
-                            "Carga_Acum": round(clean_num(d.get("peso_kg"), 50.0), 1),
-                            "Carga_Vol_Acum": round(clean_num(d.get("volume_m3"), 0.1), 2)
-                        })
-                        pending_order += 1
-                    
-            resp_data = {
-                "status": "success" if routes_list else "none",
-                "routes": routes_list,
-                "quality_metrics": sanitize_json_data(state_dict.get("routes_metrics", {}))
-            }
-            return sanitize_json_data(resp_data)
+        resp_data = {
+            "status": "success" if routes_list else "none",
+            "routes": routes_list,
+            "quality_metrics": sanitize_json_data(state_dict.get("routes_metrics", {}))
+        }
+        return sanitize_json_data(resp_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1044,64 +858,85 @@ def _find_stop_match(df_r: pd.DataFrame, deliv_id=None, code=None, addr=None, la
     return None
 
 def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.DataFrame:
-    """Helper to obtain or build df_routes from snapshot or database."""
-    raw_routes = state_dict.get("routes_solution")
-    if raw_routes is None or (isinstance(raw_routes, pd.DataFrame) and raw_routes.empty):
-        raw_routes = state_dict.get("routes_df")
-    
-    if raw_routes is not None:
-        df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-        if not df_routes.empty:
-            return df_routes.copy()
-            
-    # Fallback to clients_geocoded in snapshot
-    raw_clients = state_dict.get("clients_geocoded")
-    if raw_clients is not None:
-        df_c = raw_clients if isinstance(raw_clients, pd.DataFrame) else pd.DataFrame(raw_clients)
-        if not df_c.empty:
-            df_c = df_c.copy()
-            if "Rota" not in df_c.columns:
-                df_c["Rota"] = "Por Distribuir"
-            if "Ordem" not in df_c.columns:
-                df_c["Ordem"] = range(1, len(df_c) + 1)
-            return df_c
-            
-    # Fallback to SQLite table entregas
+    """Helper to obtain canonical df_routes combining database and snapshot state."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM entregas WHERE projeto_id = ? ORDER BY id ASC", (project_id,))
         rows = cursor.fetchall()
-        if rows:
-            cols = [d[0] for d in cursor.description]
-            records = [dict(zip(cols, r)) for r in rows]
-            mapped_records = []
-            for idx, r in enumerate(records):
-                mapped_records.append({
-                    "id": r.get("id", idx + 1),
-                    "ID_Original": r.get("codigo_cliente", f"CLI_{idx+1}"),
-                    "Doc_ID": r.get("codigo_cliente", f"CLI_{idx+1}"),
-                    "Codigo_Cliente": r.get("codigo_cliente", f"CLI_{idx+1}"),
-                    "Cliente": r.get("nome_cliente") or r.get("codigo_cliente", f"CLI_{idx+1}"),
-                    "Nome_Cliente": r.get("nome_cliente") or r.get("codigo_cliente", f"CLI_{idx+1}"),
-                    "Morada": r.get("morada", ""),
-                    "CP": r.get("codigo_postal", ""),
-                    "Localidade": r.get("_concelho") or r.get("concelho", ""),
-                    "Telefone_Cliente": r.get("telefone", ""),
-                    "Telefone": r.get("telefone", ""),
-                    "Latitude": float(r.get("latitude", 0.0) or 0.0),
-                    "Longitude": float(r.get("longitude", 0.0) or 0.0),
-                    "Rota": str(r.get("rota", "Por Distribuir") if r.get("rota") else "Por Distribuir"),
-                    "Armazem": str(r.get("armazem", "Armazém Principal")),
-                    "Ordem": clean_int(r.get("ordem_paragem") or r.get("ordem"), idx + 1),
-                    "Observacoes": str(r.get("observacoes", "") or ""),
-                    "Notas_Motorista": str(r.get("observacoes", "") or ""),
-                    "Vendedor": str(r.get("vendedor", "") or ""),
-                    "Peso_KG": float(r.get("peso_kg", 50.0) or 50.0),
-                    "Volume_m3": float(r.get("volume_m3", 0.1) or 0.1)
-                })
-            return pd.DataFrame(mapped_records)
+        cols = [d[0] for d in cursor.description] if cursor.description else []
+        db_deliveries = [dict(zip(cols, r)) for r in rows]
+
+    raw_routes = state_dict.get("routes_solution")
+    if raw_routes is None or (isinstance(raw_routes, pd.DataFrame) and raw_routes.empty):
+        raw_routes = state_dict.get("routes_df")
+    
+    route_map_by_id = {}
+    route_map_by_code = {}
+    route_map_by_name = {}
+    
+    if raw_routes is not None:
+        df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+        if not df_r.empty:
+            for idx, r in df_r.iterrows():
+                r_dict = r.to_dict()
+                d_id = r.get("id") or r.get("ID_Original")
+                if d_id is not None:
+                    route_map_by_id[str(d_id).strip().upper()] = r_dict
+                c_code = r.get("Doc_ID") or r.get("Codigo_Cliente")
+                if c_code:
+                    route_map_by_code[str(c_code).strip().upper()] = r_dict
+                c_name = r.get("Cliente") or r.get("Nome_Cliente")
+                if c_name:
+                    route_map_by_name[str(c_name).strip().upper()] = r_dict
+
+    if not db_deliveries and raw_routes is not None:
+        df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+        if not df_r.empty:
+            return df_r.copy()
+
+    merged_records = []
+    for idx, d in enumerate(db_deliveries):
+        d_id_str = str(d["id"]).strip().upper()
+        d_code_str = str(d.get("codigo_cliente", "")).strip().upper()
+        d_name_str = str(d.get("nome_cliente", "")).strip().upper()
+        
+        matched = (
+            route_map_by_id.get(d_id_str) or
+            route_map_by_code.get(d_code_str) or
+            route_map_by_name.get(d_name_str) or
+            {}
+        )
+        
+        assigned_rota = str(matched.get("Rota") or d.get("rota") or "Por Distribuir")
+        if "PENDENTE" in assigned_rota.upper():
+            assigned_rota = "Por Distribuir"
             
-    return pd.DataFrame()
+        merged_records.append({
+            "id": d["id"],
+            "ID_Original": d["id"],
+            "Doc_ID": str(d.get("codigo_cliente", f"CLI_{idx+1}")),
+            "Codigo_Cliente": str(d.get("codigo_cliente", f"CLI_{idx+1}")),
+            "Cliente": str(d.get("nome_cliente") or d.get("codigo_cliente", f"CLI_{idx+1}")),
+            "Nome_Cliente": str(d.get("nome_cliente") or d.get("codigo_cliente", f"CLI_{idx+1}")),
+            "Morada": str(d.get("morada", "")),
+            "CP": str(d.get("codigo_postal", "")),
+            "Localidade": str(d.get("_concelho") or d.get("concelho", "")),
+            "Telefone_Cliente": str(d.get("telefone", "")),
+            "Telefone": str(d.get("telefone", "")),
+            "Latitude": clean_num(d.get("latitude")),
+            "Longitude": clean_num(d.get("longitude")),
+            "Rota": assigned_rota,
+            "Armazem": str(matched.get("Armazem") or d.get("armazem", "Armazém Principal")),
+            "Ordem": clean_int(matched.get("Ordem") or d.get("ordem_paragem") or d.get("ordem"), idx + 1),
+            "Observacoes": str(matched.get("Observacoes") or d.get("observacoes", "")),
+            "Notas_Motorista": str(matched.get("Notas_Motorista") or d.get("observacoes", "")),
+            "Vendedor": str(matched.get("Vendedor") or d.get("vendedor", "")),
+            "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
+            "Volume_m3": clean_num(d.get("volume_m3"), 0.1),
+            "Janela_Horaria": str(matched.get("Janela_Horaria") or f"{d.get('janela_inicio', '08:00')} - {d.get('janela_fim', '18:00')}")
+        })
+        
+    return pd.DataFrame(merged_records)
 
 @router.post("/reassign")
 def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Depends(get_current_user)):
