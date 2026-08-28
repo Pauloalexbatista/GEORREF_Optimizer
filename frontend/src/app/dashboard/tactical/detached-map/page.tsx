@@ -50,7 +50,7 @@ export default function DetachedMapPage() {
     if (storedState) {
       try {
         const parsed = JSON.parse(storedState);
-        if (parsed.clients) setClients(parsed.clients);
+        if (parsed.clients && parsed.clients.length > 0) setClients(parsed.clients);
         if (parsed.warehouses) setWarehouses(parsed.warehouses);
         if (parsed.vehicles) setVehicles(parsed.vehicles);
         if (parsed.fleet) setFleet(parsed.fleet);
@@ -65,9 +65,50 @@ export default function DetachedMapPage() {
     } catch (e) {}
   };
 
-  useEffect(() => {
-    // 1. Initial load from localStorage
+  const loadDataFromApiAndStorage = async () => {
     loadLocalData();
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    if (projId) {
+      try {
+        const [routesRes, fleetRes] = await Promise.all([
+          apiRequest(`/api/solver/${projId}`),
+          apiRequest(`/api/fleet/${projId}`)
+        ]);
+        if (routesRes && routesRes.routes && routesRes.routes.length > 0) {
+          const mappedClients = routesRes.routes.map((r: any) => ({
+            ...r,
+            id: r.id || r.ID_Original,
+            ID_Original: r.id || r.ID_Original,
+            Doc_ID: r.Doc_ID || r.doc_id || "",
+            Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+            Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+            Nome_Cliente: r.Nome_Cliente || r.Cliente,
+            Telefone: r.Telefone || r.Telefone_Cliente || "",
+            Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
+            Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
+            Vendedor: r.Vendedor || (r as any).vendedor || "",
+          }));
+          setClients(mappedClients);
+        }
+        if (fleetRes) {
+          if (fleetRes.warehouses && fleetRes.warehouses.length > 0) {
+            setWarehouses(fleetRes.warehouses);
+          }
+          if (fleetRes.fleet && fleetRes.fleet.length > 0) {
+            setFleet(fleetRes.fleet);
+            setVehicles(fleetRes.fleet.map((f: any) => f.veiculo));
+          }
+        }
+        setStatusMsg(`Sincronizado da base de dados (${new Date().toLocaleTimeString()})`);
+      } catch (e) {
+        console.warn("API sync fallback to local state", e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    // 1. Initial load from API + localStorage
+    loadDataFromApiAndStorage();
 
     // 2. BroadcastChannel listener for live data & filter sync
     const channel = new BroadcastChannel("georoute_map_sync");
@@ -380,7 +421,7 @@ export default function DetachedMapPage() {
             <span>📊 {t.navigation.dashboard}</span>
           </a>
           <button
-            onClick={loadLocalData}
+            onClick={loadDataFromApiAndStorage}
             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center space-x-1.5 cursor-pointer"
             title="Forçar atualização dos dados do mapa"
           >
