@@ -903,16 +903,22 @@ export default function MapComponent({
         {/* Filtered Vehicle Route Chips Strip */}
         <div className="flex items-center flex-wrap gap-1 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl pointer-events-auto max-h-24 overflow-y-auto">
           {/* Todas button */}
-          <button
-            onClick={() => handleRoutesChange([])}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-              selectedRoutes.length === 0
-                ? "bg-indigo-600 text-white shadow-sm"
-                : "bg-zinc-100 dark:bg-zinc-850 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-750"
-            }`}
-          >
-            ✨ Todas ({visibleClients.length}/{clients.length})
-          </button>
+          {(() => {
+            const totalGeocoded = clients.filter(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0).length;
+            return (
+              <button
+                onClick={() => handleRoutesChange([])}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  selectedRoutes.length === 0
+                    ? "bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/80"
+                    : "bg-zinc-100 dark:bg-zinc-850 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-750"
+                }`}
+                title="Mostrar todas as rotas e clientes"
+              >
+                ✨ Todas ({totalGeocoded}/{clients.length})
+              </button>
+            );
+          })()}
 
           {/* "Por Distribuir" Pending Deliveries Chip */}
           {(() => {
