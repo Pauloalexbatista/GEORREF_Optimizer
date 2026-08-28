@@ -445,7 +445,7 @@ export default function TacticalPage() {
             max_route_duration: maxTravelTime,
             respect_time_windows: respectWindows,
             solving_depth: solvingDepth,
-            time_limit_seconds: solvingDepth === "deep" ? 45 : solvingDepth === "fast" ? 10 : 25,
+            time_limit_seconds: solvingDepth === "deep" ? 240 : solvingDepth === "fast" ? 30 : 90,
           },
         }),
       });
@@ -1031,7 +1031,7 @@ export default function TacticalPage() {
                 >
                   <span className="text-base">⚡</span>
                   <div>
-                    <p className="font-bold text-xs">Modo Rápido (~10 seg)</p>
+                    <p className="font-bold text-xs">Modo Rápido (~30 seg)</p>
                     <p className="text-[10px] opacity-80">Heurística rápida para validação e rascunho.</p>
                   </div>
                 </div>
@@ -1046,7 +1046,7 @@ export default function TacticalPage() {
                 >
                   <span className="text-base">⚖️</span>
                   <div>
-                    <p className="font-bold text-xs">Modo Equilibrado (~25 seg)</p>
+                    <p className="font-bold text-xs">Modo Equilibrado (1 a 2 min)</p>
                     <p className="text-[10px] opacity-80">Decomposição Polar + 600 iterações LNS.</p>
                   </div>
                 </div>
@@ -1061,7 +1061,7 @@ export default function TacticalPage() {
                 >
                   <span className="text-base">🧠</span>
                   <div>
-                    <p className="font-bold text-xs">Produção Profunda (~45 seg)</p>
+                    <p className="font-bold text-xs">Produção Profunda (3 a 5 min)</p>
                     <p className="text-[10px] opacity-80">2.500+ iterações LNS para 200+ clientes sem sobreposições.</p>
                   </div>
                 </div>

@@ -1,3 +1,13 @@
+export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    // If running on localhost / 127.0.0.1, connect directly to FastAPI port 8000 to eliminate Node proxy timeouts
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      return "http://127.0.0.1:8000";
+    }
+  }
+  return "";
+}
+
 export async function apiRequest(endpoint: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("georoute_token") : null;
   
@@ -9,9 +19,12 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
     headers.set("Content-Type", "application/json");
   }
 
+  const baseUrl = getApiBaseUrl();
+  const fullUrl = endpoint.startsWith("http") ? endpoint : `${baseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+
   let response: Response;
   try {
-    response = await fetch(`${endpoint}`, {
+    response = await fetch(fullUrl, {
       ...options,
       headers,
     });
