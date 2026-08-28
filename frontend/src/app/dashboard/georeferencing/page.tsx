@@ -550,8 +550,8 @@ export default function GeoreferencingPage() {
                   <tr className="bg-zinc-950 border-b border-zinc-800 text-[11px] font-bold text-zinc-400 uppercase tracking-wider sticky top-0 z-10">
                     <th className="py-3 px-3 w-16 text-center">Ações</th>
                     <th onClick={() => handleSort("status")} className="py-3 px-3 cursor-pointer">Estado</th>
+                    <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-3 cursor-pointer hover:text-zinc-200">Código / Cliente</th>
                     <th onClick={() => handleSort("armazem")} className="py-3 px-3 w-40 cursor-pointer hover:text-zinc-200">Armazém</th>
-                    <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-3 cursor-pointer">Código / Cliente</th>
                     <th onClick={() => handleSort("morada")} className="py-3 px-3 cursor-pointer">Morada</th>
                     <th onClick={() => handleSort("codigo_postal")} className="py-3 px-3 w-28 cursor-pointer hover:text-zinc-200">Cód. Postal</th>
                     <th onClick={() => handleSort("concelho")} className="py-3 px-3 w-36 cursor-pointer hover:text-zinc-200">Concelho</th>
