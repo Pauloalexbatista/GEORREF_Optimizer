@@ -1658,10 +1658,12 @@ export default function TacticalPage() {
 
                                   {/* Peso / Volume */}
                                   <td className="py-2 px-2 text-center font-mono">
-                                    <div className="text-zinc-200 font-semibold">{(stop.Peso_KG || 0).toFixed(0)} kg</div>
-                                    <div className="text-[9px] text-zinc-400">{(stop.Volume_m3 || 0.0).toFixed(2)} m³</div>
+                                    <div className="text-zinc-200 font-semibold">{(Number(stop.Peso_KG) || 0).toFixed(0)} kg</div>
+                                    <div className="text-[9px] text-zinc-400">{(Number(stop.Volume_m3) || 0.0).toFixed(2)} m³</div>
                                     {!isPending && (
-                                      <div className="text-[8px] text-zinc-500 font-normal">Acum: {stop.Carga_Acum.toFixed(0)} kg</div>
+                                      <div className="text-[8px] text-zinc-500 font-normal">
+                                        Acum: {(Number(stop.Carga_Acum !== undefined && stop.Carga_Acum !== null ? stop.Carga_Acum : stop.Peso_KG) || 0).toFixed(0)} kg
+                                      </div>
                                     )}
                                   </td>
 
@@ -1669,8 +1671,8 @@ export default function TacticalPage() {
                                   <td className="py-2 px-2 text-center font-mono">
                                     {!isPending ? (
                                       <div>
-                                        <div className="text-zinc-200 font-semibold">{(stop.KM_Anterior || 0).toFixed(1)} km</div>
-                                        <div className="text-[9px] text-zinc-400">Acum: {(stop.Dist_Acum || 0).toFixed(1)} km</div>
+                                        <div className="text-zinc-200 font-semibold">{(Number(stop.KM_Anterior) || 0).toFixed(1)} km</div>
+                                        <div className="text-[9px] text-zinc-400">Acum: {(Number(stop.Dist_Acum) || 0).toFixed(1)} km</div>
                                       </div>
                                     ) : (
                                       <span className="text-zinc-500 text-xs">--</span>
