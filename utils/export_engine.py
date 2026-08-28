@@ -45,6 +45,20 @@ def safe_int(val, default=0) -> int:
     except Exception:
         return default
 
+def safe_val(obj, key, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    if hasattr(obj, key):
+        v = getattr(obj, key)
+        return v if v is not None else default
+    if hasattr(obj, "__dict__"):
+        for k, v in obj.__dict__.items():
+            if k.lower() == key.lower():
+                return v if v is not None else default
+    return default
+
 def generate_full_project_excel(
     routes_df,
     deliveries_df=None,
@@ -148,38 +162,24 @@ def generate_full_project_excel(
                 ])
         elif isinstance(fleet_config, dict):
             for v_name, v_data in fleet_config.items():
-                if isinstance(v_data, dict):
-                    fleet_rows.append([
-                        str(v_data.get('armazem', 'Armazém Central')),
-                        str(v_name),
-                        safe_float(v_data.get('capacidade_kg', 1000.0)),
-                        safe_float(v_data.get('capacidade_vol', 10.0)),
-                        safe_float(v_data.get('velocidade_media', 50.0)),
-                        str(v_data.get('horario_inicio', '08:00:00')),
-                        str(v_data.get('horario_fim', '18:00:00')),
-                        safe_float(v_data.get('custo_km', 0.65)),
-                        safe_float(v_data.get('custo_hora', 12.50)),
-                        safe_int(v_data.get('max_entregas', 30)),
-                        str(v_data.get('regras', '')),
-                        str(v_data.get('motorista_nome', '')),
-                        str(v_data.get('motorista_telemovel', ''))
-                    ])
-                else:
-                    fleet_rows.append([
-                        str(getattr(v_data, 'armazem', 'Armazém Central')),
-                        str(v_name),
-                        safe_float(getattr(v_data, 'capacidade_kg', 1000.0)),
-                        safe_float(getattr(v_data, 'capacidade_vol', 10.0)),
-                        safe_float(getattr(v_data, 'velocidade_media', 50.0)),
-                        str(getattr(v_data, 'horario_inicio', '08:00:00')),
-                        str(getattr(v_data, 'horario_fim', '18:00:00')),
-                        safe_float(getattr(v_data, 'custo_km', 0.65)),
-                        safe_float(getattr(v_data, 'custo_hora', 12.50)),
-                        safe_int(getattr(v_data, 'max_entregas', 30)),
-                        str(getattr(v_data, 'regras', '')),
-                        str(getattr(v_data, 'motorista_nome', '')),
-                        str(getattr(v_data, 'motorista_telemovel', ''))
-                    ])
+                wh_v = str(safe_val(v_data, 'armazem', default_wh_name))
+                if not wh_v or wh_v in ['', 'N/A', 'None', 'Armazém Central']:
+                    wh_v = default_wh_name
+                fleet_rows.append([
+                    wh_v,
+                    str(v_name),
+                    safe_float(safe_val(v_data, 'capacidade_kg', 1000.0)),
+                    safe_float(safe_val(v_data, 'capacidade_vol', 10.0)),
+                    safe_float(safe_val(v_data, 'velocidade_media', 50.0)),
+                    str(safe_val(v_data, 'horario_inicio', '08:00:00')),
+                    str(safe_val(v_data, 'horario_fim', '18:00:00')),
+                    safe_float(safe_val(v_data, 'custo_km', 0.65)),
+                    safe_float(safe_val(v_data, 'custo_hora', 12.50)),
+                    safe_int(safe_val(v_data, 'max_entregas', 30)),
+                    str(safe_val(v_data, 'regras', '')),
+                    str(safe_val(v_data, 'motorista_nome', '')),
+                    str(safe_val(v_data, 'motorista_telemovel', ''))
+                ])
     if not fleet_rows:
         fleet_rows = [['Armazém Central', 'Carrinha 01', 1000.0, 10.0, 50.0, '08:00:00', '18:00:00', 0.65, 12.50, 30, '', '', '']]
     
@@ -451,17 +451,22 @@ def generate_full_project_excel(
     for v_name, m_info in manifest_map.items():
         doc_summary = ', '.join(m_info['docs'][:20]) + ('...' if len(m_info['docs']) > 20 else '')
         
-        # Cross reference fleet config for driver name, costs, capacity
-        v_conf = {}
+        # Cross reference fleet config for driver name, costs, capacity safely
+        v_conf = None
         if isinstance(fleet_config, dict):
-            v_conf = fleet_config.get(v_name, {})
+            v_conf = fleet_config.get(v_name)
+            if v_conf is None:
+                for k, val in fleet_config.items():
+                    if str(k).strip().lower() == str(v_name).strip().lower():
+                        v_conf = val
+                        break
         elif isinstance(fleet_config, pd.DataFrame) and not fleet_config.empty:
-            match = fleet_config[fleet_config['veiculo'] == v_name]
+            match = fleet_config[fleet_config['veiculo'].astype(str).str.lower() == str(v_name).lower()]
             if not match.empty:
                 v_conf = match.iloc[0].to_dict()
                 
-        mot_nome = str(v_conf.get('motorista_nome') or m_info.get('motorista', ''))
-        cap_kg = safe_float(v_conf.get('capacidade_kg', 1000.0))
+        mot_nome = str(safe_val(v_conf, 'motorista_nome', '') or m_info.get('motorista', ''))
+        cap_kg = safe_float(safe_val(v_conf, 'capacidade_kg', 1000.0))
         if cap_kg <= 0:
             cap_kg = 1000.0
         pct_ocup = f"{min(100.0, round((m_info['total_peso'] / cap_kg) * 100, 1))}%"
@@ -471,8 +476,8 @@ def generate_full_project_excel(
         m_dur = total_min % 60
         tempo_turno_str = f"{h_dur:02d}h {m_dur:02d}m" if total_min > 0 else "--:--"
         
-        custo_km_rate = safe_float(v_conf.get('custo_km', 0.50))
-        custo_hr_rate = safe_float(v_conf.get('custo_hora', 12.50))
+        custo_km_rate = safe_float(safe_val(v_conf, 'custo_km', 0.50))
+        custo_hr_rate = safe_float(safe_val(v_conf, 'custo_hora', 12.50))
         custo_estimado = round((m_info['total_km'] * custo_km_rate) + ((total_min / 60.0) * custo_hr_rate), 2)
         
         manifest_rows.append([
@@ -537,8 +542,8 @@ def generate_full_project_excel(
         # Fallback to fleet driver names if no explicit driver list
         if isinstance(fleet_config, dict):
             for v_name, v_data in fleet_config.items():
-                d_name = v_data.get('motorista_nome', '') if isinstance(v_data, dict) else getattr(v_data, 'motorista_nome', '')
-                d_tel = v_data.get('motorista_telemovel', '') if isinstance(v_data, dict) else getattr(v_data, 'motorista_telemovel', '')
+                d_name = str(safe_val(v_data, 'motorista_nome', ''))
+                d_tel = str(safe_val(v_data, 'motorista_telemovel', ''))
                 if d_name:
                     drivers_rows.append([d_name, '1111', v_name, '', d_tel, ''])
                     

@@ -40,7 +40,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       });
 
       if (!res.ok) {
-        let errorMsg = "N?o existem dados dispon?veis para exportar no projeto.";
+        let errorMsg = "Não existem dados disponíveis para exportar no projeto.";
         try {
           const errJson = await res.json();
           if (errJson.detail) errorMsg = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
@@ -371,12 +371,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onClick={handleBackupProject}
               disabled={!selectedProject || isBackingUp}
               className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-all shadow-md shadow-indigo-600/20 border border-indigo-500 cursor-pointer"
-              title="Descarregar Backup Completo (Excel 9 Abas: Armaz?ns, Frota, Entregas, Regras, Rotas, Manifestos, Motoristas, Justifica??es, Instru??es)"
+              title="Descarregar Backup Completo (Excel 9 Abas: Armazéns, Frota, Entregas, Regras, Rotas, Manifestos, Motoristas, Justificações, Instruções)"
             >
               <svg className="w-4 h-4 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              <span>{isBackingUp ? "A gerar..." : "?? Backup Excel"}</span>
+              <span>{isBackingUp ? "A gerar..." : "Backup Excel"}</span>
             </button>
 
             {/* App Motoristas Direct Link (High Contrast for Light & Dark Mode) */}
