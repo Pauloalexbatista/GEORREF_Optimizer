@@ -175,7 +175,9 @@ export default function DetachedMapPage() {
           Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
           Nome_Cliente: r.Nome_Cliente || r.Cliente,
           Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || "",
+          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
+          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
+          Vendedor: r.Vendedor || (r as any).vendedor || "",
         }));
         setClients(mappedClients);
         setStatusMsg(`Guardado às ${new Date().toLocaleTimeString()}`);
@@ -231,7 +233,9 @@ export default function DetachedMapPage() {
           Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
           Nome_Cliente: r.Nome_Cliente || r.Cliente,
           Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || "",
+          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
+          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
+          Vendedor: r.Vendedor || (r as any).vendedor || "",
         }));
         setClients(mappedClients);
         setStatusMsg(`Transferidas ${items.length} paragens às ${new Date().toLocaleTimeString()}`);
@@ -311,7 +315,9 @@ export default function DetachedMapPage() {
           Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
           Nome_Cliente: r.Nome_Cliente || r.Cliente,
           Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || "",
+          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
+          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
+          Vendedor: r.Vendedor || (r as any).vendedor || "",
         }));
         setClients(mappedClients);
         setStatusMsg(`Coordenadas atualizadas (${new Date().toLocaleTimeString()})`);

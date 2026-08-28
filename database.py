@@ -899,7 +899,8 @@ def ensure_entregas_columns():
                 ("vendedor", "TEXT DEFAULT ''"),
                 ("volume_m3", "REAL DEFAULT 0.1"),
                 ("rota", "TEXT DEFAULT ''"),
-                ("ordem", "INTEGER DEFAULT 0")
+                ("ordem", "INTEGER DEFAULT 0"),
+                ("ordem_paragem", "INTEGER DEFAULT 0")
             ]:
                 if col not in cols:
                     try:
