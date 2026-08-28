@@ -598,19 +598,58 @@ def get_failure_reason(morada: str, cp: str, concelho: str, lat: float, lon: flo
 
 
 
-@router.get("/suggestions")
+class ResolveAddressRequest(BaseModel):
+    morada: str
+    cp: Optional[str] = ""
+    concelho: Optional[str] = ""
 
-def get_suggestions(
-
-    morada: Optional[str] = None,
-
-    cp: Optional[str] = None,
-
-    concelho: Optional[str] = None,
-
+@router.post("/resolve")
+def resolve_address_endpoint(
+    req: ResolveAddressRequest,
     current_user: UserResponse = Depends(get_current_user)
-
 ):
+    try:
+        google_api_key = current_user.google_api_key if hasattr(current_user, 'google_api_key') else None
+        if not google_api_key:
+            from database import get_google_api_key
+            google_api_key = get_google_api_key()
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), DB_GEO_PATH)
+        geocoder = WaterfallGeocoder(db_path, google_api_key=google_api_key)
+        res_tuple = geocoder.resolve_address(req.morada, req.cp or "", req.concelho or "", fast_mode=False)
+        res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+        if res and res.get('lat') and res.get('lon'):
+            return {
+                "lat": float(res['lat']),
+                "lon": float(res['lon']),
+                "quality": int(res.get('quality', 1)),
+                "source": str(res.get('source', 'GEOCODER')),
+                "address": str(res.get('address', req.morada))
+            }
+        return {
+            "lat": 0.0,
+            "lon": 0.0,
+            "quality": 99,
+            "source": "NOT_FOUND",
+            "address": req.morada
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao georreferenciar morada: {str(e)}")
+
+@router.get("/suggest")
+@router.get("/suggestions")
+def get_suggestions(
+    q: Optional[str] = None,
+    morada: Optional[str] = None,
+    cp: Optional[str] = None,
+    concelho: Optional[str] = None,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    if q and not morada and not cp:
+        import re
+        cp_match = re.search(r'\b(\d{4}(?:-\d{3})?)\b', q)
+        if cp_match:
+            cp = cp_match.group(1)
+        morada = q
 
     try:
 

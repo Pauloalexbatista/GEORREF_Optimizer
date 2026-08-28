@@ -224,28 +224,63 @@ export default function FleetPage() {
   const geocodeAllWarehouses = async () => {
     if (!selectedProject || warehouses.length === 0) return;
     setGeocodingWh(true);
+    setFeedback(null);
     try {
       const updated = [...warehouses];
+      let geocodedCount = 0;
       for (let i = 0; i < updated.length; i++) {
         const wh = updated[i];
         if (wh.address.trim()) {
-          const query = `${wh.address} ${wh.cp} ${wh.locality}`.trim();
-          const res = await apiRequest(`/api/geocoding/suggest?q=${encodeURIComponent(query)}`);
-          const first = res?.suggestions?.[0] || res?.[0];
-          if (first && first.lat && first.lon) {
-            updated[i] = {
-              ...wh,
-              lat: Number(first.lat),
-              lon: Number(first.lon),
-              quality: 1,
-            };
+          try {
+            const res = await apiRequest(`/api/geocoding/resolve`, {
+              method: "POST",
+              body: JSON.stringify({
+                morada: wh.address,
+                cp: wh.cp,
+                concelho: wh.locality,
+              }),
+            });
+            if (res && res.lat && res.lon && res.lat !== 0 && res.lon !== 0) {
+              updated[i] = {
+                ...wh,
+                lat: Number(res.lat),
+                lon: Number(res.lon),
+                quality: 1,
+              };
+              geocodedCount++;
+            }
+          } catch (e) {
+            console.warn("Geocoding failed for warehouse", wh.name, e);
           }
         }
       }
       setWarehouses(updated);
-      setFeedback({ type: "success", msg: "Georreferenciação automática de armazéns concluída!" });
+      if (geocodedCount > 0) {
+        setFeedback({
+          type: "success",
+          msg: `?? Georreferencia??o conclu?da! ${geocodedCount} armaz?m(ns) localizado(s) com sucesso. A gravar...`,
+        });
+        // Automatically persist to backend
+        await apiRequest(`/api/fleet/${selectedProject.id}/save`, {
+          method: "POST",
+          body: JSON.stringify({
+            warehouses: updated,
+            fleet,
+            drivers,
+            reasons,
+          }),
+        });
+      } else {
+        setFeedback({
+          type: "error",
+          msg: "N?o foi poss?vel encontrar coordenadas autom?ticas. Clique no bot?o de coordenadas do armaz?m para posicionar no mapa.",
+        });
+      }
     } catch (err: any) {
-      setFeedback({ type: "error", msg: "Erro ao georreferenciar armazéns: " + err.message });
+      setFeedback({
+        type: "error",
+        msg: "Erro ao georreferenciar armaz?ns: " + (err.message || "Erro"),
+      });
     } finally {
       setGeocodingWh(false);
     }
