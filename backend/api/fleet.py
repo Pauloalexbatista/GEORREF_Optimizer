@@ -492,8 +492,10 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                             drivers_res.append({
                                 "name": str(d.get("name", d.get("Motorista", ""))),
                                 "pin": str(d.get("pin", d.get("PIN/Password", d.get("PIN", "1234")))),
-                                "phone": str(d.get("phone", d.get("Telemovel", d.get("Telem?vel", d.get("telefone", ""))))),
+                                "phone": str(d.get("phone", d.get("Telemóvel", d.get("Telemovel", d.get("telefone", ""))))),
                                 "vehicle": str(d.get("vehicle", d.get("Viatura", ""))),
+                                "matricula": str(d.get("matricula", d.get("Matrícula", d.get("Matricula", "")))),
+                                "route": str(d.get("route", d.get("Rota Atribuída", d.get("Rota_Atribuida", d.get("Rota", ""))))),
                                 "is_active": int(d.get("is_active", 1) if d.get("is_active") is not None else 1)
                             })
                 elif isinstance(raw_drivers, pd.DataFrame):
@@ -501,8 +503,10 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                         drivers_res.append({
                             "name": str(d.get("Motorista", d.get("name", ""))),
                             "pin": str(d.get("PIN/Password", d.get("pin", "1234"))),
-                            "phone": str(d.get("Telemovel", d.get("Telem?vel", d.get("phone", "")))),
+                            "phone": str(d.get("Telemóvel", d.get("Telemovel", d.get("phone", "")))),
                             "vehicle": str(d.get("Viatura", d.get("vehicle", ""))),
+                            "matricula": str(d.get("Matrícula", d.get("Matricula", d.get("matricula", "")))),
+                            "route": str(d.get("Rota Atribuída", d.get("Rota_Atribuida", d.get("route", "")))),
                             "is_active": int(d.get("is_active", 1) if d.get("is_active") is not None else 1)
                         })
             
@@ -802,14 +806,14 @@ async def import_fleet_warehouses(
                         v_name = f"Viatura {idx + 1}"
                     
                     wh_name = str(row[col_f_wh]).strip() if col_f_wh and pd.notna(row[col_f_wh]) else (wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Central")
-                    cap_kg = float(row[col_f_cap_kg]) if col_f_cap_kg and pd.notna(row[col_f_cap_kg]) else 1000.0
-                    cap_vol = float(row[col_f_cap_vol]) if col_f_cap_vol and pd.notna(row[col_f_cap_vol]) else 10.0
-                    speed = float(row[col_f_speed]) if col_f_speed and pd.notna(row[col_f_speed]) else 50.0
+                    cap_kg = _clean_coord(row[col_f_cap_kg]) if col_f_cap_kg and pd.notna(row[col_f_cap_kg]) else 1000.0
+                    cap_vol = _clean_coord(row[col_f_cap_vol]) if col_f_cap_vol and pd.notna(row[col_f_cap_vol]) else 10.0
+                    speed = _clean_coord(row[col_f_speed]) if col_f_speed and pd.notna(row[col_f_speed]) else 50.0
                     start_t = str(row[col_f_start]).strip() if col_f_start and pd.notna(row[col_f_start]) else "08:00:00"
                     end_t = str(row[col_f_end]).strip() if col_f_end and pd.notna(row[col_f_end]) else "18:00:00"
-                    cost_km = float(row[col_f_cost_km]) if col_f_cost_km and pd.notna(row[col_f_cost_km]) else 0.65
-                    cost_hr = float(row[col_f_cost_hr]) if col_f_cost_hr and pd.notna(row[col_f_cost_hr]) else 12.50
-                    max_deliv = int(row[col_f_max_deliv]) if col_f_max_deliv and pd.notna(row[col_f_max_deliv]) else 30
+                    cost_km = _clean_coord(row[col_f_cost_km]) if col_f_cost_km and pd.notna(row[col_f_cost_km]) else 0.65
+                    cost_hr = _clean_coord(row[col_f_cost_hr]) if col_f_cost_hr and pd.notna(row[col_f_cost_hr]) else 12.50
+                    max_deliv = int(_clean_coord(row[col_f_max_deliv])) if col_f_max_deliv and pd.notna(row[col_f_max_deliv]) else 30
                     regras_str = str(row[col_f_rules]).strip() if col_f_rules and pd.notna(row[col_f_rules]) else ""
                     
                     v_obj = FleetVehicle(
@@ -900,11 +904,11 @@ async def import_fleet_warehouses(
                     cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
                     city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
                     tel = str(row[col_e_tel]).strip() if col_e_tel and pd.notna(row[col_e_tel]) else ""
-                    weight = float(row[col_e_weight]) if col_e_weight and pd.notna(row[col_e_weight]) else 50.0
-                    volume = float(row[col_e_volume]) if col_e_volume and pd.notna(row[col_e_volume]) else 0.1
+                    weight = _clean_coord(row[col_e_weight]) if col_e_weight and pd.notna(row[col_e_weight]) else 50.0
+                    volume = _clean_coord(row[col_e_volume]) if col_e_volume and pd.notna(row[col_e_volume]) else 0.1
                     j1_s = str(row[col_e_j1_start]).strip() if col_e_j1_start and pd.notna(row[col_e_j1_start]) else "08:00"
                     j1_e = str(row[col_e_j1_end]).strip() if col_e_j1_end and pd.notna(row[col_e_j1_end]) else "18:00"
-                    unload_t = int(row[col_e_unload]) if col_e_unload and pd.notna(row[col_e_unload]) else 15
+                    unload_t = int(_clean_coord(row[col_e_unload])) if col_e_unload and pd.notna(row[col_e_unload]) else 15
                     op_type = str(row[col_e_op_type]).strip() if col_e_op_type and pd.notna(row[col_e_op_type]) else "ENTREGA"
                     e_rules = str(row[col_e_rules]).strip() if col_e_rules and pd.notna(row[col_e_rules]) else ""
                     obs = str(row[col_e_obs]).strip() if col_e_obs and pd.notna(row[col_e_obs]) else ""
@@ -913,11 +917,8 @@ async def import_fleet_warehouses(
                     
                     lat, lon = 0.0, 0.0
                     if col_e_lat and col_e_lon and pd.notna(row[col_e_lat]) and pd.notna(row[col_e_lon]):
-                        try:
-                            lat = float(row[col_e_lat])
-                            lon = float(row[col_e_lon])
-                        except Exception:
-                            pass
+                        lat = _clean_coord(row[col_e_lat])
+                        lon = _clean_coord(row[col_e_lon])
                             
                     if (lat == 0 or lon == 0) and addr:
                         try:
@@ -1090,8 +1091,8 @@ async def import_fleet_warehouses(
                     loc_val = str(r_row[col_rt_loc]).strip() if col_rt_loc and pd.notna(r_row[col_rt_loc]) else ""
                     wh_name = str(r_row[col_rt_wh]).strip() if col_rt_wh and pd.notna(r_row[col_rt_wh]) else (wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal")
                     
-                    p_kg = float(r_row[col_rt_cg_kg]) if col_rt_cg_kg and pd.notna(r_row[col_rt_cg_kg]) else 50.0
-                    v_m3 = float(r_row[col_rt_cg_vol]) if col_rt_cg_vol and pd.notna(r_row[col_rt_cg_vol]) else 0.1
+                    p_kg = _clean_coord(r_row[col_rt_cg_kg]) if col_rt_cg_kg and pd.notna(r_row[col_rt_cg_kg]) else 50.0
+                    v_m3 = _clean_coord(r_row[col_rt_cg_vol]) if col_rt_cg_vol and pd.notna(r_row[col_rt_cg_vol]) else 0.1
                     
                     # Match lookup from coord_map
                     matched_info = (
@@ -1105,11 +1106,8 @@ async def import_fleet_warehouses(
                     c_lat = 0.0
                     c_lon = 0.0
                     if col_rt_lat and col_rt_lon and pd.notna(r_row[col_rt_lat]) and pd.notna(r_row[col_rt_lon]):
-                        try:
-                            c_lat = float(r_row[col_rt_lat])
-                            c_lon = float(r_row[col_rt_lon])
-                        except Exception:
-                            pass
+                        c_lat = _clean_coord(r_row[col_rt_lat])
+                        c_lon = _clean_coord(r_row[col_rt_lon])
                     if (c_lat == 0 or c_lon == 0) and matched_info:
                         c_lat = float(matched_info.get("lat", 0.0))
                         c_lon = float(matched_info.get("lon", 0.0))
@@ -1173,12 +1171,12 @@ async def import_fleet_warehouses(
                         "Janela_Horaria": str(r_row[col_rt_win]).strip() if col_rt_win and pd.notna(r_row[col_rt_win]) else "08:00 - 18:00",
                         "Hora_Chegada_Prevista": str(r_row[col_rt_arr]).strip() if col_rt_arr and pd.notna(r_row[col_rt_arr]) else "",
                         "Hora_Saida_Prevista": str(r_row[col_rt_dep]).strip() if col_rt_dep and pd.notna(r_row[col_rt_dep]) else "",
-                        "Distancia_KM": float(r_row[col_rt_dist]) if col_rt_dist and pd.notna(r_row[col_rt_dist]) else 0.0,
-                        "Distancia_Acumulada_KM": float(r_row[col_rt_cum_dist]) if col_rt_cum_dist and pd.notna(r_row[col_rt_cum_dist]) else 0.0,
-                        "Tempo_Viagem_Min": float(r_row[col_rt_t_viag]) if col_rt_t_viag and pd.notna(r_row[col_rt_t_viag]) else 0.0,
-                        "Tempo_Espera_Min": float(r_row[col_rt_t_esp]) if col_rt_t_esp and pd.notna(r_row[col_rt_t_esp]) else 0.0,
-                        "Carga_Restante_KG": float(r_row[col_rt_cg_kg]) if col_rt_cg_kg and pd.notna(r_row[col_rt_cg_kg]) else p_kg,
-                        "Carga_Restante_Vol": float(r_row[col_rt_cg_vol]) if col_rt_cg_vol and pd.notna(r_row[col_rt_cg_vol]) else v_m3,
+                        "Distancia_KM": _clean_coord(r_row[col_rt_dist]) if col_rt_dist and pd.notna(r_row[col_rt_dist]) else 0.0,
+                        "Distancia_Acumulada_KM": _clean_coord(r_row[col_rt_cum_dist]) if col_rt_cum_dist and pd.notna(r_row[col_rt_cum_dist]) else 0.0,
+                        "Tempo_Viagem_Min": _clean_coord(r_row[col_rt_t_viag]) if col_rt_t_viag and pd.notna(r_row[col_rt_t_viag]) else 0.0,
+                        "Tempo_Espera_Min": _clean_coord(r_row[col_rt_t_esp]) if col_rt_t_esp and pd.notna(r_row[col_rt_t_esp]) else 0.0,
+                        "Carga_Restante_KG": _clean_coord(r_row[col_rt_cg_kg]) if col_rt_cg_kg and pd.notna(r_row[col_rt_cg_kg]) else p_kg,
+                        "Carga_Restante_Vol": _clean_coord(r_row[col_rt_cg_vol]) if col_rt_cg_vol and pd.notna(r_row[col_rt_cg_vol]) else v_m3,
                         "Status": str(r_row[col_rt_status]).strip() if col_rt_status and pd.notna(r_row[col_rt_status]) else "Planeado",
                         "Notas_Motorista": rt_obs,
                         "notas_motorista": rt_obs,
@@ -1205,8 +1203,8 @@ async def import_fleet_warehouses(
                     "Localidade": d.get("Localidade", ""),
                     "Telefone_Cliente": d.get("Telefone_Cliente", d.get("Telefone", "")),
                     "Telefone": d.get("Telefone_Cliente", d.get("Telefone", "")),
-                    "Latitude": float(d.get("Latitude", 0.0)),
-                    "Longitude": float(d.get("Longitude", 0.0)),
+                    "Latitude": _clean_coord(d.get("Latitude", 0.0)),
+                    "Longitude": _clean_coord(d.get("Longitude", 0.0)),
                     "Rota": d.get("Rota", "Por Distribuir"),
                     "Veiculo": d.get("Rota", "Por Distribuir"),
                     "Armazem": d.get("Armazem", wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal"),
@@ -1219,8 +1217,8 @@ async def import_fleet_warehouses(
                     "Distancia_Acumulada_KM": 0.0,
                     "Tempo_Viagem_Min": 0.0,
                     "Tempo_Espera_Min": 0.0,
-                    "Carga_Restante_KG": float(d.get("Peso_KG", 50.0)),
-                    "Carga_Restante_Vol": float(d.get("Volume_M3", 0.1)),
+                    "Carga_Restante_KG": _clean_coord(d.get("Peso_KG", 50.0)),
+                    "Carga_Restante_Vol": _clean_coord(d.get("Volume_M3", 0.1)),
                     "Status": "Pendente",
                     "Notas_Motorista": d.get("Notas_Motorista", d.get("Observacoes", "")),
                     "notas_motorista": d.get("Notas_Motorista", d.get("Observacoes", "")),
@@ -1228,8 +1226,8 @@ async def import_fleet_warehouses(
                     "observacoes": d.get("Observacoes", d.get("Notas_Motorista", "")),
                     "Vendedor": d.get("Vendedor", d.get("vendedor", "")),
                     "vendedor": d.get("Vendedor", d.get("vendedor", "")),
-                    "Peso_KG": float(d.get("Peso_KG", 50.0)),
-                    "Volume_m3": float(d.get("Volume_M3", 0.1))
+                    "Peso_KG": _clean_coord(d.get("Peso_KG", 50.0)),
+                    "Volume_m3": _clean_coord(d.get("Volume_M3", 0.1))
                 })
 
         # --- D. SAVE DELIVERIES TO SQLITE DB FOR PHASE 1 GEOREFERENCING ---
@@ -1239,8 +1237,8 @@ async def import_fleet_warehouses(
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
                 for d in deliveries_list:
-                    lat_d = float(d.get("Latitude", 0.0))
-                    lon_d = float(d.get("Longitude", 0.0))
+                    lat_d = _clean_coord(d.get("Latitude", 0.0))
+                    lon_d = _clean_coord(d.get("Longitude", 0.0))
                     qual_d = 1 if (lat_d != 0 and lon_d != 0) else 99
                     src_d = "FICHEIRO" if qual_d == 1 else "PENDENTE"
                     cursor.execute("""
@@ -1252,15 +1250,15 @@ async def import_fleet_warehouses(
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
-                        d.get("CP", ""), d.get("Localidade", ""), float(d.get("Peso_KG", 50.0)),
-                        float(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
+                        d.get("CP", ""), d.get("Localidade", ""), _clean_coord(d.get("Peso_KG", 50.0)),
+                        _clean_coord(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
                         d.get("Janela_Fim", "18:00"), lat_d, lon_d, qual_d, src_d,
                         d.get("Morada", ""), d.get("Armazem", "Armazém Principal"),
                         d.get("Telefone_Cliente", d.get("Telefone", "")),
                         d.get("Notas_Motorista", d.get("Observacoes", "")),
                         d.get("Vendedor", d.get("vendedor", "")),
                         d.get("Rota", "Por Distribuir"),
-                        int(d.get("Ordem", 1))
+                        int(_clean_coord(d.get("Ordem", 1)) or 1)
                     ))
                 conn.commit()
 

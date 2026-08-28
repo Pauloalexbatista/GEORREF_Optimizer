@@ -18,13 +18,19 @@ from datetime import datetime
 @dataclass
 class FleetVehicle:
     """Configuration for a single vehicle in the fleet."""
-    capacidade_kg: float
-    capacidade_vol: float
-    custo_km: float
-    velocidade_media: float
-    horario_inicio: str
-    horario_fim: str
-    armazem: str
+    capacidade_kg: float = 1000.0
+    capacidade_vol: float = 10.0
+    custo_km: float = 0.65
+    velocidade_media: float = 50.0
+    horario_inicio: str = "08:00:00"
+    horario_fim: str = "18:00:00"
+    armazem: str = "Armazém Principal"
+    custo_hora: float = 12.50
+    max_entregas: int = 30
+    regras: str = ""
+    motorista_nome: str = ""
+    motorista_telemovel: str = ""
+    is_active: int = 1
 
 
 @dataclass
