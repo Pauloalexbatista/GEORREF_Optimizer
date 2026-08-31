@@ -152,9 +152,16 @@ class ReasonItem(BaseModel):
     reason: str
     category: Optional[str] = "Geral"
 
+class RuleItem(BaseModel):
+    tag_veiculo: str = ""
+    tag_entrega: str = ""
+    permissao: Optional[str] = "SIM"
+    descricao: Optional[str] = ""
+
 class FleetSaveRequest(BaseModel):
     fleet: List[VehicleItem] = []
     warehouses: List[WarehouseGeocoded] = []
+    rules_matrix: List[RuleItem] = []
     drivers: List[DriverItem] = []
     reasons: List[ReasonItem] = []
 
@@ -545,9 +552,32 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                             "category": str(r.get("Categoria / A??o", r.get("category", "Geral")))
                         })
 
+            # Extract RULES MATRIX
+            raw_rules = state_dict.get("rules_matrix")
+            rules_res = []
+            if raw_rules is not None:
+                if isinstance(raw_rules, list):
+                    for r in raw_rules:
+                        if isinstance(r, dict):
+                            rules_res.append({
+                                "tag_veiculo": str(r.get("tag_veiculo", r.get("Tag_Veiculo", ""))),
+                                "tag_entrega": str(r.get("tag_entrega", r.get("Tag_Entrega", ""))),
+                                "permissao": str(r.get("permissao", r.get("Permissao", "SIM"))).upper(),
+                                "descricao": str(r.get("descricao", r.get("Descricao", "")))
+                            })
+                elif isinstance(raw_rules, pd.DataFrame):
+                    for _, r in raw_rules.iterrows():
+                        rules_res.append({
+                            "tag_veiculo": str(r.get("Tag_Veiculo", r.get("tag_veiculo", ""))),
+                            "tag_entrega": str(r.get("Tag_Entrega", r.get("tag_entrega", ""))),
+                            "permissao": str(r.get("Permissao", r.get("permissao", "SIM"))).upper(),
+                            "descricao": str(r.get("Descricao", r.get("descricao", "")))
+                        })
+
             return {
                 "fleet": fleet_res, 
                 "warehouses": warehouses_res,
+                "rules_matrix": rules_res,
                 "drivers": drivers_res,
                 "reasons": reasons_res if reasons_res else None
             }
@@ -638,6 +668,21 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
         state_dict["fleet_config"] = fleet_dict
         state_dict["phase_2_complete"] = True
 
+        # Save Rules Matrix
+        rules_list = []
+        for r in req.rules_matrix:
+            vtag = str(r.tag_veiculo or "").strip()
+            etag = str(r.tag_entrega or "").strip()
+            if not vtag and not etag:
+                continue
+            rules_list.append({
+                "tag_veiculo": vtag,
+                "tag_entrega": etag,
+                "permissao": str(r.permissao or "SIM").strip().upper(),
+                "descricao": str(r.descricao or "").strip()
+            })
+        state_dict["rules_matrix"] = rules_list
+
         # Save Drivers
         drivers_list = []
         for d in req.drivers:
@@ -648,6 +693,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "pin": str(d.pin or "1234").strip(),
                 "phone": str(d.phone or "").strip(),
                 "vehicle": str(d.vehicle or "").strip(),
+                "matricula": str(d.matricula or "").strip(),
+                "route": str(d.route or "").strip(),
                 "is_active": int(d.is_active if d.is_active is not None else 1)
             })
         state_dict["drivers"] = drivers_list

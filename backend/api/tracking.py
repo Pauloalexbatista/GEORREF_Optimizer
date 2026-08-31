@@ -135,6 +135,35 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                 "last_gps_time": datetime.now().strftime("%H:%M")
             })
             
+        # Extract drivers from state_dict
+        raw_drivers = state_dict.get("drivers", state_dict.get("motoristas", []))
+        drivers_list_res = []
+        if isinstance(raw_drivers, list):
+            for d in raw_drivers:
+                if isinstance(d, dict) and d.get("name"):
+                    drivers_list_res.append({
+                        "name": str(d.get("name", "")),
+                        "pin": str(d.get("pin", "")),
+                        "phone": str(d.get("phone", "")),
+                        "vehicle": str(d.get("vehicle", "")),
+                        "matricula": str(d.get("matricula", "")),
+                        "route": str(d.get("route", "")),
+                        "is_active": int(d.get("is_active", 1))
+                    })
+        elif isinstance(raw_drivers, pd.DataFrame) and not raw_drivers.empty:
+            for _, d in raw_drivers.iterrows():
+                name_val = str(d.get("name", d.get("Motorista", "")))
+                if name_val and name_val.lower() != 'nan':
+                    drivers_list_res.append({
+                        "name": name_val,
+                        "pin": str(d.get("pin", d.get("PIN/Password", "1234"))),
+                        "phone": str(d.get("phone", d.get("Telemóvel", ""))),
+                        "vehicle": str(d.get("vehicle", d.get("Viatura", ""))),
+                        "matricula": str(d.get("matricula", d.get("Matrícula", ""))),
+                        "route": str(d.get("route", d.get("Rota Atribuída", ""))),
+                        "is_active": int(d.get("is_active", 1))
+                    })
+
         return {
             "totals": {
                 "total_stops": total_stops,
@@ -144,6 +173,58 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                 "rate": rate
             },
             "routes": routes_list,
-            "drivers": [],
+            "drivers": drivers_list_res,
             "activity": []
         }
+
+
+@router.post("/assign/{project_id}")
+def assign_driver_to_route(project_id: int, payload: AssignDriverPayload, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado.")
+    if proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False):
+        raise HTTPException(status_code=403, detail="Sem permissão para aceder a este projeto.")
+        
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=400, detail="Nenhum plano de rotas encontrado.")
+            
+        state_dict = deserialize_state(row["payload_json"])
+        raw_routes = state_dict.get("routes_solution")
+        if raw_routes is None:
+            raise HTTPException(status_code=400, detail="Nenhuma rota encontrada.")
+            
+        df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+        if df_routes.empty:
+            raise HTTPException(status_code=400, detail="Nenhuma rota encontrada.")
+            
+        if "Motorista" not in df_routes.columns:
+            df_routes["Motorista"] = "Não Atribuído"
+            
+        # Update driver in df_routes
+        df_routes.loc[df_routes["Rota"] == payload.route_name, "Motorista"] = payload.driver_name
+        state_dict["routes_solution"] = df_routes
+        state_dict["routes_df"] = df_routes
+        
+        # Also update drivers list in state_dict
+        drivers = state_dict.get("drivers", state_dict.get("motoristas", []))
+        for d in drivers:
+            if isinstance(d, dict):
+                if d.get("name") == payload.driver_name:
+                    d["route"] = payload.route_name
+                elif d.get("route") == payload.route_name and d.get("name") != payload.driver_name:
+                    d["route"] = ""
+        state_dict["drivers"] = drivers
+        state_dict["motoristas"] = drivers
+        
+        new_payload = serialize_state(state_dict)
+        snapshot_name = f"Atribuição Motorista {payload.driver_name} -> {payload.route_name}"
+        cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)", 
+                       (project_id, current_user.id, 3, snapshot_name, new_payload))
+        conn.commit()
+        
+    return {"status": "success", "message": f"Motorista '{payload.driver_name}' atribuído à rota '{payload.route_name}' com sucesso."}

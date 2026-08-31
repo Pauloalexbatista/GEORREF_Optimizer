@@ -40,10 +40,18 @@ interface Vehicle {
   is_active: number;
 }
 
+interface RuleItem {
+  tag_veiculo: string;
+  tag_entrega: string;
+  permissao: string;
+  descricao: string;
+}
+
 interface Driver {
   name: string;
   pin: string;
-  vehicle: string;
+  vehicle?: string;
+  matricula?: string;
   phone: string;
   shift_start: string;
   shift_end: string;
@@ -59,16 +67,17 @@ interface NonDeliveryReason {
   is_active: number;
 }
 
-type TabType = "warehouses" | "fleet" | "drivers" | "reasons";
+type TabType = "warehouses" | "fleet" | "rules" | "drivers" | "reasons";
 
 export default function FleetPage() {
   const { selectedProject } = useProjects();
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<TabType>("warehouses");
 
-  // State for all 4 tables
+  // State for all 5 tables
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [fleet, setFleet] = useState<Vehicle[]>([]);
+  const [rules, setRules] = useState<RuleItem[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [reasons, setReasons] = useState<NonDeliveryReason[]>([]);
 
@@ -79,6 +88,7 @@ export default function FleetPage() {
 
   // Search/Filters per tab
   const [searchFleet, setSearchFleet] = useState("");
+  const [searchRules, setSearchRules] = useState("");
   const [searchDrivers, setSearchDrivers] = useState("");
   const [searchReasons, setSearchReasons] = useState("");
 
@@ -98,6 +108,7 @@ export default function FleetPage() {
         if (data) {
           if (data.warehouses) setWarehouses(data.warehouses);
           if (data.fleet) setFleet(data.fleet);
+          if (data.rules_matrix) setRules(data.rules_matrix);
           if (data.drivers) setDrivers(data.drivers);
           if (data.reasons) setReasons(data.reasons);
         }
@@ -120,6 +131,7 @@ export default function FleetPage() {
       const payload = {
         warehouses,
         fleet,
+        rules_matrix: rules,
         drivers,
         reasons,
       };
@@ -129,11 +141,11 @@ export default function FleetPage() {
         body: JSON.stringify(payload),
       });
 
-      setFeedback({ type: "success", msg: "Todas as tabelas de suporte e frota foram guardadas com sucesso!" });
+      setFeedback({ type: "success", msg: "Todas as tabelas de suporte e regras foram guardadas com sucesso!" });
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
       console.error("Erro ao guardar tabelas:", err);
-      setFeedback({ type: "error", msg: err.message || "Erro ao guardar alterações na frota." });
+      setFeedback({ type: "error", msg: err.message || "Erro ao guardar alterações nas tabelas." });
     } finally {
       setSaving(false);
     }
@@ -198,28 +210,15 @@ export default function FleetPage() {
               geocodedCount++;
             }
           } catch (e) {
-            console.warn("Geocoding failed for warehouse", wh.name, e);
+            console.error("Geocoding failed for warehouse:", wh.name, e);
           }
         }
       }
       setWarehouses(updated);
-
-      // Auto persist geocoded warehouses to backend snapshot
-      await apiRequest(`/api/fleet/${selectedProject.id}`, {
-        method: "POST",
-        body: JSON.stringify({
-          warehouses: updated,
-          fleet,
-          drivers,
-          reasons,
-        }),
-      });
-
       setFeedback({
         type: "success",
-        msg: `Georreferenciação de armazéns concluída! ${geocodedCount} armazém(ns) localizados e guardados.`,
+        msg: `${geocodedCount} armazém(ns) georreferenciado(s) com sucesso.`,
       });
-      setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
       setFeedback({ type: "error", msg: "Erro ao georreferenciar armazéns." });
     } finally {
@@ -237,12 +236,11 @@ export default function FleetPage() {
   };
 
   const addVehicle = () => {
-    const defaultWh = warehouses[0]?.name || "Armazém Principal";
-    const newV: Vehicle = {
-      armazem: defaultWh,
+    const newVeh: Vehicle = {
       veiculo: `Viatura ${fleet.length + 1}`,
+      armazem: warehouses.length > 0 ? warehouses[0].name : "",
       capacidade_kg: 1000,
-      capacidade_vol: 10.0,
+      capacidade_vol: 10,
       velocidade_media: 50,
       horario_inicio: "08:00:00",
       horario_fim: "18:00:00",
@@ -254,11 +252,34 @@ export default function FleetPage() {
       motorista_telemovel: "",
       is_active: 1,
     };
-    setFleet((prev) => [...prev, newV]);
+    setFleet((prev) => [...prev, newVeh]);
   };
 
   const deleteVehicle = (index: number) => {
     setFleet((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // --- RULES HANDLERS ---
+  const updateRule = (index: number, field: keyof RuleItem, value: any) => {
+    setRules((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const addRule = () => {
+    const newRule: RuleItem = {
+      tag_veiculo: "",
+      tag_entrega: "",
+      permissao: "SIM",
+      descricao: "",
+    };
+    setRules((prev) => [...prev, newRule]);
+  };
+
+  const deleteRule = (index: number) => {
+    setRules((prev) => prev.filter((_, i) => i !== index));
   };
 
   // --- DRIVER HANDLERS ---
@@ -271,23 +292,24 @@ export default function FleetPage() {
   };
 
   const addDriver = () => {
-    const newD: Driver = {
+    const newDr: Driver = {
       name: `Motorista ${drivers.length + 1}`,
-      pin: Math.floor(1000 + Math.random() * 9000).toString(),
-      vehicle: fleet[0]?.veiculo || "",
-      phone: "",
-      shift_start: "08:00:00",
-      shift_end: "18:00:00",
+      pin: `${1000 + drivers.length + 1}`,
+      vehicle: "",
+      matricula: "",
+      phone: "910000000",
+      shift_start: "08:00",
+      shift_end: "18:00",
       is_active: 1,
     };
-    setDrivers((prev) => [...prev, newD]);
+    setDrivers((prev) => [...prev, newDr]);
   };
 
   const deleteDriver = (index: number) => {
     setDrivers((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // --- NON DELIVERY REASONS HANDLERS ---
+  // --- REASON HANDLERS ---
   const updateReason = (index: number, field: keyof NonDeliveryReason, value: any) => {
     setReasons((prev) => {
       const updated = [...prev];
@@ -298,7 +320,7 @@ export default function FleetPage() {
 
   const addReason = () => {
     const newR: NonDeliveryReason = {
-      code: `MOT_${reasons.length + 1}`,
+      code: `FALHA_${reasons.length + 1}`,
       reason: "Novo Motivo de Não Entrega",
       category: "Cliente",
       action_required: "Reagendar",
@@ -311,70 +333,74 @@ export default function FleetPage() {
     setReasons((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Filtered views
+  // Filtered lists
   const filteredFleet = useMemo(() => {
-    const q = searchFleet.toLowerCase().trim();
-    if (!q) return fleet;
+    if (!searchFleet.trim()) return fleet;
+    const q = searchFleet.toLowerCase();
     return fleet.filter(
       (v) =>
         v.veiculo.toLowerCase().includes(q) ||
         v.armazem.toLowerCase().includes(q) ||
-        v.motorista_nome.toLowerCase().includes(q) ||
-        v.motorista_telemovel.toLowerCase().includes(q)
+        v.regras.toLowerCase().includes(q)
     );
   }, [fleet, searchFleet]);
 
+  const filteredRules = useMemo(() => {
+    if (!searchRules.trim()) return rules;
+    const q = searchRules.toLowerCase();
+    return rules.filter(
+      (r) =>
+        r.tag_veiculo.toLowerCase().includes(q) ||
+        r.tag_entrega.toLowerCase().includes(q) ||
+        r.permissao.toLowerCase().includes(q) ||
+        r.descricao.toLowerCase().includes(q)
+    );
+  }, [rules, searchRules]);
+
   const filteredDrivers = useMemo(() => {
-    const q = searchDrivers.toLowerCase().trim();
-    if (!q) return drivers;
+    if (!searchDrivers.trim()) return drivers;
+    const q = searchDrivers.toLowerCase();
     return drivers.filter(
       (d) =>
         d.name.toLowerCase().includes(q) ||
-        d.phone.toLowerCase().includes(q) ||
-        d.vehicle.toLowerCase().includes(q) ||
-        d.pin.toLowerCase().includes(q)
+        d.pin.includes(q) ||
+        (d.matricula && d.matricula.toLowerCase().includes(q)) ||
+        d.phone.includes(q)
     );
   }, [drivers, searchDrivers]);
 
   const filteredReasons = useMemo(() => {
-    const q = searchReasons.toLowerCase().trim();
-    if (!q) return reasons;
+    if (!searchReasons.trim()) return reasons;
+    const q = searchReasons.toLowerCase();
     return reasons.filter(
-      (r) => r.reason.toLowerCase().includes(q) || r.category.toLowerCase().includes(q)
+      (r) =>
+        r.reason.toLowerCase().includes(q) ||
+        r.code.toLowerCase().includes(q) ||
+        r.category.toLowerCase().includes(q)
     );
   }, [reasons, searchReasons]);
 
   return (
     <DashboardLayout>
-      <div className="p-4 md:p-6 space-y-5 w-full mx-auto font-sans">
-        {/* Header Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900 border border-zinc-800 p-4 rounded-2xl shadow-xl">
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        {/* Header with Save Button */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/60 p-6 rounded-2xl border border-zinc-800 backdrop-blur-xl">
           <div>
-            <h1 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
-              <span>📋</span> 2. Tabelas de Suporte & Frota
+            <h1 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
+              <span>📋</span> 2. Tabelas de Suporte, Frota & Regras
             </h1>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              Configure armazéns de partida, viaturas, motoristas com PINs diários e motivos de não entrega.
+            <p className="text-xs text-zinc-400 mt-1">
+              Configure armazéns de partida, viaturas da frota, matriz de regras de compatibilidade, credenciais de motoristas e motivos de não entrega.
             </p>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={persistAllTables}
               disabled={saving}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center space-x-2 transition-all cursor-pointer"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
             >
-              {saving ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>A Gravar...</span>
-                </>
-              ) : (
-                <>
-                  <span>💾</span>
-                  <span>Guardar Tabelas</span>
-                </>
-              )}
+              {saving ? "💾 A Gravar..." : "💾 Gravar Alterações"}
             </button>
           </div>
         </div>
@@ -426,6 +452,17 @@ export default function FleetPage() {
           </button>
 
           <button
+            onClick={() => setActiveTab("rules")}
+            className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
+              activeTab === "rules"
+                ? "bg-zinc-850 border-indigo-500 text-indigo-400"
+                : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+            }`}
+          >
+            <span>⚖️</span> 3. Regras ({rules.length})
+          </button>
+
+          <button
             onClick={() => setActiveTab("drivers")}
             className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
               activeTab === "drivers"
@@ -433,7 +470,7 @@ export default function FleetPage() {
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
             }`}
           >
-            <span>👤</span> 3. Motoristas & PINs ({drivers.length})
+            <span>👤</span> 4. Motoristas & PINs ({drivers.length})
           </button>
 
           <button
@@ -444,12 +481,12 @@ export default function FleetPage() {
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
             }`}
           >
-            <span>⚠️</span> 4. Justificação de Entregas ({reasons.length})
+            <span>⚠️</span> 5. Justificação de Entregas ({reasons.length})
           </button>
         </div>
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 1: WAREHOUSES (Aba Armazéns) - Formato Excel em Ecrã Total */}
+        {/* TAB 1: WAREHOUSES (Aba Armazéns)                              */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "warehouses" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
@@ -480,7 +517,7 @@ export default function FleetPage() {
               </div>
             </div>
 
-            {/* Grelha Excel para Armazéns - Ferramentas à Esquerda e 100% da Largura */}
+            {/* Grelha Excel para Armazéns */}
             <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
               <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
@@ -502,26 +539,21 @@ export default function FleetPage() {
                   {warehouses.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="py-8 text-center text-zinc-500">
-                        Nenhum armazém configurado. Clique em "+ Adicionar Armazém" ou importe o ficheiro Excel.
+                        Nenhum armazém configurado. Clique em "+ Adicionar Armazém".
                       </td>
                     </tr>
                   ) : (
                     warehouses.map((wh, idx) => (
                       <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
-                        {/* 1. FERRAMENTAS À ESQUERDA */}
                         <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
-                          <div className="flex items-center justify-center space-x-1">
+                          <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={() => {
                                 setEditingWhIndex(idx);
                                 setGeoModalOpen(true);
                               }}
-                              className={`p-1 rounded text-xs transition-all cursor-pointer ${
-                                wh.lat !== 0 && wh.lon !== 0
-                                  ? "text-emerald-400 hover:bg-emerald-950/60"
-                                  : "text-amber-400 hover:bg-amber-950/60 animate-pulse"
-                              }`}
-                              title={wh.lat !== 0 && wh.lon !== 0 ? "Coordenadas definidas. Clique para ajustar no mapa." : "Sem coordenadas. Clique para georreferenciar no mapa."}
+                              className="p-1 text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                              title="Editar Georreferenciação no Mapa"
                             >
                               📍
                             </button>
@@ -534,113 +566,87 @@ export default function FleetPage() {
                             </button>
                           </div>
                         </td>
-
-                        {/* 2. NOME ARMAZÉM */}
                         <td className="py-1 px-2 border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.name}
                             onChange={(e) => updateWarehouse(idx, "name", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-100 w-full font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
+                            className="bg-transparent border-none outline-none text-zinc-100 font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 3. MORADA */}
                         <td className="py-1 px-2 border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.address}
                             onChange={(e) => updateWarehouse(idx, "address", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-200 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
-                            placeholder="Morada completa..."
+                            className="bg-transparent border-none outline-none text-zinc-200 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 4. CÓDIGO POSTAL */}
-                        <td className="py-1 px-1.5 border-r border-zinc-800">
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.cp}
                             onChange={(e) => updateWarehouse(idx, "cp", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-200 w-full font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
-                            placeholder="2625-441"
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 5. LOCALIDADE */}
                         <td className="py-1 px-2 border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.locality}
                             onChange={(e) => updateWarehouse(idx, "locality", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-200 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
-                            placeholder="Localidade..."
+                            className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 6. LATITUDE */}
-                        <td className="py-1 px-1.5 border-r border-zinc-800">
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
-                            type="text"
-                            value={wh.lat !== undefined && wh.lat !== 0 ? wh.lat : ""}
-                            onChange={(e) => updateWarehouse(idx, "lat", parseFloat(e.target.value.replace(',', '.')) || 0)}
-                            className="bg-transparent border-none outline-none text-emerald-400 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full font-semibold"
-                            placeholder="38.872732"
+                            type="number"
+                            step="any"
+                            value={wh.lat || ""}
+                            onChange={(e) => updateWarehouse(idx, "lat", parseFloat(e.target.value) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 7. LONGITUDE */}
-                        <td className="py-1 px-1.5 border-r border-zinc-800">
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
-                            type="text"
-                            value={wh.lon !== undefined && wh.lon !== 0 ? wh.lon : ""}
-                            onChange={(e) => updateWarehouse(idx, "lon", parseFloat(e.target.value.replace(',', '.')) || 0)}
-                            className="bg-transparent border-none outline-none text-emerald-400 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full font-semibold"
-                            placeholder="-9.053075"
+                            type="number"
+                            step="any"
+                            value={wh.lon || ""}
+                            onChange={(e) => updateWarehouse(idx, "lon", parseFloat(e.target.value) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 8. ABERTURA */}
-                        <td className="py-1 px-1 border-r border-zinc-800">
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.open_time || "06:00:00"}
                             onChange={(e) => updateWarehouse(idx, "open_time", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
-                            placeholder="06:00:00"
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 9. FECHO */}
-                        <td className="py-1 px-1 border-r border-zinc-800">
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.close_time || "22:00:00"}
                             onChange={(e) => updateWarehouse(idx, "close_time", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
-                            placeholder="22:00:00"
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 10. CARGA (MIN) */}
-                        <td className="py-1 px-1 border-r border-zinc-800">
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
                             type="number"
-                            value={wh.load_time !== undefined ? wh.load_time : 30}
-                            onChange={(e) => updateWarehouse(idx, "load_time", parseInt(e.target.value, 10) || 30)}
-                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
-                            min={1}
+                            value={wh.load_time || 30}
+                            onChange={(e) => updateWarehouse(idx, "load_time", parseInt(e.target.value, 10) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-
-                        {/* 11. CONTACTO */}
                         <td className="py-1 px-2">
                           <input
                             type="text"
                             value={wh.contact || ""}
                             onChange={(e) => updateWarehouse(idx, "contact", e.target.value)}
-                            className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
-                            placeholder="Contacto..."
+                            className="bg-transparent border-none outline-none text-zinc-300 font-mono text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            placeholder="Contacto / Tel"
                           />
                         </td>
                       </tr>
@@ -653,26 +659,27 @@ export default function FleetPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 2: FLEET (Aba Frota) - Formato Excel em Ecrã Total        */}
+        {/* TAB 2: FLEET (Aba Frota)                                      */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "fleet" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
-                  <span>🚚</span> Frota de Viaturas ({fleet.length})
+                  <span>🚚</span> Frota & Viaturas de Distribuição ({fleet.length})
                 </h2>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Configure viaturas, capacidades de carga, turnos, custos, regras e motoristas atribuídos.
+                  Configure viaturas, capacidades de carga, turnos, custos, regras e etiquetas atribuídas.
                 </p>
               </div>
+
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="🔍 Filtrar viatura, motorista, armazém..."
+                  placeholder="Filtrar viaturas..."
                   value={searchFleet}
                   onChange={(e) => setSearchFleet(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-60 outline-none focus:border-indigo-500"
+                  className="px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 w-44"
                 />
                 <button
                   onClick={addVehicle}
@@ -683,32 +690,31 @@ export default function FleetPage() {
               </div>
             </div>
 
+            {/* Grelha Excel para Frota */}
             <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
-              <table className="w-full text-left text-xs border-collapse border border-zinc-800 min-w-[1200px]">
+              <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
                     <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
-                    <th className="py-2 px-2 border-r border-zinc-800 w-36">Armazém Origem</th>
-                    <th className="py-2 px-2 border-r border-zinc-800 w-32">Veículo</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Capacidade(kg)</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Volume(m³)</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Veloc.(km/h)</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Início Turno</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Fim Turno</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Custo KM(€)</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Custo Hora(€)</th>
-                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-18">Máx.Entregas</th>
+                    <th className="py-2 px-2 border-r border-zinc-800 w-32">Viatura</th>
+                    <th className="py-2 px-2 border-r border-zinc-800 w-36">Armazém</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Cap. KG</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Vol. m³</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Vel. km/h</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Início</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Fim</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">€/km</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">€/hora</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Máx. Ent.</th>
                     <th className="py-2 px-2 border-r border-zinc-800">Regras</th>
-                    <th className="py-2 px-2 border-r border-zinc-800 w-32">Motorista Nome</th>
-                    <th className="py-2 px-2 border-r border-zinc-800 w-28">Motorista Telemóvel</th>
-                    <th className="py-2 px-1 text-center w-12">Ativo</th>
+                    <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredFleet.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="py-8 text-center text-zinc-500">
-                        Nenhuma viatura encontrada.
+                      <td colSpan={13} className="py-8 text-center text-zinc-500">
+                        Nenhuma viatura encontrada. Clique em "+ Adicionar Viatura".
                       </td>
                     </tr>
                   ) : (
@@ -725,46 +731,43 @@ export default function FleetPage() {
                               🗑️
                             </button>
                           </td>
-                          <td className="py-1 px-1.5 border-r border-zinc-800">
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <input
+                              type="text"
+                              value={v.veiculo}
+                              onChange={(e) => updateVehicle(idx, "veiculo", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-100 font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
                             <select
                               value={v.armazem}
                               onChange={(e) => updateVehicle(idx, "armazem", e.target.value)}
                               className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded cursor-pointer"
                             >
+                              <option value="">Sem Armazém</option>
                               {warehouses.map((wh) => (
                                 <option key={wh.name} value={wh.name}>
                                   {wh.name}
                                 </option>
                               ))}
-                              {!warehouses.some((w) => w.name === v.armazem) && (
-                                <option value={v.armazem}>{v.armazem}</option>
-                              )}
                             </select>
-                          </td>
-                          <td className="py-1 px-1.5 border-r border-zinc-800">
-                            <input
-                              type="text"
-                              value={v.veiculo}
-                              onChange={(e) => updateVehicle(idx, "veiculo", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
-                            />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
                               value={v.capacidade_kg}
                               onChange={(e) => updateVehicle(idx, "capacidade_kg", parseFloat(e.target.value) || 0)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
-                              step="50"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
+                              step="0.1"
                               value={v.capacidade_vol}
                               onChange={(e) => updateVehicle(idx, "capacidade_vol", parseFloat(e.target.value) || 0)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
-                              step="0.5"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -772,7 +775,7 @@ export default function FleetPage() {
                               type="number"
                               value={v.velocidade_media}
                               onChange={(e) => updateVehicle(idx, "velocidade_media", parseFloat(e.target.value) || 0)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -780,8 +783,7 @@ export default function FleetPage() {
                               type="text"
                               value={v.horario_inicio}
                               onChange={(e) => updateVehicle(idx, "horario_inicio", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
-                              placeholder="08:00:00"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -789,8 +791,7 @@ export default function FleetPage() {
                               type="text"
                               value={v.horario_fim}
                               onChange={(e) => updateVehicle(idx, "horario_fim", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[11px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-full"
-                              placeholder="18:00:00"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -799,16 +800,16 @@ export default function FleetPage() {
                               step="0.01"
                               value={v.custo_km}
                               onChange={(e) => updateVehicle(idx, "custo_km", parseFloat(e.target.value) || 0)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input
                               type="number"
-                              step="0.5"
+                              step="0.01"
                               value={v.custo_hora}
                               onChange={(e) => updateVehicle(idx, "custo_hora", parseFloat(e.target.value) || 0)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -816,37 +817,19 @@ export default function FleetPage() {
                               type="number"
                               value={v.max_entregas}
                               onChange={(e) => updateVehicle(idx, "max_entregas", parseInt(e.target.value, 10) || 0)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full text-center font-mono text-xs focus:bg-zinc-900 px-0.5 py-0.5 rounded"
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
-                          <td className="py-1 px-1.5 border-r border-zinc-800">
+                          <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
                               value={v.regras}
                               onChange={(e) => updateVehicle(idx, "regras", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
-                              placeholder="Regras..."
+                              className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                              placeholder="Regras / Tags..."
                             />
                           </td>
-                          <td className="py-1 px-1.5 border-r border-zinc-800">
-                            <input
-                              type="text"
-                              value={v.motorista_nome}
-                              onChange={(e) => updateVehicle(idx, "motorista_nome", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-200 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
-                              placeholder="Nome Motorista..."
-                            />
-                          </td>
-                          <td className="py-1 px-1.5 border-r border-zinc-800">
-                            <input
-                              type="text"
-                              value={v.motorista_telemovel}
-                              onChange={(e) => updateVehicle(idx, "motorista_telemovel", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-[11px] focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
-                              placeholder="910000000"
-                            />
-                          </td>
-                          <td className="py-1 px-1 text-center">
+                          <td className="py-1 px-2 text-center">
                             <input
                               type="checkbox"
                               checked={v.is_active === 1}
@@ -865,7 +848,120 @@ export default function FleetPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 3: DRIVERS (Aba Motoristas e Carros)                      */}
+        {/* TAB 3: RULES (Aba Regras / Matriz de Compatibilidade)         */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === "rules" && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                  <span>⚖️</span> Matriz de Regras & Compatibilidade de Acesso ({rules.length})
+                </h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Configure a compatibilidade entre as etiquetas da frota e as restrições das encomendas (ex: Lisboa, Pequeno, Frigorífico).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Filtrar regras..."
+                  value={searchRules}
+                  onChange={(e) => setSearchRules(e.target.value)}
+                  className="px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 w-44"
+                />
+                <button
+                  onClick={addRule}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-indigo-600 text-zinc-200 hover:text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  + Adicionar Regra
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+              <table className="w-full text-left text-xs border-collapse border border-zinc-800">
+                <thead>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
+                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Veículo / Frota</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Entrega / Cliente</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-36 text-center">Permissão</th>
+                    <th className="py-2 px-3">Descrição / Restrição</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
+                  {filteredRules.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-zinc-500">
+                        Nenhuma regra registada. Clique em "+ Adicionar Regra".
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRules.map((r) => {
+                      const idx = rules.indexOf(r);
+                      return (
+                        <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
+                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
+                            <button
+                              onClick={() => deleteRule(idx)}
+                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                              title="Eliminar Regra"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <input
+                              type="text"
+                              value={r.tag_veiculo}
+                              onChange={(e) => updateRule(idx, "tag_veiculo", e.target.value)}
+                              placeholder="Ex: Lisboa, Pequeno..."
+                              className="bg-transparent border-none outline-none text-zinc-100 font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 border-r border-zinc-800">
+                            <input
+                              type="text"
+                              value={r.tag_entrega}
+                              onChange={(e) => updateRule(idx, "tag_entrega", e.target.value)}
+                              placeholder="Ex: Lisboa, Centro..."
+                              className="bg-transparent border-none outline-none text-zinc-200 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center border-r border-zinc-800">
+                            <select
+                              value={r.permissao ? r.permissao.toUpperCase() : "SIM"}
+                              onChange={(e) => updateRule(idx, "permissao", e.target.value)}
+                              className={`bg-zinc-900 border border-zinc-700 outline-none text-xs font-bold px-2 py-0.5 rounded cursor-pointer ${
+                                r.permissao && r.permissao.toUpperCase() === "SIM" ? "text-emerald-400" : "text-rose-400"
+                              }`}
+                            >
+                              <option value="SIM" className="text-emerald-400">SIM (Permitido)</option>
+                              <option value="NAO" className="text-rose-400">NÃO (Proibido)</option>
+                            </select>
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              type="text"
+                              value={r.descricao}
+                              onChange={(e) => updateRule(idx, "descricao", e.target.value)}
+                              placeholder="Ex: Restrições de acesso ou circulação."
+                              className="bg-transparent border-none outline-none text-zinc-400 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* TAB 4: DRIVERS (Aba Motoristas & Carros)                      */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "drivers" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
@@ -875,16 +971,17 @@ export default function FleetPage() {
                   <span>👤</span> Motoristas & Credenciais App ({drivers.length})
                 </h2>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Gira os acessos móveis dos motoristas com PIN individual de 4 dígitos para a aplicação de entregas.
+                  Gira os acessos móveis dos motoristas com PIN individual de 4 dígitos, telemóvel e matrícula do veículo.
                 </p>
               </div>
+
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="🔍 Filtrar motoristas, telemóvel, viatura..."
+                  placeholder="Filtrar motoristas, telemóvel, matrícula..."
                   value={searchDrivers}
                   onChange={(e) => setSearchDrivers(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-60 outline-none focus:border-indigo-500"
+                  className="px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 w-52"
                 />
                 <button
                   onClick={addDriver}
@@ -902,7 +999,7 @@ export default function FleetPage() {
                     <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
                     <th className="py-2 px-3 border-r border-zinc-800">Nome do Motorista</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-28 text-center">PIN App (4 Dígitos)</th>
-                    <th className="py-2 px-3 border-r border-zinc-800 w-44">Viatura Atribuída</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-36">Matrícula</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-36">Telemóvel</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-24 text-center">Início Turno</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-24 text-center">Fim Turno</th>
@@ -935,7 +1032,7 @@ export default function FleetPage() {
                               type="text"
                               value={d.name}
                               onChange={(e) => updateDriver(idx, "name", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-100 w-full font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded"
+                              className="bg-transparent border-none outline-none text-zinc-100 font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
                           <td className="py-1 px-2 text-center border-r border-zinc-800">
@@ -948,18 +1045,13 @@ export default function FleetPage() {
                             />
                           </td>
                           <td className="py-1 px-2 border-r border-zinc-800">
-                            <select
-                              value={d.vehicle}
-                              onChange={(e) => updateDriver(idx, "vehicle", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded cursor-pointer"
-                            >
-                              <option value="">Sem Viatura</option>
-                              {fleet.map((v) => (
-                                <option key={v.veiculo} value={v.veiculo}>
-                                  {v.veiculo}
-                                </option>
-                              ))}
-                            </select>
+                            <input
+                              type="text"
+                              value={d.matricula || ""}
+                              onChange={(e) => updateDriver(idx, "matricula", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-xs focus:bg-zinc-900 px-1 py-0.5 rounded uppercase w-full"
+                              placeholder="00-AA-00"
+                            />
                           </td>
                           <td className="py-1 px-2 border-r border-zinc-800">
                             <input
@@ -1005,26 +1097,27 @@ export default function FleetPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 4: REASONS (Aba Motivos Não Entrega)                      */}
+        {/* TAB 5: REASONS (Aba Motivos Não Entrega)                      */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "reasons" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
-                  <span>⚠️</span> Motivos de Não Entrega ({reasons.length})
+                  <span>⚠️</span> Motivos de Não Entrega / Insucesso ({reasons.length})
                 </h2>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Configure os códigos e opções que surgem aos motoristas na App quando uma entrega não é concluída.
+                  Defina o catálogo de motivos que os motoristas podem selecionar na aplicação móvel em caso de falha.
                 </p>
               </div>
+
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="🔍 Filtrar motivos e categorias..."
+                  placeholder="Filtrar motivos..."
                   value={searchReasons}
                   onChange={(e) => setSearchReasons(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-60 outline-none focus:border-indigo-500"
+                  className="px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 w-44"
                 />
                 <button
                   onClick={addReason}

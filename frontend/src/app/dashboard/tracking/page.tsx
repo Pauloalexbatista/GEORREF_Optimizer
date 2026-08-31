@@ -1,11 +1,10 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
 import { useI18n } from "@/context/I18nContext";
 import { apiRequest } from "@/utils/api";
-import dynamic from "next/dynamic";
 
 export default function TrackingPage() {
   const { selectedProject } = useProjects();
@@ -43,8 +42,38 @@ export default function TrackingPage() {
     });
   };
 
+  const handleAssignDriver = async (routeName: string, driverName: string) => {
+    if (!selectedProject) return;
+
+    // Optimistic UI update
+    setData((prev: any) => {
+      if (!prev) return prev;
+      const updatedRoutes = prev.routes.map((r: any) => {
+        if (r.route_id === routeName) {
+          return { ...r, driver_name: driverName || "Não Atribuído" };
+        }
+        return r;
+      });
+      return { ...prev, routes: updatedRoutes };
+    });
+
+    try {
+      await apiRequest(`/api/tracking/assign/${selectedProject.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          route_name: routeName,
+          driver_name: driverName,
+        }),
+      });
+    } catch (err: any) {
+      console.error("Erro ao atribuir motorista à rota:", err);
+      fetchTracking();
+    }
+  };
+
   const totals = data?.totals || { total_stops: 0, entregues: 0, falhadas: 0, pendentes: 0, rate: 0 };
   const routes = data?.routes || [];
+  const drivers = data?.drivers || [];
 
   return (
     <DashboardLayout>
@@ -56,7 +85,7 @@ export default function TrackingPage() {
               <span>📱</span> 4. Acompanhamento das Rotas ao Vivo
             </h1>
             <p className="text-xs text-zinc-400 mt-1">
-              Supervisão em tempo real de viaturas, picagens de entregas e resolução de ocorrências.
+              Supervisão em tempo real de viaturas, picagens de entregas e atribuição de motoristas às rotas planeadas.
             </p>
           </div>
 
@@ -98,39 +127,41 @@ export default function TrackingPage() {
           </div>
           <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
             <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Pendentes</div>
-            <div className="text-2xl font-black text-zinc-400 mt-1">{totals.pendentes}</div>
+            <div className="text-2xl font-black text-zinc-300 mt-1">{totals.pendentes}</div>
           </div>
         </div>
 
-        {/* Routes Progress Table with Accordion */}
+        {/* Live Routes Table */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/40">
-            <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
-              <span>🚚</span> Progresso por Rota & Picagens
-            </h2>
-            <span className="text-xs text-zinc-400">
-              {routes.length} rotas ativas
-            </span>
+          <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/80">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                <span>🚚</span> Rotas em Execução & Atribuição de Motoristas ({routes.length})
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Selecione o motorista responsável por cada rota planeada e acompanhe o progresso das descargas.
+              </p>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-950/80 text-zinc-400 font-bold uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4">Rota</th>
-                  <th className="py-3 px-4">Motorista</th>
-                  <th className="py-3 px-4">Viatura</th>
-                  <th className="py-3 px-4">Progresso</th>
-                  <th className="py-3 px-4 text-center">Falhas</th>
+                <tr className="border-b border-zinc-800 bg-zinc-950/80 text-zinc-400 font-bold uppercase text-[10px]">
+                  <th className="py-3 px-4">Rota / Plano</th>
+                  <th className="py-3 px-4 w-60">Motorista Responsável</th>
+                  <th className="py-3 px-4">Viatura / Matrícula</th>
+                  <th className="py-3 px-4">Progresso Real</th>
+                  <th className="py-3 px-4 text-center">Insucessos</th>
                   <th className="py-3 px-4 text-center">Último Sinal</th>
-                  <th className="py-3 px-4 text-right">Ação</th>
+                  <th className="py-3 px-4 text-right">Detalhes</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/60 font-medium">
+              <tbody className="divide-y divide-zinc-800/60 font-sans">
                 {routes.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-zinc-400">
-                      Nenhuma rota calculada para o projeto selecionado. Calcule as rotas no menu Planeamento.
+                    <td colSpan={7} className="py-12 text-center text-zinc-500">
+                      Nenhuma rota planeada encontrada para este projeto. Execute primeiro o cálculo no passo 3. Planeamento.
                     </td>
                   </tr>
                 ) : (
@@ -148,7 +179,27 @@ export default function TrackingPage() {
                             <span className="text-zinc-400 text-[10px]">{isExpanded ? "▼" : "▶"}</span>
                             <span>{r.route_id}</span>
                           </td>
-                          <td className="py-3 px-4 text-zinc-200">{r.driver_name}</td>
+                          <td
+                            className="py-3 px-4"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <select
+                              value={r.driver_name === "Não Atribuído" ? "" : r.driver_name}
+                              onChange={(e) => handleAssignDriver(r.route_id, e.target.value)}
+                              className={`bg-zinc-900 border text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer transition-all outline-none w-full max-w-[220px] ${
+                                r.driver_name && r.driver_name !== "Não Atribuído"
+                                  ? "text-indigo-300 font-bold border-indigo-500/60 bg-indigo-950/20"
+                                  : "text-amber-400 border-amber-500/50 bg-amber-950/20"
+                              }`}
+                            >
+                              <option value="">⚠️ Não Atribuído</option>
+                              {drivers.map((d: any) => (
+                                <option key={d.name} value={d.name}>
+                                  👤 {d.name} {d.matricula ? `[${d.matricula}]` : ""} {d.phone ? `(${d.phone})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
                           <td className="py-3 px-4 text-zinc-300 font-mono text-[11px]">{r.vehicle}</td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2 w-36">
@@ -160,7 +211,7 @@ export default function TrackingPage() {
                           </td>
                           <td className="py-3 px-4 text-center">
                             {r.falhadas > 0 ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border-rose-500/30">
                                 {r.falhadas}
                               </span>
                             ) : (
@@ -190,7 +241,7 @@ export default function TrackingPage() {
                               <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
                                 <div className="p-2.5 bg-zinc-850 border-b border-zinc-800 flex justify-between items-center text-xs font-bold text-zinc-200">
                                   <span>📦 Lista de Clientes & Picagens ({r.stops.length} paragens)</span>
-                                  <span className="text-[11px] text-zinc-400 font-normal">Motorista: {r.driver_name} | Viatura: {r.vehicle}</span>
+                                  <span className="text-[11px] text-zinc-400 font-normal">Motorista Atribuído: <strong className="text-indigo-400">{r.driver_name}</strong> | Viatura: {r.vehicle}</span>
                                 </div>
                                 <table className="w-full text-left text-xs border-collapse">
                                   <thead>
