@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from utils.rules_engine import is_vehicle_compatible, extract_tags
 
 SPEED_KMH = 45.0
-ROAD_FACTOR = 1.28
+ROAD_FACTOR = 1.30
 SERVICE_MIN = 15.0
 
 class AdvancedRouteOptimizer:

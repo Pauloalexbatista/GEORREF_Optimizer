@@ -290,15 +290,21 @@ def get_depot_coords(warehouses_df, wh_name=None):
                         
                 if lat_col and lon_col:
                     if wh_name and name_col:
-                        match = warehouses_df[warehouses_df[name_col].astype(str).str.strip().str.lower() == str(wh_name).strip().lower()]
+                        wh_str = str(wh_name).strip().lower()
+                        match = warehouses_df[warehouses_df[name_col].astype(str).str.strip().str.lower() == wh_str]
                         if not match.empty:
                             return float(match.iloc[0][lat_col]), float(match.iloc[0][lon_col])
+                        # Fuzzy match
+                        for _, w_row in warehouses_df.iterrows():
+                            w_n = str(w_row[name_col]).strip().lower()
+                            if w_n in wh_str or wh_str in w_n:
+                                return float(w_row[lat_col]), float(w_row[lon_col])
                     return float(warehouses_df.iloc[0][lat_col]), float(warehouses_df.iloc[0][lon_col])
     except Exception as e:
         print(f"Notice in get_depot_coords: {e}")
     return 38.6593, -9.1758
 
-def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 15, empresa_id: int = 1, projeto_id: int = 0) -> list:
+def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 15, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False) -> list:
     stops_list = list(stops_iterable)
     if not stops_list:
         return []
@@ -310,16 +316,17 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
     # STRICT: Vehicle departure time is EXACTLY its configured driver shift start time
     cur_time_min = parse_time_to_minutes(start_time_str, 480)
     
-    # Attempt Google Routes with Live Traffic calculation
+    # Attempt Google Routes with Live Traffic calculation only when explicitly requested
     g_legs = None
-    try:
-        stops_coords = [(float(s.get("Latitude", 0)), float(s.get("Longitude", 0))) for s in stops_list if float(s.get("Latitude", 0)) != 0]
-        if stops_coords and len(stops_coords) <= 23:
-            g_res = calculate_google_traffic_route((depot_lat, depot_lon), stops_coords, cur_time_min, empresa_id=empresa_id, projeto_id=projeto_id)
-            if g_res and g_res.get("legs"):
-                g_legs = g_res["legs"]
-    except Exception as ge:
-        print(f"[Traffic Info]: Using fallback travel model ({ge})")
+    if use_google_traffic:
+        try:
+            stops_coords = [(float(s.get("Latitude", 0)), float(s.get("Longitude", 0))) for s in stops_list if float(s.get("Latitude", 0)) != 0]
+            if stops_coords and len(stops_coords) <= 23:
+                g_res = calculate_google_traffic_route((depot_lat, depot_lon), stops_coords, cur_time_min, empresa_id=empresa_id, projeto_id=projeto_id)
+                if g_res and g_res.get("legs"):
+                    g_legs = g_res["legs"]
+        except Exception as ge:
+            print(f"[Traffic Info]: Using fallback travel model ({ge})")
 
     p_lat, p_lon = depot_lat, depot_lon
     cumul_dist = 0.0
@@ -335,9 +342,9 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             dist = float(g_legs[idx]["distance_km"])
             travel_min = float(g_legs[idx]["duration_min"])
         else:
-            dist = haversine_distance(p_lat, p_lon, c_lat, c_lon)
-            # Hybrid speed: 75 km/h for highway segments (>15km), else avg_speed (urban)
-            segment_speed = 75.0 if dist > 15.0 else avg_speed
+            dist = haversine_distance(p_lat, p_lon, c_lat, c_lon) * 1.28
+            # Hybrid speed: 70 km/h for highway segments (>15km), else avg_speed (urban)
+            segment_speed = 70.0 if dist > 15.0 else avg_speed
             travel_min = (dist / segment_speed) * 60.0
         cumul_dist += dist
         arr_min = cur_time_min + travel_min
@@ -477,12 +484,14 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         # Add warehouses first
         warehouse_indices = {}
         for idx, row in warehouses_df.iterrows():
-            wh_name = str(row["Nome_Armazem"])
+            wh_name = str(row.get("Nome_Armazem", row.get("Nome", f"Armazem_{idx}")))
             locations.append((float(row["Latitude"]), float(row["Longitude"])))
             location_names.append(wh_name)
             demands.append(0.0)
             volume_demands.append(0.0)
-            warehouse_indices[wh_name] = len(locations) - 1
+            pos_idx = len(locations) - 1
+            warehouse_indices[wh_name.strip().lower()] = pos_idx
+            warehouse_indices[wh_name.strip()] = pos_idx
             
         num_warehouses = len(locations)
         client_start_idx = num_warehouses
@@ -526,8 +535,18 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         for vehicle_name, vehicle_data in fleet_dict.items():
             vehicle_capacities.append(vehicle_data["capacity"])
             vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
-            wh_name = vehicle_data["warehouse"]
-            depot_indices.append(warehouse_indices.get(wh_name, 0))
+            wh_name = str(vehicle_data.get("warehouse", "") or "").strip()
+            dep_idx = 0
+            if wh_name:
+                wh_norm = wh_name.lower()
+                if wh_norm in warehouse_indices:
+                    dep_idx = warehouse_indices[wh_norm]
+                else:
+                    for k, idx_val in warehouse_indices.items():
+                        if k in wh_norm or wh_norm in k:
+                            dep_idx = idx_val
+                            break
+            depot_indices.append(dep_idx)
             vehicle_names.append(vehicle_name)
             vehicle_warehouses.append(wh_name)
             
@@ -536,8 +555,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_start_times.append(s_min)
             vehicle_end_times.append(e_min)
 
-        # Parse client time windows with multi-column fallback
-        client_time_windows = []
+        # Parse client time windows with warehouse prefix for exact 1-to-1 index matching
+        client_time_windows = [(0, 1440) for _ in range(num_warehouses)]
         for idx, row in deliveries_df.iterrows():
             cs_min, ce_min = 0, 1440
             for col in ["Janela_Horaria", "janela_horaria", "Horario"]:
@@ -579,9 +598,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 except ValueError:
                     pass
             
-        client_warehouses = list(deliveries_df["Armazem"].fillna("")) if "Armazem" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))]
-        client_rules = list(deliveries_df["Regras"].fillna("")) if "Regras" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))]
+        client_warehouses = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Armazem"].fillna("")) if "Armazem" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
+        client_rules = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Regras"].fillna("")) if "Regras" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
         vehicle_rules = [str(fleet_dict.get(v_name, {}).get("regras", "")) for v_name in vehicle_names]
+        vehicle_max_stops = [int(fleet_dict.get(v_name, {}).get("max_entregas", 30) or 30) for v_name in vehicle_names]
         rules_matrix = state_dict.get("rules_matrix", [])
         
         optimizer = AdvancedRouteOptimizer()
@@ -602,7 +622,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             locations=locations,
             client_rules=client_rules,
             vehicle_rules=vehicle_rules,
-            rules_matrix=rules_matrix
+            rules_matrix=rules_matrix,
+            vehicle_max_stops=vehicle_max_stops
         )
         
         # 6. Convert solver output to routes list

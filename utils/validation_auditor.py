@@ -87,7 +87,9 @@ def audit_route_plan(
     unique_routes = [r for r in df["Rota"].dropna().unique() if str(r).lower() not in ["por distribuir", "pendente", "nan", ""]]
 
     for r_name in unique_routes:
-        df_r = df[df["Rota"] == r_name].sort_values(by="Ordem" if "Ordem" in df.columns else df.index)
+        df_r = df[df["Rota"] == r_name]
+        if "Ordem" in df_r.columns:
+            df_r = df_r.sort_values(by="Ordem")
         v_conf = fleet_config.get(r_name, {})
         v_rules = str(v_conf.get("regras", ""))
         v_start_min = parse_time_to_minutes(v_conf.get("horario_inicio", "08:00"), 480)
