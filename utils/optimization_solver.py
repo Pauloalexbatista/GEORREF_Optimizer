@@ -1,18 +1,22 @@
 """
-GEOREF Optimizer — Advanced VRPTW Engine (6-Phase Layered Architecture)
+GEOREF Optimizer — Advanced Robust VRPTW Engine (6-Phase Architecture)
 =======================================================================
-Corrigido: Mapeamento de depósito correto por veículo (depot_idx em vez de 0).
+Enterprise-grade Vehicle Routing Problem with Time Windows & Tag Constraints:
+- Strict Zero-Error Compliance (Zero tolerance on time windows, shift ends, weights, volumes)
+- Far-First Logistics Principle (Furthest nodes solved first, dropped nodes strictly closest to depot)
+- Tag-Constrained Capacity Reservation & Ejection Chains (Specialized vehicles reserved for tagged deliveries)
+- Push-Inward Displacement (Swap closer assigned stops to prioritize distant unassigned stops)
+- Multi-Depot and Dynamic Fleet Support
 """
 
-from utils.rules_engine import is_vehicle_compatible, extract_tags
 import math
 import time
 from typing import List, Dict, Any, Tuple, Optional
+from utils.rules_engine import is_vehicle_compatible, extract_tags
 
-SPEED_KMH   = 32.0
-ROAD_FACTOR = 1.30
+SPEED_KMH = 45.0
+ROAD_FACTOR = 1.28
 SERVICE_MIN = 15.0
-MAX_STOPS   = 40
 
 class AdvancedRouteOptimizer:
     def __init__(self):
@@ -38,20 +42,28 @@ class AdvancedRouteOptimizer:
         client_rules: Optional[List[str]] = None,
         vehicle_rules: Optional[List[str]] = None,
         rules_matrix: Optional[List[Dict[str, Any]]] = None,
+        vehicle_max_stops: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        params          = optimization_params or {}
-        strategy        = str(params.get("strategy",       "clusters") or "clusters").lower()
-        load_mode       = str(params.get("load_mode",      "full")     or "full").lower()
-        solving_depth   = str(params.get("solving_depth",  "balanced") or "balanced").lower()
-        time_limit      = float(params.get("time_limit_seconds", 45)   or 45)
+        params = optimization_params or {}
+        strategy = str(params.get("strategy", "clusters") or "clusters").lower()
+        load_mode = str(params.get("load_mode", "full") or "full").lower()
+        solving_depth = str(params.get("solving_depth", "balanced") or "balanced").lower()
+        time_limit = float(params.get("time_limit_seconds", 45) or 45)
+        respect_tw = bool(params.get("respect_time_windows", True))
 
-        respect_tw = bool(params.get("respect_time_windows", False))
-
-        return self._solve_layered_vrptw(
-            distance_matrix, demands, vehicle_capacities, depot_indices,
-            num_warehouses, volume_demands, vehicle_volume_capacities,
-            client_warehouses, vehicle_warehouses,
-            vehicle_start_times, vehicle_end_times, client_time_windows,
+        return self._solve_robust_vrptw(
+            distance_matrix=distance_matrix,
+            demands=demands,
+            vehicle_capacities=vehicle_capacities,
+            depot_indices=depot_indices,
+            num_warehouses=num_warehouses,
+            volume_demands=volume_demands,
+            vehicle_volume_capacities=vehicle_volume_capacities,
+            client_warehouses=client_warehouses,
+            vehicle_warehouses=vehicle_warehouses,
+            vehicle_start_times=vehicle_start_times,
+            vehicle_end_times=vehicle_end_times,
+            client_time_windows=client_time_windows,
             locations=locations,
             strategy=strategy,
             load_mode=load_mode,
@@ -60,10 +72,11 @@ class AdvancedRouteOptimizer:
             client_rules=client_rules,
             vehicle_rules=vehicle_rules,
             rules_matrix=rules_matrix,
-            respect_time_windows=respect_tw
+            respect_time_windows=respect_tw,
+            vehicle_max_stops=vehicle_max_stops
         )
 
-    def _solve_layered_vrptw(
+    def _solve_robust_vrptw(
         self,
         distance_matrix, demands, vehicle_capacities, depot_indices,
         num_warehouses, volume_demands, vehicle_volume_capacities,
@@ -77,524 +90,443 @@ class AdvancedRouteOptimizer:
         client_rules=None,
         vehicle_rules=None,
         rules_matrix=None,
-        respect_time_windows=False,
+        respect_time_windows=True,
+        vehicle_max_stops=None
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
-        num_clients  = len(demands) - num_warehouses
+        num_clients = len(demands) - num_warehouses
         if num_vehicles == 0 or num_clients <= 0:
             return {"routes": [[] for _ in range(num_vehicles)], "dropped_nodes": [], "status": "no_data"}
 
-        if solving_depth in ("deep", "profundo", "high"):
-            max_iters = 2000
-            max_time  = max(time_limit_seconds, 120.0)
-        elif solving_depth in ("fast", "rapido"):
-            max_iters = 100
-            max_time  = min(time_limit_seconds, 15.0)
-        else:
-            max_iters = 500
-            max_time  = max(time_limit_seconds, 45.0)
-
         t0 = time.time()
 
-        # Build warehouse name to index mapping using vehicles config
+        # ------------------------------------------------------------------
+        # DATA PREPARATION & NORMALIZATION
+        # ------------------------------------------------------------------
         wh_name_to_idx = {}
-        if vehicle_warehouses and depot_indices:
-            for v in range(num_vehicles):
-                wh_name = vehicle_warehouses[v]
-                wh_name_to_idx[wh_name] = depot_indices[v]
+        for v_idx in range(num_vehicles):
+            wh_name = str(vehicle_warehouses[v_idx] if vehicle_warehouses else "").strip().lower()
+            if wh_name and wh_name not in wh_name_to_idx:
+                dep_i = depot_indices[v_idx] if v_idx < len(depot_indices) else 0
+                wh_name_to_idx[wh_name] = dep_i
 
-        # Build client data
-        client_data: Dict[int, Dict] = {}
+        client_data = {}
         for c in range(num_warehouses, len(demands)):
-            lat = lon = 0.0
-            if locations and c < len(locations):
-                lat, lon = locations[c]
+            c_idx = c - num_warehouses
+            tw = client_time_windows[c] if client_time_windows and c < len(client_time_windows) else (480, 1080)
+            c_wh_name = str(client_warehouses[c] if client_warehouses and c < len(client_warehouses) else "").strip().lower()
+            c_depot_idx = wh_name_to_idx.get(c_wh_name, 0)
+            dist_to_depot = distance_matrix[c_depot_idx][c] if c_depot_idx < len(distance_matrix) and c < len(distance_matrix[c_depot_idx]) else 10.0
 
-            c_wh = client_warehouses[c - num_warehouses] if client_warehouses and (c - num_warehouses) < len(client_warehouses) else ""
-            c_depot_idx = wh_name_to_idx.get(c_wh, 0)
+            loc = locations[c] if locations and c < len(locations) else (38.7, -9.1)
+            c_rule = str(client_rules[c] if client_rules and c < len(client_rules) else "")
 
-            angle = math.atan2(lat - locations[c_depot_idx][0], lon - locations[c_depot_idx][1]) if locations else 0.0
-            dist  = distance_matrix[c_depot_idx][c] if c < len(distance_matrix[c_depot_idx]) else 10.0
-
-            tw_s, tw_e = 0, 1440
-            if client_time_windows and (c - num_warehouses) < len(client_time_windows):
-                tw_s, tw_e = client_time_windows[c - num_warehouses]
-
-            c_rule = client_rules[c - num_warehouses] if client_rules and (c - num_warehouses) < len(client_rules) else ""
             client_data[c] = {
-                "idx":           c,
-                "lat":           lat,
-                "lon":           lon,
-                "angle":         angle,
-                "dist_to_depot": dist,
-                "weight":        float(demands[c]),
-                "volume":        float(volume_demands[c]) if volume_demands and c < len(volume_demands) else 0.1,
-                "tw_start":      tw_s,
-                "tw_end":        tw_e,
-                "wh":            c_wh,
-                "depot_idx":     c_depot_idx,
-                "rules":         c_rule
+                "weight": float(demands[c]),
+                "volume": float(volume_demands[c]) if volume_demands and c < len(volume_demands) else 0.1,
+                "tw_start": int(tw[0]) if tw else 480,
+                "tw_end": int(tw[1]) if tw else 1080,
+                "wh": client_warehouses[c] if client_warehouses and c < len(client_warehouses) else "",
+                "depot_idx": c_depot_idx,
+                "dist_to_depot": float(dist_to_depot),
+                "lat": float(loc[0]),
+                "lon": float(loc[1]),
+                "rules": c_rule,
+                "has_rules": bool(c_rule.strip()),
             }
 
-        # Build vehicle data
-        vehicle_data: List[Dict] = []
+        vehicle_data = {}
         for v in range(num_vehicles):
-            vs = vehicle_start_times[v] if vehicle_start_times and v < len(vehicle_start_times) else 480
-            ve = vehicle_end_times[v]   if vehicle_end_times   and v < len(vehicle_end_times)   else 1080
-            cw = float(vehicle_capacities[v])
-            cv = float(vehicle_volume_capacities[v]) if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 100000.0
-            wh = vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else ""
-            v_depot_idx = depot_indices[v] if depot_indices and v < len(depot_indices) else 0
+            v_depot_idx = depot_indices[v] if v < len(depot_indices) else 0
+            v_rule = str(vehicle_rules[v] if vehicle_rules and v < len(vehicle_rules) else "")
+            v_max_st = vehicle_max_stops[v] if vehicle_max_stops and v < len(vehicle_max_stops) else 45
 
-            v_rule = vehicle_rules[v] if vehicle_rules and v < len(vehicle_rules) else ""
-            vehicle_data.append({
-                "id": v, "start": vs, "end": ve,
-                "cap_w": cw, "cap_v": cv, "wh": wh, "depot_idx": v_depot_idx,
-                "rules": v_rule
-            })
+            vehicle_data[v] = {
+                "cap_w": float(vehicle_capacities[v]),
+                "cap_v": float(vehicle_volume_capacities[v]) if vehicle_volume_capacities and v < len(vehicle_volume_capacities) else 10.0,
+                "start": int(vehicle_start_times[v]) if vehicle_start_times and v < len(vehicle_start_times) else 480,
+                "end": int(vehicle_end_times[v]) if vehicle_end_times and v < len(vehicle_end_times) else 1080,
+                "wh": vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else "",
+                "depot_idx": v_depot_idx,
+                "rules": v_rule,
+                "has_rules": bool(v_rule.strip()),
+                "max_stops": v_max_st
+            }
 
         # ------------------------------------------------------------------
-        # HELPERS
+        # EVALUATION & SEQUENCING HELPERS (TOLERÂNCIA ZERO)
         # ------------------------------------------------------------------
-        def _sequence(nodes, v):
+        def _sequence(nodes: List[int], v: int) -> List[int]:
+            if len(nodes) <= 1:
+                return list(nodes)
             v_depot = vehicle_data[v]["depot_idx"]
-            return sorted(nodes, key=lambda c: (client_data[c]["tw_start"],
-                                                distance_matrix[v_depot][c]))
+            unvis = set(nodes)
+            cur = v_depot
+            cur_t = vehicle_data[v]["start"]
+            seq = []
 
-        def _eval(nodes, v):
+            while unvis:
+                best_c = None
+                best_score = float("inf")
+                for c in unvis:
+                    d_km = distance_matrix[cur][c] * ROAD_FACTOR
+                    t_min = (d_km / SPEED_KMH) * 60.0
+                    arr_t = cur_t + t_min
+                    cd = client_data[c]
+
+                    # Urgency penalty based on time window end
+                    tw_urgency = max(0, cd["tw_end"] - arr_t)
+                    tw_late_penalty = max(0, arr_t - cd["tw_end"]) * 2000.0
+                    score = d_km * 2.0 + tw_late_penalty + tw_urgency * 0.05
+
+                    if score < best_score:
+                        best_score = score
+                        best_c = c
+
+                if best_c is None:
+                    best_c = next(iter(unvis))
+
+                seq.append(best_c)
+                unvis.remove(best_c)
+                d_km = distance_matrix[cur][best_c] * ROAD_FACTOR
+                arr_t = cur_t + (d_km / SPEED_KMH) * 60.0
+                cur_t = max(arr_t, client_data[best_c]["tw_start"]) + SERVICE_MIN
+                cur = best_c
+
+            return seq
+
+        def _eval(nodes: List[int], v: int) -> Tuple[bool, float, int, float]:
             if not nodes:
-                return True, 0.0, 0, 0
-            vd  = vehicle_data[v]
+                return True, 0.0, 0, 0.0
+            vd = vehicle_data[v]
             v_depot = vd["depot_idx"]
-            seq = nodes  # Evaluate literal physical order
+            cur = v_depot
             cur_t = float(vd["start"])
-            cur_l = v_depot
             total_km = 0.0
-            total_wait = 0
             late_count = 0
-            for c in seq:
-                cd = client_data[c]
-                d  = distance_matrix[cur_l][c] * ROAD_FACTOR
-                total_km += d
-                segment_speed = 75.0 if (d / ROAD_FACTOR) > 15.0 else SPEED_KMH
-                cur_t    += (d / max(segment_speed, 15.0)) * 60.0
-                if cur_t < cd["tw_start"]:
-                    total_wait += int(cd["tw_start"] - cur_t)
-                    cur_t = float(cd["tw_start"])
-                elif cd["tw_end"] < 1440 and cur_t > cd["tw_end"]:
-                    late_count += 1
-                cur_t += SERVICE_MIN
-                cur_l  = c
-            d_ret     = distance_matrix[cur_l][v_depot] * ROAD_FACTOR
-            total_km += d_ret
-            segment_speed = 75.0 if (d_ret / ROAD_FACTOR) > 15.0 else SPEED_KMH
-            cur_t    += (d_ret / max(segment_speed, 15.0)) * 60.0
-            duration  = int(round(cur_t - vd["start"]))
+            total_wait = 0.0
 
-            # Strict Logistics Rules:
-            # 1. Zero customer time window violations (no late deliveries allowed)
-            # 2. Driver shift end respected (vehicle must return to base before shift ends + 15 min buffer)
-            # 3. Maximum stops per vehicle
+            for c in nodes:
+                cd = client_data[c]
+                d_km = distance_matrix[cur][c] * ROAD_FACTOR
+                total_km += d_km
+                arr_t = cur_t + (d_km / SPEED_KMH) * 60.0
+                
+                # Tolerância Zero em Janela Horária do Cliente
+                if arr_t > cd["tw_end"]:
+                    late_count += 1
+                elif arr_t < cd["tw_start"]:
+                    total_wait += (cd["tw_start"] - arr_t)
+                
+                cur_t = max(arr_t, cd["tw_start"]) + SERVICE_MIN
+                cur = c
+
+            # Regresso ao Armazém
+            d_home = distance_matrix[cur][v_depot] * ROAD_FACTOR
+            total_km += d_home
+            cur_t += (d_home / SPEED_KMH) * 60.0
+
+            # TOLERÂNCIA ZERO:
+            # 1. Zero atrasos em clientes
+            # 2. Hora de regresso ao armazém estritamente <= fim do turno
+            # 3. Número de paragens <= max_stops
             is_feasible = (
-                len(nodes) <= MAX_STOPS
+                len(nodes) <= vd["max_stops"]
                 and late_count == 0
-                and cur_t <= (vd["end"] + 15)
+                and cur_t <= float(vd["end"])
             )
             return is_feasible, total_km, late_count, total_wait
 
-        def _quick_ok(c, v, cur_w, cur_vol):
+        def _quick_ok(c: int, v: int, cur_w: float, cur_vol: float, is_reservation_phase: bool = False) -> bool:
             vd = vehicle_data[v]
             cd = client_data[c]
-            
-            # 1. Rules / Tags compatibility check
-            c_rules = cd.get("rules", "")
-            v_rules = vd.get("rules", "")
-            
+
+            # 1. Rules / Tags Compatibility
+            c_rules = cd["rules"]
+            v_rules = vd["rules"]
             if c_rules or v_rules:
                 if not is_vehicle_compatible(v_rules, c_rules, rules_matrix):
                     return False
-                # If vehicle is specialized with rules, preserve its capacity for matching tagged clients
-                if v_rules and not c_rules:
-                    has_unassigned_matching = any(
-                        client_data[uc].get("rules")
-                        and is_vehicle_compatible(v_rules, client_data[uc].get("rules"), rules_matrix)
-                        for uc in dropped
-                        if uc != c
-                    )
-                    if has_unassigned_matching:
-                        return False
+                # During reservation phase, prevent non-tagged clients from occupying tagged vehicles
+                if is_reservation_phase and v_rules and not c_rules:
+                    return False
 
-            # 2. Capacity checks
-            if cur_w   + cd["weight"] > vd["cap_w"]: return False
-            if cur_vol + cd["volume"] > vd["cap_v"]: return False
+            # 2. Capacity Checks
+            if cur_w + cd["weight"] > vd["cap_w"]:
+                return False
+            if cur_vol + cd["volume"] > vd["cap_v"]:
+                return False
 
-            # 3. Warehouse match check (flexible if 1 warehouse or unassigned)
+            # 3. Warehouse Match Check
             if num_warehouses > 1 and cd["wh"] and vd["wh"]:
                 cd_wh_norm = cd["wh"].strip().lower()
                 vd_wh_norm = vd["wh"].strip().lower()
-                if cd_wh_norm and vd_wh_norm and cd_wh_norm not in ["armazém central", "armazém principal", "n/a", "none"] and vd_wh_norm not in ["armazém central", "armazém principal", "n/a", "none"]:
+                if cd_wh_norm and vd_wh_norm and cd_wh_norm not in ["armazém central", "n/a", "none"]:
                     if cd_wh_norm != vd_wh_norm and cd_wh_norm not in vd_wh_norm and vd_wh_norm not in cd_wh_norm:
                         return False
 
-            # 4. Customer and vehicle time window compatibility
-            if cd["tw_start"] >= vd["end"]:   return False
-            if cd["tw_end"]   <  vd["start"]: return False
-                
+            # 4. Basic Time Window Feasibility
+            if cd["tw_start"] >= vd["end"]:
+                return False
+            if cd["tw_end"] < vd["start"]:
+                return False
+
             return True
 
-        def _insert_cost(c, route, v):
+        def _insert_cost(c: int, route: List[int], v: int) -> float:
             cd = client_data[c]
             v_depot = vehicle_data[v]["depot_idx"]
             if not route:
                 return distance_matrix[v_depot][c] * ROAD_FACTOR
-            if strategy == "min_km":
-                best = float("inf")
-                seq  = _sequence(route, v)
-                prev_seq = [v_depot] + seq
-                next_seq = seq + [v_depot]
-                for i in range(len(seq) + 1):
-                    pn = prev_seq[i]
-                    nn = next_seq[i]
-                    extra = (distance_matrix[pn][c] + distance_matrix[c][nn]
-                             - distance_matrix[pn][nn]) * ROAD_FACTOR
-                    if extra < best:
-                        best = extra
-                return best
-            else:
-                lats = [client_data[r]["lat"] for r in route]
-                lons = [client_data[r]["lon"] for r in route]
-                cg_lat = sum(lats) / len(lats)
-                cg_lon = sum(lons) / len(lons)
-                return math.sqrt((cd["lat"] - cg_lat) ** 2 +
-                                 (cd["lon"] - cg_lon) ** 2) * 111.0
-
-        def _route_km(v):
-            _, km, _, _ = _eval(routes[v], v)
-            return km
-
-        def _total_lates(v):
-            _, _, lates, _ = _eval(routes[v], v)
-            return lates
+            
+            lats = [client_data[r]["lat"] for r in route]
+            lons = [client_data[r]["lon"] for r in route]
+            cg_lat = sum(lats) / len(lats)
+            cg_lon = sum(lons) / len(lons)
+            geo_dist = math.sqrt((cd["lat"] - cg_lat) ** 2 + (cd["lon"] - cg_lon) ** 2) * 111.0
+            return geo_dist
 
         # ------------------------------------------------------------------
-        # PHASE 1 — FAR-FIRST GREEDY FILL (Prioritizing Tagged Deliveries)
+        # PHASE 0 & 1 — RESTRICTED TAG MATCHING & FAR-FIRST CONSTRUCTIVE
         # ------------------------------------------------------------------
-        all_clients = sorted(client_data.keys(),
-                             key=lambda c: (1 if client_data[c].get("rules") else 0, -client_data[c]["dist_to_depot"]),
-                             reverse=True)
+        routes: List[List[int]] = [[] for _ in range(num_vehicles)]
+        veh_w: List[float] = [0.0] * num_vehicles
+        veh_v: List[float] = [0.0] * num_vehicles
+        assigned: set = set()
+        dropped: set = set(client_data.keys())
 
-        routes:   List[List[int]] = [[] for _ in range(num_vehicles)]
-        veh_w:    List[float]     = [0.0] * num_vehicles
-        veh_v:    List[float]     = [0.0] * num_vehicles
-        assigned: set             = set()
-        dropped:  set             = set(all_clients)
+        # Split clients: Priority 1 = Tagged deliveries (Far-First); Priority 2 = General deliveries (Far-First)
+        tagged_clients = [c for c in client_data.keys() if client_data[c]["has_rules"]]
+        general_clients = [c for c in client_data.keys() if not client_data[c]["has_rules"]]
 
-        for c in all_clients:
-            cd        = client_data[c]
-            best_v    = None
+        tagged_clients.sort(key=lambda c: -client_data[c]["dist_to_depot"])
+        general_clients.sort(key=lambda c: -client_data[c]["dist_to_depot"])
+
+        # PASS 1: Assign Tagged Clients strictly to Tagged Vehicles
+        for c in tagged_clients:
+            cd = client_data[c]
+            best_v = None
             best_cost = float("inf")
 
             for v in range(num_vehicles):
-                if not _quick_ok(c, v, veh_w[v], veh_v[v]):
+                if not _quick_ok(c, v, veh_w[v], veh_v[v], is_reservation_phase=True):
                     continue
                 test_r = _sequence(routes[v] + [c], v)
-                feas, _, lates, wait = _eval(test_r, v)
+                feas, _, _, _ = _eval(test_r, v)
                 if not feas:
                     continue
                 cost = _insert_cost(c, routes[v], v)
-                if respect_time_windows:
-                    cost += lates * 150.0 + wait * 0.3
-                else:
-                    cost += wait * 0.1
-                
-                # Tag preference bonus: if vehicle has exact tag match with client, prioritize it
-                c_rules = cd.get("rules", "")
-                v_rules = vehicle_data[v].get("rules", "")
-                if c_rules and v_rules:
-                    cost -= 500.0  # Strong affinity bonus for matching tags
-                elif not c_rules and v_rules:
-                    cost += 200.0  # Preserve specialized vehicles for tagged clients
-                
                 if cost < best_cost:
                     best_cost = cost
-                    best_v    = v
+                    best_v = v
 
             if best_v is not None:
                 routes[best_v] = _sequence(routes[best_v] + [c], best_v)
-                veh_w[best_v]  += cd["weight"]
-                veh_v[best_v]  += cd["volume"]
+                veh_w[best_v] += cd["weight"]
+                veh_v[best_v] += cd["volume"]
+                assigned.add(c)
+                dropped.discard(c)
+
+        # PASS 2: Assign General Clients (Far-First) to available non-tagged / remaining vehicles
+        for c in general_clients:
+            cd = client_data[c]
+            best_v = None
+            best_cost = float("inf")
+
+            # First try general vehicles (without specialized tags), then tagged if empty
+            vehicle_order = sorted(range(num_vehicles), key=lambda v: (1 if vehicle_data[v]["has_rules"] else 0))
+
+            for v in vehicle_order:
+                if not _quick_ok(c, v, veh_w[v], veh_v[v], is_reservation_phase=False):
+                    continue
+                test_r = _sequence(routes[v] + [c], v)
+                feas, _, _, _ = _eval(test_r, v)
+                if not feas:
+                    continue
+                cost = _insert_cost(c, routes[v], v)
+                # Extra penalty for putting general client in a specialized tagged vehicle
+                if vehicle_data[v]["has_rules"]:
+                    cost += 500.0
+
+                if cost < best_cost:
+                    best_cost = cost
+                    best_v = v
+
+            if best_v is not None:
+                routes[best_v] = _sequence(routes[best_v] + [c], best_v)
+                veh_w[best_v] += cd["weight"]
+                veh_v[best_v] += cd["volume"]
                 assigned.add(c)
                 dropped.discard(c)
 
         # ------------------------------------------------------------------
-        # PHASE 2 — PUSH-INWARD
+        # PHASE 2 — EJECTION CHAINS (Libertação de Viaturas com Tags)
         # ------------------------------------------------------------------
-        def _run_push_inward():
-            drop_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
-            did_swap    = True
-            while did_swap:
-                did_swap = False
-                for drop_c in list(drop_sorted):
-                    drop_cd  = client_data[drop_c]
-                    best_v   = None
-                    best_sw  = None
-                    best_dist = float("inf")
+        # If any tagged client remains dropped, eject general clients from tagged vehicles to free general vehicles
+        dropped_tagged = [c for c in dropped if client_data[c]["has_rules"]]
+        for dt_c in dropped_tagged:
+            dt_cd = client_data[dt_c]
+            ejected = False
 
-                    for v in range(num_vehicles):
-                        vd = vehicle_data[v]
-                        for asgn_c in routes[v]:
-                            acd = client_data[asgn_c]
-                            if drop_cd["dist_to_depot"] <= acd["dist_to_depot"]:
-                                continue
-                            if not _quick_ok(drop_c, v, veh_w[v] - acd["weight"], veh_v[v] - acd["volume"]):
-                                continue
-                            test_r = _sequence([x for x in routes[v] if x != asgn_c] + [drop_c], v)
-                            feas, _, lates, _ = _eval(test_r, v)
-                            if not feas:
-                                continue
-                            if acd["dist_to_depot"] < best_dist:
-                                best_v    = v
-                                best_sw   = asgn_c
-                                best_dist = acd["dist_to_depot"]
+            for v_tag in range(num_vehicles):
+                if ejected:
+                    break
+                if not vehicle_data[v_tag]["has_rules"]:
+                    continue
+                if not is_vehicle_compatible(vehicle_data[v_tag]["rules"], dt_cd["rules"], rules_matrix):
+                    continue
 
-                    if best_sw is not None:
-                        acd = client_data[best_sw]
-                        routes[best_v] = _sequence([x for x in routes[best_v] if x != best_sw] + [drop_c], best_v)
-                        veh_w[best_v] += drop_cd["weight"]  - acd["weight"]
-                        veh_v[best_v] += drop_cd["volume"]  - acd["volume"]
-                        assigned.add(drop_c);    dropped.discard(drop_c)
-                        assigned.discard(best_sw); dropped.add(best_sw)
-                        drop_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
-                        did_swap = True
+                # Find general clients currently in v_tag
+                gen_in_v = [c for c in routes[v_tag] if not client_data[c]["has_rules"]]
+                for gc in gen_in_v:
+                    gcd = client_data[gc]
+                    # Try to relocate gc to another general vehicle
+                    for v_other in range(num_vehicles):
+                        if v_other == v_tag or vehicle_data[v_other]["has_rules"]:
+                            continue
+                        if not _quick_ok(gc, v_other, veh_w[v_other], veh_v[v_other]):
+                            continue
+                        test_other = _sequence(routes[v_other] + [gc], v_other)
+                        feas_other, _, _, _ = _eval(test_other, v_other)
+                        if not feas_other:
+                            continue
+
+                        # Test if removing gc and adding dt_c to v_tag works!
+                        cand_vtag = [x for x in routes[v_tag] if x != gc] + [dt_c]
+                        test_vtag = _sequence(cand_vtag, v_tag)
+                        feas_vtag, _, _, _ = _eval(test_vtag, v_tag)
+                        if feas_vtag:
+                            # Apply Ejection!
+                            routes[v_other] = test_other
+                            veh_w[v_other] += gcd["weight"]
+                            veh_v[v_other] += gcd["volume"]
+
+                            routes[v_tag] = test_vtag
+                            veh_w[v_tag] = veh_w[v_tag] - gcd["weight"] + dt_cd["weight"]
+                            veh_v[v_tag] = veh_v[v_tag] - gcd["volume"] + dt_cd["volume"]
+
+                            assigned.add(dt_c)
+                            dropped.discard(dt_c)
+                            ejected = True
+                            break
+                    if ejected:
                         break
 
-        _run_push_inward()
-
         # ------------------------------------------------------------------
-        # PHASES 3+4 — INTER-ROUTE OPTIMISATION LOOP
+        # PHASE 3 — PUSH-INWARD (Displace closer assigned stops to take furthest unassigned)
         # ------------------------------------------------------------------
-        def _run_inter_route_loop():
-            improved  = True
-            iteration = 0
+        drop_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
+        for drop_c in drop_sorted:
+            drop_cd = client_data[drop_c]
+            best_v = None
+            best_swap_c = None
 
-            while improved and iteration < max_iters and (time.time() - t0) < max_time:
-                improved  = False
-                iteration += 1
-
-                # Phase 3: Full Route Swap
-                for va in range(num_vehicles):
-                    for vb in range(va + 1, num_vehicles):
-                        if not routes[va] and not routes[vb]:
-                            continue
-                        late_a = _total_lates(va)
-                        late_b = _total_lates(vb)
-
-                        new_w_a = sum(client_data[c]["weight"] for c in routes[vb])
-                        new_v_a = sum(client_data[c]["volume"] for c in routes[vb])
-                        new_w_b = sum(client_data[c]["weight"] for c in routes[va])
-                        new_v_b = sum(client_data[c]["volume"] for c in routes[va])
-
-                        if new_w_a > vehicle_data[va]["cap_w"]: continue
-                        if new_v_a > vehicle_data[va]["cap_v"]: continue
-                        if new_w_b > vehicle_data[vb]["cap_w"]: continue
-                        if new_v_b > vehicle_data[vb]["cap_v"]: continue
-                        if any(not is_vehicle_compatible(vehicle_data[va]["rules"], client_data[c]["rules"], rules_matrix) for c in routes[vb]): continue
-                        if any(not is_vehicle_compatible(vehicle_data[vb]["rules"], client_data[c]["rules"], rules_matrix) for c in routes[va]): continue
-
-                        feas_asw, km_asw, late_asw, _ = _eval(routes[vb], va)
-                        feas_bsw, km_bsw, late_bsw, _ = _eval(routes[va], vb)
-                        if not feas_asw or not feas_bsw:
-                            continue
-
-                        cur_late = late_a + late_b
-                        new_late = late_asw + late_bsw
-                        accept   = False
-
-                        if new_late < cur_late:
-                            accept = True
-                        elif new_late == cur_late == 0:
-                            cur_km = _route_km(va) + _route_km(vb)
-                            if (km_asw + km_bsw) < cur_km - 0.5:
-                                accept = True
-
-                        if accept:
-                            routes[va], routes[vb] = list(routes[vb]), list(routes[va])
-                            veh_w[va], veh_w[vb]   = new_w_a, new_w_b
-                            veh_v[va], veh_v[vb]   = new_v_a, new_v_b
-                            improved = True
-
-                if improved:
+            for v in range(num_vehicles):
+                vd = vehicle_data[v]
+                if drop_cd["has_rules"] and not is_vehicle_compatible(vd["rules"], drop_cd["rules"], rules_matrix):
+                    continue
+                if not drop_cd["has_rules"] and vd["has_rules"]:
                     continue
 
-                # Phase 4a: Relocate
-                for va in range(num_vehicles):
-                    if not routes[va]:
+                for asgn_c in routes[v]:
+                    acd = client_data[asgn_c]
+                    # Only swap if the dropped stop is significantly FURTHER from depot than assigned stop
+                    if drop_cd["dist_to_depot"] <= acd["dist_to_depot"] * 1.15:
                         continue
-                    for ca in list(routes[va]):
-                        cda = client_data[ca]
-                        km_a_cur = _route_km(va)
-                        for vb in range(num_vehicles):
-                            if va == vb:
-                                continue
-                            if not _quick_ok(ca, vb, veh_w[vb], veh_v[vb]):
-                                continue
-                            test_rb = _sequence(routes[vb] + [ca], vb)
-                            feas_b, km_b_new, late_b, _ = _eval(test_rb, vb)
-                            if not feas_b:
-                                continue
-                            test_ra = _sequence([x for x in routes[va] if x != ca], va)
-                            _, km_a_new, _, _ = _eval(test_ra, va) if test_ra else (True, 0.0, 0, 0)
-                            km_b_cur = _route_km(vb)
-                            if (km_a_new + km_b_new) < (km_a_cur + km_b_cur) - 0.1:
-                                routes[va] = test_ra
-                                routes[vb] = test_rb
-                                veh_w[va] -= cda["weight"]; veh_w[vb] += cda["weight"]
-                                veh_v[va] -= cda["volume"]; veh_v[vb] += cda["volume"]
-                                improved = True
-                                break
-                        if improved: break
-                    if improved: break
-
-                if improved:
-                    continue
-
-                # Phase 4b: Swap
-                for va in range(num_vehicles):
-                    if not routes[va]:
+                    if acd["has_rules"] and not drop_cd["has_rules"]:
                         continue
-                    for ca in list(routes[va]):
-                        cda    = client_data[ca]
-                        km_a_c = _route_km(va)
-                        for vb in range(num_vehicles):
-                            if va == vb or not routes[vb]:
-                                continue
-                            vda = vehicle_data[va]
-                            vdb = vehicle_data[vb]
-                            km_b_c = _route_km(vb)
-                            for cb in list(routes[vb]):
-                                cdb = client_data[cb]
-                                nw_a = veh_w[va] - cda["weight"] + cdb["weight"]
-                                nw_b = veh_w[vb] - cdb["weight"] + cda["weight"]
-                                nv_a = veh_v[va] - cda["volume"] + cdb["volume"]
-                                nv_b = veh_v[vb] - cdb["volume"] + cda["volume"]
-                                if nw_a > vda["cap_w"] or nw_b > vdb["cap_w"]: continue
-                                if nv_a > vda["cap_v"] or nv_b > vdb["cap_v"]: continue
-                                if cdb["tw_start"] >= vda["end"] or cdb["tw_end"] < vda["start"]: continue
-                                if cda["tw_start"] >= vdb["end"] or cda["tw_end"] < vdb["start"]: continue
-                                test_ra = _sequence([cb if x == ca else x for x in routes[va]], va)
-                                test_rb = _sequence([ca if x == cb else x for x in routes[vb]], vb)
-                                feas_a, km_a_n, _, _ = _eval(test_ra, va)
-                                feas_b, km_b_n, _, _ = _eval(test_rb, vb)
-                                if not feas_a or not feas_b: continue
-                                if (km_a_n + km_b_n) < (km_a_c + km_b_c) - 0.1:
-                                    routes[va], routes[vb] = test_ra, test_rb
-                                    veh_w[va], veh_w[vb]   = nw_a, nw_b
-                                    veh_v[va], veh_v[vb]   = nv_a, nv_b
-                                    improved = True
-                                    break
-                            if improved: break
-                        if improved: break
-                    if improved: break
 
-            return iteration
+                    nw = veh_w[v] - acd["weight"] + drop_cd["weight"]
+                    nv = veh_v[v] - acd["volume"] + drop_cd["volume"]
+                    if nw > vd["cap_w"] or nv > vd["cap_v"]:
+                        continue
 
-        iters = _run_inter_route_loop()
+                    cand = [drop_c if x == asgn_c else x for x in routes[v]]
+                    test_r = _sequence(cand, v)
+                    feas, _, _, _ = _eval(test_r, v)
+                    if feas:
+                        best_v = v
+                        best_swap_c = asgn_c
+                        break
+                if best_v is not None:
+                    break
+
+            if best_v is not None and best_swap_c is not None:
+                # Apply swap: drop_c is now assigned, best_swap_c becomes dropped
+                routes[best_v] = _sequence([drop_c if x == best_swap_c else x for x in routes[best_v]], best_v)
+                veh_w[best_v] = veh_w[best_v] - client_data[best_swap_c]["weight"] + drop_cd["weight"]
+                veh_v[best_v] = veh_v[best_v] - client_data[best_swap_c]["volume"] + drop_cd["volume"]
+                assigned.add(drop_c)
+                dropped.discard(drop_c)
+                assigned.discard(best_swap_c)
+                dropped.add(best_swap_c)
 
         # ------------------------------------------------------------------
-        # PHASE 5 — 2-OPT + CONSOLIDATION
+        # PHASE 4 — 2-OPT & INTRA-ROUTE POLISHING
         # ------------------------------------------------------------------
-        def _two_opt(route, v):
+        def _two_opt(route: List[int], v: int) -> List[int]:
             best = _sequence(route, v)
-            n    = len(best)
+            n = len(best)
             if n < 3:
                 return best
             v_depot = vehicle_data[v]["depot_idx"]
-            imp = True
-            while imp:
-                imp = False
+            improved = True
+            while improved:
+                improved = False
                 for i in range(n - 1):
                     for j in range(i + 2, n):
-                        ca = best[i];     cb = best[i + 1]
-                        cc = best[j];     cd_ = best[j + 1] if j + 1 < n else 0
-                        cur = (distance_matrix[ca][cb]
-                               + (distance_matrix[cc][cd_] if cd_ else distance_matrix[cc][v_depot])) * ROAD_FACTOR
-                        new = (distance_matrix[ca][cc]
-                               + (distance_matrix[cb][cd_] if cd_ else distance_matrix[cb][v_depot])) * ROAD_FACTOR
-                        if new < cur - 0.01:
-                            cand = best[:i+1] + list(reversed(best[i+1:j+1])) + best[j+1:]
+                        ca, cb = best[i], best[i + 1]
+                        cc = best[j]
+                        cd_ = best[j + 1] if j + 1 < n else v_depot
+                        cur_dist = (distance_matrix[ca][cb] + distance_matrix[cc][cd_]) * ROAD_FACTOR
+                        new_dist = (distance_matrix[ca][cc] + distance_matrix[cb][cd_]) * ROAD_FACTOR
+                        if new_dist < cur_dist - 0.05:
+                            cand = best[:i + 1] + list(reversed(best[i + 1:j + 1])) + best[j + 1:]
                             feas, _, lates, _ = _eval(cand, v)
                             if feas and lates == 0:
                                 best = cand
-                                imp  = True
+                                improved = True
+                                break
+                    if improved:
+                        break
             return best
 
-        final: List[List[int]] = []
+        final_routes = []
         for v in range(num_vehicles):
-            final.append(_two_opt(routes[v], v) if routes[v] else [])
-
-        # Consolidation: absorb routes with 1-2 stops
-        for vs in range(num_vehicles):
-            if 1 <= len(final[vs]) <= 2:
-                for ca in list(final[vs]):
-                    cda = client_data[ca]
-                    for vt in range(num_vehicles):
-                        if vt == vs or not final[vt]:
-                            continue
-                        if not _quick_ok(ca, vt, veh_w[vt], veh_v[vt]):
-                            continue
-                        test_r = final[vt] + [ca]
-                        feas, _, lates, _ = _eval(test_r, vt)
-                        if feas and lates == 0:
-                            final[vs].remove(ca)
-                            final[vt].append(ca)
-                            veh_w[vs] -= cda["weight"]; veh_w[vt] += cda["weight"]
-                            veh_v[vs] -= cda["volume"]; veh_v[vt] += cda["volume"]
-                            break
+            final_routes.append(_two_opt(routes[v], v) if routes[v] else [])
 
         # ------------------------------------------------------------------
-        # PHASE 6 — SECOND CHANCE RE-INSERTION
+        # PHASE 5 — SECOND CHANCE RESIDUAL RE-INSERTION
         # ------------------------------------------------------------------
-        dropped_sorted = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
-        affected_veh: set = set()
-
-        for drop_c in dropped_sorted:
-            drop_cd  = client_data[drop_c]
-            best_v   = None
+        dropped_residual = sorted(dropped, key=lambda c: -client_data[c]["dist_to_depot"])
+        for drop_c in dropped_residual:
+            drop_cd = client_data[drop_c]
+            best_v = None
             best_cost = float("inf")
             for v in range(num_vehicles):
                 if not _quick_ok(drop_c, v, veh_w[v], veh_v[v]):
                     continue
-                test_r = _sequence(final[v] + [drop_c], v)
+                test_r = _sequence(final_routes[v] + [drop_c], v)
                 feas, _, lates, _ = _eval(test_r, v)
-                if not feas:
+                if not feas or lates > 0:
                     continue
-                cost = _insert_cost(drop_c, final[v], v)
+                cost = _insert_cost(drop_c, final_routes[v], v)
                 if cost < best_cost:
                     best_cost = cost
-                    best_v    = v
+                    best_v = v
+
             if best_v is not None:
-                final[best_v] = _sequence(final[best_v] + [drop_c], best_v)
+                final_routes[best_v] = _sequence(final_routes[best_v] + [drop_c], best_v)
                 veh_w[best_v] += drop_cd["weight"]
                 veh_v[best_v] += drop_cd["volume"]
                 assigned.add(drop_c)
                 dropped.discard(drop_c)
-                affected_veh.add(best_v)
 
-        # Phase 6b: re-polish affected routes
-        for v in affected_veh:
-            if len(final[v]) > 2:
-                final[v] = _two_opt(final[v], v)
-
-        # ------------------------------------------------------------------
-        # RESULT
-        # ------------------------------------------------------------------
-        final_dropped = [c for c in range(num_warehouses, len(demands))
-                         if c not in assigned]
+        final_dropped = [c for c in range(num_warehouses, len(demands)) if c not in assigned]
 
         return {
-            "routes":          final,
-            "dropped_nodes":   final_dropped,
-            "status":          "success",
-            "iterations":      iters,
+            "routes": final_routes,
+            "dropped_nodes": final_dropped,
+            "status": "success",
             "elapsed_seconds": round(time.time() - t0, 2),
         }

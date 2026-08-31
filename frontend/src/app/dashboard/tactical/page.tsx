@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import AuditModal, { ViolationItem } from "@/components/AuditModal";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
@@ -68,6 +69,7 @@ interface VehicleData {
   velocidade_media: number;
   horario_inicio: string;
   horario_fim: string;
+  regras?: string;
 }
 
 const routeColors = [
@@ -178,6 +180,16 @@ export default function TacticalPage() {
   const [loading, setLoading] = useState(false);
   const [solving, setSolving] = useState(false);
   const [solvingSeconds, setSolvingSeconds] = useState(0);
+  const [auditData, setAuditData] = useState<{
+    total_violations: number;
+    routes_status: Record<string, { is_valid: boolean; violations_count: number; violations: ViolationItem[] }>;
+    all_violations: ViolationItem[];
+  }>({
+    total_violations: 0,
+    routes_status: {},
+    all_violations: [],
+  });
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
 
   useEffect(() => {
     let interval: any = null;
@@ -408,6 +420,7 @@ export default function TacticalPage() {
         Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
       }));
       setRoutes(loadedRoutes);
+      if (solveRes.audit) setAuditData(solveRes.audit);
 
       const initialExp: Record<string, boolean> = { "Por Distribuir": true };
       vList.forEach((v: string) => {
@@ -483,6 +496,7 @@ export default function TacticalPage() {
       const pendingCount = allResRoutes.filter((r) => isPendingRoute(r.Rota)).length;
       const assignedCount = allResRoutes.length - pendingCount;
       setRoutes(allResRoutes);
+      if (res.audit) setAuditData(res.audit);
 
       // Reload fleet/vehicles without overwriting routes
       const fleetRes2 = await apiRequest(`/api/fleet/${selectedProject.id}`);
@@ -714,6 +728,142 @@ export default function TacticalPage() {
 
     return groups;
   }, [routes]);
+
+
+  // Real-time compliance & quality audit calculation
+  useEffect(() => {
+    if (routes.length === 0) {
+      setAuditData({ total_violations: 0, routes_status: {}, all_violations: [] });
+      return;
+    }
+
+    const allViolations: ViolationItem[] = [];
+    const routesStatus: Record<string, { is_valid: boolean; violations_count: number; violations: ViolationItem[] }> = {};
+    const uniqueRoutes = Array.from(new Set(routes.map((r) => r.Rota).filter((r) => !isPendingRoute(r))));
+
+    uniqueRoutes.forEach((rName) => {
+      const stops = routes.filter((r) => r.Rota === rName).sort((a, b) => a.Ordem - b.Ordem);
+      const vConfig = vehicleMap[rName];
+      const vRules = (vConfig?.regras || "").trim();
+      const vEnd = vConfig?.horario_fim || "18:00";
+      const maxKg = vConfig?.capacidade_kg || 1000;
+      const maxVol = vConfig?.capacidade_vol || 10.0;
+      const rViolations: ViolationItem[] = [];
+
+      let totalKg = 0;
+      let totalVol = 0;
+
+      stops.forEach((s) => {
+        totalKg += s.Peso_KG || 0;
+        totalVol += s.Volume_m3 || 0;
+
+        // 1. Time window late check (tolerância zero)
+        if (isDeliveryLate(s.Chegada, s.Janela_Horaria)) {
+          const vItem: ViolationItem = {
+            type: "time_window",
+            severity: "error",
+            route: rName,
+            client: s.Cliente,
+            order: s.Ordem,
+            title: `Atraso na Janela (${s.Cliente})`,
+            message: `Chegada prevista às ${s.Chegada} na paragem #${s.Ordem}, ultrapassando a janela limite ${s.Janela_Horaria}.`,
+          };
+          rViolations.push(vItem);
+          allViolations.push(vItem);
+        }
+
+        // 2. Tag / Rule check
+        const cRules = (s.Observacoes || (s as any).Regras || "").trim();
+        if (cRules && vRules) {
+          const vTags = vRules.split(/[;,]/).map((x: string) => x.trim().toLowerCase());
+          const cTags = cRules.split(/[;,]/).map((x: string) => x.trim().toLowerCase());
+          const hasCommon = cTags.some((ct: string) => vTags.includes(ct));
+          if (!hasCommon) {
+            const vItem: ViolationItem = {
+              type: "tag_rule",
+              severity: "error",
+              route: rName,
+              client: s.Cliente,
+              order: s.Ordem,
+              title: `Incompatibilidade de Tag (${s.Cliente})`,
+              message: `A viatura '${rName}' (Tag: '${vRules}') não possui a Tag '${cRules}' exigida pelo cliente.`,
+            };
+            rViolations.push(vItem);
+            allViolations.push(vItem);
+          }
+        }
+      });
+
+      // 3. Weight Capacity check
+      if (totalKg > maxKg) {
+        const vItem: ViolationItem = {
+          type: "capacity_kg",
+          severity: "error",
+          route: rName,
+          title: `Excesso de Peso (${rName})`,
+          message: `Carga total de ${totalKg.toFixed(1)} kg excede a capacidade de ${maxKg} kg (+${(totalKg - maxKg).toFixed(1)} kg).`,
+        };
+        rViolations.push(vItem);
+        allViolations.push(vItem);
+      }
+
+      // 4. Volume Capacity check
+      if (totalVol > maxVol) {
+        const vItem: ViolationItem = {
+          type: "capacity_vol",
+          severity: "error",
+          route: rName,
+          title: `Excesso de Volume (${rName})`,
+          message: `Volume total de ${totalVol.toFixed(2)} m³ excede a capacidade de ${maxVol} m³ (+${(totalVol - maxVol).toFixed(2)} m³).`,
+        };
+        rViolations.push(vItem);
+        allViolations.push(vItem);
+      }
+
+      // 5. Shift return overtime check (tolerância zero)
+      if (stops.length > 0) {
+        const lastStop = stops[stops.length - 1];
+        const whData = warehouseMap[vConfig?.armazem || ""] || Object.values(warehouseMap)[0];
+        let returnDist = 0.0;
+        if (whData && whData.lat && whData.lon) {
+          returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon) * 1.28;
+        }
+        const speed = vConfig?.velocidade_media || 50.0;
+        const returnTravelMin = (returnDist / speed) * 60.0;
+        const returnArrStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
+
+        const [rArrH, rArrM] = returnArrStr.split(":").map(Number);
+        const [vEndH, vEndM] = vEnd.split(":").map(Number);
+        const returnArrMin = rArrH * 60 + rArrM;
+        const vEndMin = vEndH * 60 + vEndM;
+
+        if (returnArrMin > vEndMin) {
+          const overtimeMin = returnArrMin - vEndMin;
+          const vItem: ViolationItem = {
+            type: "shift_overtime",
+            severity: "error",
+            route: rName,
+            title: `Atraso no Fim de Turno (${rName})`,
+            message: `A viatura regressa às ${returnArrStr}, ultrapassando o fim de turno das ${vEnd} (${overtimeMin} min de horas extra).`,
+          };
+          rViolations.push(vItem);
+          allViolations.push(vItem);
+        }
+      }
+
+      routesStatus[rName] = {
+        is_valid: rViolations.length === 0,
+        violations_count: rViolations.length,
+        violations: rViolations,
+      };
+    });
+
+    setAuditData({
+      total_violations: allViolations.length,
+      routes_status: routesStatus,
+      all_violations: allViolations,
+    });
+  }, [routes, vehicleMap, warehouseMap]);
 
   const hasPending = useMemo(() => {
     return (groupedRoutes["Por Distribuir"] || []).length > 0;
@@ -972,6 +1122,27 @@ export default function TacticalPage() {
                 </>
               )}
             </button>
+
+            {/* Quality & Audit Status Button */}
+            {routes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAuditModalOpen(true)}
+                className={`cursor-pointer px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 shadow-md border ${
+                  auditData.total_violations === 0
+                    ? "bg-emerald-950/80 hover:bg-emerald-900 border-emerald-600/60 text-emerald-300 shadow-emerald-900/20"
+                    : "bg-rose-950/90 hover:bg-rose-900 border-rose-500 text-rose-200 shadow-rose-900/40 animate-pulse ring-1 ring-rose-500"
+                }`}
+                title="Relatório de Auditoria de Qualidade & Inconformidades"
+              >
+                <span className={`w-2 h-2 rounded-full ${auditData.total_violations === 0 ? "bg-emerald-400" : "bg-rose-500 animate-ping"}`} />
+                <span>
+                  {auditData.total_violations === 0
+                    ? "✅ 0 Erros (Conforme)"
+                    : `🚨 ${auditData.total_violations} ${auditData.total_violations === 1 ? "Erro" : "Erros"}`}
+                </span>
+              </button>
+            )}
 
             {/* Export Excel */}
             {routes.length > 0 && (
@@ -1364,11 +1535,16 @@ export default function TacticalPage() {
 
               const totalDurationStr = allStops.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
 
+              const routeAudit = auditData?.routes_status?.[routeName];
+              const hasRouteErrors = routeAudit && !routeAudit.is_valid;
+
               return (
                 <div
                   key={routeName}
-                  className="bg-zinc-950/80 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl transition-all"
-                  style={{ borderLeft: `6px solid ${color}` }}
+                  className={`border rounded-2xl overflow-hidden shadow-xl transition-all ${
+                    hasRouteErrors ? "bg-rose-950/15 border-rose-800/80 shadow-rose-950/20" : "bg-zinc-950/80 border-zinc-800"
+                  }`}
+                  style={{ borderLeft: hasRouteErrors ? "6px solid #ef4444" : `6px solid ${color}` }}
                 >
                   {/* VEHICLE CARD HEADER */}
                   <div className="p-4 bg-zinc-900/80 border-b border-zinc-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1388,6 +1564,19 @@ export default function TacticalPage() {
                             <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold border border-zinc-700">
                               🏠 {whData.name}
                             </span>
+                          )}
+
+                          {hasRouteErrors && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAuditModalOpen(true);
+                              }}
+                              className="text-[10.5px] px-2.5 py-0.5 rounded-full font-black bg-rose-600 hover:bg-rose-500 text-white shadow-md flex items-center gap-1 cursor-pointer animate-pulse transition-all"
+                              title="Clique para ver o relatório detalhado de erros"
+                            >
+                              🚨 {routeAudit.violations_count} {routeAudit.violations_count === 1 ? "Erro" : "Erros"}
+                            </button>
                           )}
 
                           {isEmptyVehicle && (
@@ -1785,6 +1974,15 @@ export default function TacticalPage() {
 })
           )}
         </div>
+        {/* Quality Audit Modal */}
+        <AuditModal
+          isOpen={auditModalOpen}
+          onClose={() => setAuditModalOpen(false)}
+          violations={auditData.all_violations}
+          onFocusRoute={(rName) => {
+            setExpandedRoutes((prev) => ({ ...prev, [rName]: true }));
+          }}
+        />
       </div>
     </DashboardLayout>
   );

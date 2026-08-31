@@ -34,7 +34,7 @@ def check_google_budget():
             with open(USAGE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
             return True
-        return data.get('count', 0) < data.get('limit', 1000)
+        return data.get('count', 0) < data.get('limit', 5000)
     except Exception:
         return True
 
@@ -71,15 +71,15 @@ def record_google_usage(empresa_id: int = 1, projeto_id: int = 0, servico: str =
     # 3. Save to database table consumos_google
     try:
         from database import registar_consumo_google
-        custo_unitario = 0.01 if servico == "routes_traffic" else 0.005
+        custo_unitario = 0.005 if servico == "routes_traffic" else 0.005
         custo_total = round(num_pedidos * custo_unitario, 4)
         registar_consumo_google(empresa_id, projeto_id, servico, num_pedidos, custo_total)
     except Exception as e:
-        print(f"Error logging to consumos_google db: {e}")
+        pass
 
 def calculate_google_traffic_route(origin_coords: tuple, stops_coords: list, departure_time_min: int = 540, api_key: str = None, empresa_id: int = 1, projeto_id: int = 0):
     """
-    Computes road route with real traffic using Google Maps Directions / Routes API.
+    Computes road route with real traffic using Google Maps Routes API (New).
     Origin & Destination: origin_coords (depot_lat, depot_lon)
     stops_coords: [(lat1, lon1), (lat2, lon2), ...]
     Returns dict with legs: duration_min, distance_km, polyline, etc.
@@ -95,38 +95,50 @@ def calculate_google_traffic_route(origin_coords: tuple, stops_coords: list, dep
         if not stops_coords:
             return None
 
-        # Build waypoints
-        origin_str = f"{depot_lat},{depot_lon}"
-        dest_str = f"{depot_lat},{depot_lon}"
-        
-        waypoints_str = "|".join([f"{lat},{lon}" for lat, lon in stops_coords[:23]])
-        
-        now = datetime.now()
-        dep_hours = departure_time_min // 60
-        dep_mins = departure_time_min % 60
-        try:
-            dep_dt = now.replace(hour=dep_hours, minute=dep_mins, second=0, microsecond=0)
-            dep_ts = int(dep_dt.timestamp())
-            if dep_ts < int(now.timestamp()):
-                dep_ts = int(now.timestamp())
-        except Exception:
-            dep_ts = "now"
+        # Prepare intermediates for Routes API v2
+        intermediates = []
+        for lat, lon in stops_coords[:25]:
+            intermediates.append({
+                "location": {
+                    "latLng": {
+                        "latitude": float(lat),
+                        "longitude": float(lon)
+                    }
+                }
+            })
 
-        url = "https://maps.googleapis.com/maps/api/directions/json"
-        params = {
-            "origin": origin_str,
-            "destination": dest_str,
-            "waypoints": waypoints_str,
-            "departure_time": dep_ts,
-            "traffic_model": "best_guess",
-            "mode": "driving",
-            "key": api_key
+        routes_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": api_key,
+            "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.legs,routes.polyline.encodedPolyline"
+        }
+        payload = {
+            "origin": {
+                "location": {
+                    "latLng": {
+                        "latitude": float(depot_lat),
+                        "longitude": float(depot_lon)
+                    }
+                }
+            },
+            "destination": {
+                "location": {
+                    "latLng": {
+                        "latitude": float(depot_lat),
+                        "longitude": float(depot_lon)
+                    }
+                }
+            },
+            "intermediates": intermediates,
+            "travelMode": "DRIVE",
+            "routingPreference": "TRAFFIC_AWARE"
         }
 
-        resp = requests.get(url, params=params, timeout=8)
+        resp = requests.post(routes_url, headers=headers, json=payload, timeout=8)
         if resp.status_code == 200:
             data = resp.json()
-            if data.get("status") == "OK" and data.get("routes"):
+            if data.get("routes"):
                 record_google_usage(empresa_id, projeto_id, "routes_traffic", 1)
                 
                 route_obj = data["routes"][0]
@@ -137,8 +149,9 @@ def calculate_google_traffic_route(origin_coords: tuple, stops_coords: list, dep
                 total_dur_min = 0.0
                 
                 for leg in legs:
-                    dur_sec = leg.get("duration_in_traffic", leg.get("duration", {})).get("value", 0)
-                    dist_m = leg.get("distance", {}).get("value", 0)
+                    dur_str = leg.get("duration", "0s")
+                    dur_sec = int(dur_str.replace("s", "")) if "s" in dur_str else 0
+                    dist_m = leg.get("distanceMeters", 0)
                     
                     dur_min = dur_sec / 60.0
                     dist_km = dist_m / 1000.0
@@ -148,9 +161,7 @@ def calculate_google_traffic_route(origin_coords: tuple, stops_coords: list, dep
                     
                     legs_info.append({
                         "distance_km": round(dist_km, 2),
-                        "duration_min": round(dur_min, 1),
-                        "start_address": leg.get("start_address", ""),
-                        "end_address": leg.get("end_address", "")
+                        "duration_min": round(dur_min, 1)
                     })
                     
                 return {
@@ -158,10 +169,8 @@ def calculate_google_traffic_route(origin_coords: tuple, stops_coords: list, dep
                     "total_distance_km": round(total_dist_km, 2),
                     "total_duration_min": round(total_dur_min, 1),
                     "legs": legs_info,
-                    "overview_polyline": route_obj.get("overview_polyline", {}).get("points", "")
+                    "overview_polyline": route_obj.get("polyline", {}).get("encodedPolyline", "")
                 }
-            else:
-                print(f"[Google Routes] Status: {data.get('status')} - {data.get('error_message', '')}")
     except Exception as e:
         print(f"[Google Routes API Error]: {e}")
         

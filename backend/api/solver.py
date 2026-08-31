@@ -1,3 +1,4 @@
+from utils.validation_auditor import audit_route_plan
 def _pick_first_valid(*candidates):
     for c in candidates:
         if c is not None:
@@ -1572,3 +1573,30 @@ def optimize_single_route(req: SingleRouteOptimizeRequest, current_user: UserRes
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit/{project_id}")
+def get_route_audit(project_id: int, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Sem permissão para aceder a este projeto.")
+        
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+        row = cursor.fetchone()
+        if not row or not row["payload_json"]:
+            return {"total_violations": 0, "routes_status": {}, "all_violations": []}
+            
+        state_dict = deserialize_state(row["payload_json"])
+        raw_routes = state_dict.get("routes_solution")
+        if raw_routes is None:
+            return {"total_violations": 0, "routes_status": {}, "all_violations": []}
+            
+        df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+        fleet_cfg = state_dict.get("fleet_config", {})
+        wh_df = state_dict.get("warehouses_geocoded", state_dict.get("df_warehouses"))
+        rules_mat = state_dict.get("rules_matrix", [])
+        
+        audit_res = audit_route_plan(df_routes, fleet_cfg, wh_df, rules_mat)
+        return audit_res
