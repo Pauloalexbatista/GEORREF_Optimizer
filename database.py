@@ -116,7 +116,7 @@ def init_database():
             )
         """)
 
-        # Tabela de Entregas
+                # Tabela de Entregas
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS entregas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,8 +142,99 @@ def init_database():
                 morada_encontrada TEXT DEFAULT '',
                 rota TEXT DEFAULT '',
                 ordem INTEGER DEFAULT 0,
+                ordem_paragem INTEGER DEFAULT 0,
+                regras TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+
+        # Tabela de Frota
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS frota (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto_id INTEGER NOT NULL,
+                veiculo TEXT,
+                capacidade_kg REAL DEFAULT 1000.0,
+                capacidade_volume REAL DEFAULT 10.0,
+                custo_km REAL DEFAULT 0.5,
+                velocidade_media REAL DEFAULT 40.0,
+                horario_inicio TEXT DEFAULT '08:00',
+                horario_fim TEXT DEFAULT '18:00',
+                armazem TEXT DEFAULT '',
+                regras TEXT DEFAULT '',
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+
+        # Tabela de Rotas
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rotas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto_id INTEGER NOT NULL,
+                veiculo TEXT,
+                ordem INTEGER DEFAULT 0,
+                entrega_id INTEGER,
+                distancia_km REAL DEFAULT 0.0,
+                tempo_minutos REAL DEFAULT 0.0,
+                custo_estimado REAL DEFAULT 0.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+
+        # Tabela de Snapshots
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto_id INTEGER NOT NULL,
+                utilizador_id INTEGER,
+                fase_atual INTEGER DEFAULT 1,
+                nome_snapshot TEXT,
+                payload_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+
+        # Tabela de Logs de Uso
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER,
+                acao TEXT,
+                detalhes TEXT,
+                ip_address TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (empresa_id) REFERENCES empresas (id)
+            )
+        """)
+
+        # Tabela de Metricas do Projeto
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS metricas_projeto (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto_id INTEGER NOT NULL,
+                data DATE DEFAULT CURRENT_DATE,
+                total_entregas INTEGER DEFAULT 0,
+                entregas_sucesso INTEGER DEFAULT 0,
+                entregas_falha INTEGER DEFAULT 0,
+                distancia_total_km REAL DEFAULT 0.0,
+                custo_total REAL DEFAULT 0.0,
+                tempo_total_minutos REAL DEFAULT 0.0,
+                FOREIGN KEY (projeto_id) REFERENCES projetos (id)
+            )
+        """)
+
+        # Tabela de Configurações
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                description TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
@@ -159,19 +250,30 @@ def init_database():
 
         add_column_if_missing("empresas", "data_validade", "TEXT DEFAULT '2099-12-31'")
         add_column_if_missing("empresas", "programas", "TEXT DEFAULT 'site,app'")
+        add_column_if_missing("empresas", "driver_password", "TEXT DEFAULT ''")
+        add_column_if_missing("empresas", "api_key_google", "TEXT DEFAULT ''")
         
         add_column_if_missing("utilizadores", "is_superadmin", "BOOLEAN DEFAULT 0")
         add_column_if_missing("utilizadores", "data_validade", "TEXT DEFAULT '2099-12-31'")
         add_column_if_missing("utilizadores", "programas", "TEXT DEFAULT 'site,app'")
         add_column_if_missing("utilizadores", "password_plain", "TEXT")
         add_column_if_missing("utilizadores", "driver_password", "TEXT DEFAULT ''")
-        add_column_if_missing("empresas", "driver_password", "TEXT DEFAULT ''")
-        add_column_if_missing("frota", "capacidade_volume", "REAL DEFAULT 0.0")
+        
+        add_column_if_missing("frota", "capacidade_volume", "REAL DEFAULT 10.0")
         add_column_if_missing("frota", "armazem", "TEXT DEFAULT ''")
+        add_column_if_missing("frota", "regras", "TEXT DEFAULT ''")
+        add_column_if_missing("frota", "is_active", "BOOLEAN DEFAULT 1")
+        
         add_column_if_missing("entregas", "armazem", "TEXT DEFAULT 'Armazém Principal'")
-        add_column_if_missing("entregas", "nome_cliente", "TEXT DEFAULT \'\'")
-        add_column_if_missing("entregas", "telefone", "TEXT DEFAULT \'\'")
-        add_column_if_missing("entregas", "observacoes", "TEXT DEFAULT \'\'")
+        add_column_if_missing("entregas", "nome_cliente", "TEXT DEFAULT ''")
+        add_column_if_missing("entregas", "telefone", "TEXT DEFAULT ''")
+        add_column_if_missing("entregas", "observacoes", "TEXT DEFAULT ''")
+        add_column_if_missing("entregas", "vendedor", "TEXT DEFAULT ''")
+        add_column_if_missing("entregas", "volume_m3", "REAL DEFAULT 0.1")
+        add_column_if_missing("entregas", "rota", "TEXT DEFAULT ''")
+        add_column_if_missing("entregas", "ordem", "INTEGER DEFAULT 0")
+        add_column_if_missing("entregas", "ordem_paragem", "INTEGER DEFAULT 0")
+        add_column_if_missing("entregas", "regras", "TEXT DEFAULT ''")
         
         # Garantir privilégios SuperAdmin ao Paulo Batista se existir
         cursor.execute("""
@@ -329,6 +431,7 @@ def get_projeto(projeto_id):
 
 def save_entregas_projeto(projeto_id, entregas_data):
     """Guardar entregas de um projeto"""
+    ensure_entregas_columns()
     with get_db() as conn:
         cursor = conn.cursor()
         
@@ -341,8 +444,8 @@ def save_entregas_projeto(projeto_id, entregas_data):
                     projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, 
                     _concelho, peso_kg, volume_m3, prioridade, janela_inicio, 
                     janela_fim, observacoes, telefone, armazem, vendedor, latitude, longitude,
-                    nivel_qualidade, fonte_match, morada_encontrada
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    nivel_qualidade, fonte_match, morada_encontrada, rota, ordem, ordem_paragem, regras
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, e.get('codigo_cliente'), e.get('nome_cliente', e.get('codigo_cliente')), e.get('morada'),
                 e.get('codigo_postal'), e.get('concelho'), e.get('peso_kg'),
@@ -350,7 +453,9 @@ def save_entregas_projeto(projeto_id, entregas_data):
                 e.get('janela_fim'), e.get('observacoes', ''), e.get('telefone', ''),
                 e.get('armazem', 'Armazém Principal'), e.get('vendedor', ''),
                 e.get('latitude'), e.get('longitude'), e.get('nivel_qualidade'),
-                e.get('fonte_match'), e.get('morada_encontrada')
+                e.get('fonte_match'), e.get('morada_encontrada'),
+                e.get('rota', ''), int(e.get('ordem') or 0), int(e.get('ordem_paragem') or 0),
+                str(e.get('regras') or e.get('Regras') or '')
             ))
         
         # Atualizar timestamp do projeto
@@ -885,7 +990,7 @@ def obter_resumo_consumos_admin():
 
 
 def ensure_entregas_columns():
-    """Garante que todas as colunas necessárias existem na tabela entregas (auto-migração sob demanda)."""
+    """Garante que todas as colunas necessárias existem na tabela entregas e frota (auto-migração sob demanda)."""
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -900,13 +1005,29 @@ def ensure_entregas_columns():
                 ("volume_m3", "REAL DEFAULT 0.1"),
                 ("rota", "TEXT DEFAULT ''"),
                 ("ordem", "INTEGER DEFAULT 0"),
-                ("ordem_paragem", "INTEGER DEFAULT 0")
+                ("ordem_paragem", "INTEGER DEFAULT 0"),
+                ("regras", "TEXT DEFAULT ''")
             ]:
                 if col not in cols:
                     try:
                         cursor.execute(f"ALTER TABLE entregas ADD COLUMN {col} {col_type}")
                     except Exception:
                         pass
+                        
+            cursor.execute("PRAGMA table_info(frota)")
+            cols_f = [info[1] for info in cursor.fetchall()]
+            for col, col_type in [
+                ("capacidade_volume", "REAL DEFAULT 10.0"),
+                ("armazem", "TEXT DEFAULT ''"),
+                ("regras", "TEXT DEFAULT ''"),
+                ("is_active", "BOOLEAN DEFAULT 1")
+            ]:
+                if col not in cols_f:
+                    try:
+                        cursor.execute(f"ALTER TABLE frota ADD COLUMN {col} {col_type}")
+                    except Exception:
+                        pass
+                        
             conn.commit()
     except Exception as e:
         print(f"[DB Notice] ensure_entregas_columns: {e}")
