@@ -1324,6 +1324,25 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                                     df_routes = pd.concat([df_routes, pd.DataFrame([new_stop])], ignore_index=True)
                                     
                                 state_dict["routes_solution"] = df_routes
+                                raw_clients = state_dict.get("clients_geocoded")
+                                if raw_clients is not None:
+                                    df_c = raw_clients if isinstance(raw_clients, pd.DataFrame) else pd.DataFrame(raw_clients)
+                                    if not df_c.empty:
+                                        c_c_idx = []
+                                        if "id" in df_c.columns:
+                                            c_c_idx = df_c[df_c["id"] == delivery_id].index
+                                        if len(c_c_idx) == 0 and "ID_Original" in df_c.columns:
+                                            c_c_idx = df_c[df_c["ID_Original"] == delivery_id].index
+                                        if len(c_c_idx) == 0 and "Codigo_Cliente" in df_c.columns:
+                                            c_c_idx = df_c[df_c["Codigo_Cliente"].astype(str).str.strip().str.upper() == str(client_code).strip().upper()].index
+                                        if len(c_c_idx) > 0:
+                                            df_c.loc[c_c_idx, "Latitude"] = corr.latitude
+                                            df_c.loc[c_c_idx, "Longitude"] = corr.longitude
+                                            df_c.loc[c_c_idx, "Morada"] = corr.morada
+                                            df_c.loc[c_c_idx, "Localidade"] = corr.concelho
+                                            df_c.loc[c_c_idx, "CP"] = corr.codigo_postal
+                                            state_dict["clients_geocoded"] = df_c
+
                                 new_payload = serialize_state(state_dict)
                                 cursor.execute("UPDATE snapshots SET payload_json = ? WHERE id = ?", (new_payload, snap_row["id"]))
                     except Exception as snap_e:
@@ -1640,6 +1659,25 @@ def delete_delivery(delivery_id: int, current_user: UserResponse = Depends(get_c
                                 # Recalculate stop orders for safety
                                 df_routes["Ordem"] = range(1, len(df_routes) + 1)
                                 state_dict["routes_solution"] = df_routes
+                                raw_clients = state_dict.get("clients_geocoded")
+                                if raw_clients is not None:
+                                    df_c = raw_clients if isinstance(raw_clients, pd.DataFrame) else pd.DataFrame(raw_clients)
+                                    if not df_c.empty:
+                                        c_c_idx = []
+                                        if "id" in df_c.columns:
+                                            c_c_idx = df_c[df_c["id"] == delivery_id].index
+                                        if len(c_c_idx) == 0 and "ID_Original" in df_c.columns:
+                                            c_c_idx = df_c[df_c["ID_Original"] == delivery_id].index
+                                        if len(c_c_idx) == 0 and "Codigo_Cliente" in df_c.columns:
+                                            c_c_idx = df_c[df_c["Codigo_Cliente"].astype(str).str.strip().str.upper() == str(client_code).strip().upper()].index
+                                        if len(c_c_idx) > 0:
+                                            df_c.loc[c_c_idx, "Latitude"] = corr.latitude
+                                            df_c.loc[c_c_idx, "Longitude"] = corr.longitude
+                                            df_c.loc[c_c_idx, "Morada"] = corr.morada
+                                            df_c.loc[c_c_idx, "Localidade"] = corr.concelho
+                                            df_c.loc[c_c_idx, "CP"] = corr.codigo_postal
+                                            state_dict["clients_geocoded"] = df_c
+
                                 new_payload = serialize_state(state_dict)
                                 cursor.execute("UPDATE snapshots SET payload_json = ? WHERE id = ?", (new_payload, snap_row["id"]))
                 except Exception as snap_e:

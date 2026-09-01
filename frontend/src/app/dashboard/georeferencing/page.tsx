@@ -579,7 +579,7 @@ export default function GeoreferencingPage() {
                   {filteredAndSortedDeliveries.map((del) => {
                     const isValid = del.latitude !== 0.0 && del.longitude !== 0.0 && del.nivel_qualidade !== 99;
                     return (
-                      <tr key={del.id} className="border-b border-zinc-800/40 hover:bg-zinc-800/20 hover:text-zinc-100 transition-colors">
+                      <tr key={`${del.id}-${del.morada}-${del.codigo_postal}-${del.concelho}-${del.latitude}-${del.longitude}-${del.nivel_qualidade}`} className="border-b border-zinc-800/40 hover:bg-zinc-800/20 hover:text-zinc-100 transition-colors">
                         {/* Actions Col Left */}
                         <td className="py-1 px-2 text-center whitespace-nowrap">
                           <button
