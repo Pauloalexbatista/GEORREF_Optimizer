@@ -1,3 +1,4 @@
+from datetime import datetime
 
 def clean_str_val(val):
     if val is None or pd.isna(val):
@@ -252,7 +253,8 @@ def _parse_and_persist_workbook_sheets(file_path: str, project_id: int, user_id:
     # 6. Rotas (Planning)
     routes_solution_list = []
     for s in xls.sheet_names:
-        if any(k in _norm(s) for k in ['rota', 'route', 'plano', 'planea']):
+        ns = _norm(s)
+        if (ns in ['rotas', 'rota', 'routes', 'route', 'planeamento', 'plano', 'planorotas'] or ('rota' in ns and 'frota' not in ns)):
             df_rt = pd.read_excel(xls, sheet_name=s)
             if not df_rt.empty:
                 c_r_v = _match(df_rt.columns, ['Rota', 'Veiculo', 'Veículo', 'Vehicle', 'Route', 'Carro'])

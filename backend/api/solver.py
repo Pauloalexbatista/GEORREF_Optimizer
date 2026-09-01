@@ -946,10 +946,13 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
                 if c_name:
                     route_map_by_name[str(c_name).strip().upper()] = r_dict
 
-    if not db_deliveries and raw_routes is not None:
+    if raw_routes is not None:
         df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-        if not df_r.empty:
-            return df_r.copy()
+        if not df_r.empty and len(df_r) >= len(db_deliveries):
+            # Check if df_r has valid assigned routes (not all empty / Por Distribuir)
+            non_empty_routes = df_r[~df_r["Rota"].astype(str).str.upper().isin(["", "POR DISTRIBUIR", "PENDENTE", "NAN"])]
+            if not non_empty_routes.empty:
+                return df_r.copy()
 
     # Load fleet vehicle names for smart vendor/tag fallback
     fleet_veh_names = {}

@@ -1018,7 +1018,7 @@ async def import_fleet_warehouses(
         sheet_rotas = None
         for s in xls.sheet_names:
             sn = _norm_col(s)
-            if any(k in sn for k in ['rota', 'route', 'plano', 'planea']):
+            if (sn in ['rotas', 'rota', 'routes', 'route', 'planeamento', 'plano', 'planorotas'] or ('rota' in sn and 'frota' not in sn)):
                 sheet_rotas = s
                 break
                 
