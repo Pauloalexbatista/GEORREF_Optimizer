@@ -43,6 +43,318 @@ from utils.geocoder_engine import WaterfallGeocoder
 
 from backend.api.auth import get_current_user, UserResponse
 
+def _parse_and_persist_workbook_sheets(file_path: str, project_id: int, user_id: int):
+    """
+    Parses all sheets in a multi-sheet GeoRoutePlan workbook (Armazéns, Frota, Regras, Rotas, Motoristas, etc.)
+    and persists them to SQLite tables and the latest snapshot.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in [".xlsx", ".xls"]:
+        return False
+        
+    try:
+        xls = pd.ExcelFile(file_path)
+    except Exception:
+        return False
+        
+    def _norm(s):
+        import unicodedata, re
+        n = unicodedata.normalize('NFKD', str(s)).encode('ASCII', 'ignore').decode('ASCII').lower().strip()
+        return re.sub(r'[^a-z0-9]', '', n)
+        
+    def _match(cols, cands):
+        norm_map = {_norm(c): c for c in cols}
+        for cand in cands:
+            nc = _norm(cand)
+            if nc in norm_map:
+                return norm_map[nc]
+            for k, orig in norm_map.items():
+                if nc in k or k in nc:
+                    return orig
+        return None
+
+    def _clean_num(v, default=0.0):
+        if v is None or pd.isna(v): return default
+        try:
+            s = str(v).replace(',', '.').strip()
+            return float(s)
+        except Exception:
+            return default
+
+    # 1. Armazéns
+    wh_rows = []
+    for s in xls.sheet_names:
+        if any(k in _norm(s) for k in ['armaz', 'warehouse', 'depot', 'origem']):
+            df_wh = pd.read_excel(xls, sheet_name=s)
+            if not df_wh.empty:
+                c_name = _match(df_wh.columns, ['Nome_Armazem', 'Armazem', 'Nome', 'Warehouse'])
+                c_addr = _match(df_wh.columns, ['Morada', 'Address', 'Rua'])
+                c_cp = _match(df_wh.columns, ['CP', 'Codigo_Postal', 'Postal_Code'])
+                c_loc = _match(df_wh.columns, ['Localidade', 'Cidade', 'City'])
+                c_lat = _match(df_wh.columns, ['Latitude', 'Lat'])
+                c_lon = _match(df_wh.columns, ['Longitude', 'Lon', 'Lng'])
+                c_open = _match(df_wh.columns, ['Hora_Abertura', 'Abertura', 'Open'])
+                c_close = _match(df_wh.columns, ['Hora_Fecho', 'Fecho', 'Close'])
+                c_load = _match(df_wh.columns, ['Tempo_Carga_Min', 'Tempo_Carga'])
+                c_tel = _match(df_wh.columns, ['Contacto_Responsavel', 'Contacto', 'Telefone'])
+                
+                if c_name:
+                    for _, r in df_wh.iterrows():
+                        w_name = str(r[c_name]).strip()
+                        if not w_name or w_name.lower() == 'nan': continue
+                        wh_rows.append({
+                            "Nome_Armazem": w_name,
+                            "Nome": w_name,
+                            "Morada": str(r[c_addr]).strip() if c_addr and pd.notna(r[c_addr]) else "",
+                            "CP": str(r[c_cp]).strip() if c_cp and pd.notna(r[c_cp]) else "",
+                            "Codigo_Postal": str(r[c_cp]).strip() if c_cp and pd.notna(r[c_cp]) else "",
+                            "Localidade": str(r[c_loc]).strip() if c_loc and pd.notna(r[c_loc]) else "",
+                            "Latitude": _clean_num(r[c_lat]) if c_lat and pd.notna(r[c_lat]) else 0.0,
+                            "Longitude": _clean_num(r[c_lon]) if c_lon and pd.notna(r[c_lon]) else 0.0,
+                            "Hora_Abertura": str(r[c_open]).strip() if c_open and pd.notna(r[c_open]) else "06:00:00",
+                            "Hora_Fecho": str(r[c_close]).strip() if c_close and pd.notna(r[c_close]) else "22:00:00",
+                            "Tempo_Carga_Min": int(_clean_num(r[c_load], 30)) if c_load and pd.notna(r[c_load]) else 30,
+                            "Contacto_Responsavel": str(r[c_tel]).strip() if c_tel and pd.notna(r[c_tel]) else ""
+                        })
+            break
+
+    # 2. Frota
+    fleet_dict = {}
+    fleet_rows_for_db = []
+    for s in xls.sheet_names:
+        if any(k in _norm(s) for k in ['frota', 'veicul', 'viatur', 'fleet', 'vehicle', 'carro']):
+            df_f = pd.read_excel(xls, sheet_name=s)
+            if not df_f.empty:
+                c_v = _match(df_f.columns, ['Veiculo', 'Veículo', 'Vehicle', 'Nome', 'Matricula', 'Viatura'])
+                c_wh = _match(df_f.columns, ['Armazem', 'Armazém', 'Warehouse'])
+                c_kg = _match(df_f.columns, ['Capacidade_KG', 'Capacidade_kg', 'Capacidade', 'Peso_Max'])
+                c_vol = _match(df_f.columns, ['Capacidade_Vol', 'Capacidade_Volume', 'Volume_m3', 'Volume'])
+                c_spd = _match(df_f.columns, ['Velocidade_Media', 'Velocidade Média', 'Speed'])
+                c_s = _match(df_f.columns, ['Hora_Inicio_Turno', 'Horario_Inicio', 'Inicio'])
+                c_e = _match(df_f.columns, ['Hora_Fim_Turno', 'Horario_Fim', 'Fim'])
+                c_ckm = _match(df_f.columns, ['Custo_KM', 'Custo_km', 'Cost_KM'])
+                c_chr = _match(df_f.columns, ['Custo_Hora', 'Custo_hora', 'Cost_Hour'])
+                c_max = _match(df_f.columns, ['Max_Entregas', 'Max_Paragens'])
+                c_rg = _match(df_f.columns, ['Regras', 'Tags', 'Restricoes'])
+                
+                for idx, r in df_f.iterrows():
+                    v_name = str(r[c_v]).strip() if c_v and pd.notna(r[c_v]) else f"Viatura {idx+1}"
+                    if not v_name or v_name.lower() == 'nan': continue
+                    v_wh = str(r[c_wh]).strip() if c_wh and pd.notna(r[c_wh]) else (wh_rows[0]["Nome_Armazem"] if wh_rows else "Negrini Portugal Lda")
+                    v_kg = _clean_num(r[c_kg], 1000.0) if c_kg and pd.notna(r[c_kg]) else 1000.0
+                    v_vol = _clean_num(r[c_vol], 10.0) if c_vol and pd.notna(r[c_vol]) else 10.0
+                    v_spd = _clean_num(r[c_spd], 50.0) if c_spd and pd.notna(r[c_spd]) else 50.0
+                    v_s_t = str(r[c_s]).strip() if c_s and pd.notna(r[c_s]) else "08:00:00"
+                    v_e_t = str(r[c_e]).strip() if c_e and pd.notna(r[c_e]) else "18:00:00"
+                    v_rg = str(r[c_rg]).strip() if c_rg and pd.notna(r[c_rg]) else ""
+                    if v_rg.lower() == 'nan': v_rg = ""
+                    
+                    fleet_dict[v_name] = {
+                        "veiculo": v_name,
+                        "armazem": v_wh,
+                        "capacidade_kg": v_kg,
+                        "capacidade_volume": v_vol,
+                        "capacidade_vol": v_vol,
+                        "velocidade_media": v_spd,
+                        "horario_inicio": v_s_t,
+                        "horario_fim": v_e_t,
+                        "custo_km": _clean_num(r[c_ckm], 0.65) if c_ckm and pd.notna(r[c_ckm]) else 0.65,
+                        "custo_hora": _clean_num(r[c_chr], 12.50) if c_chr and pd.notna(r[c_chr]) else 12.50,
+                        "max_entregas": int(_clean_num(r[c_max], 50)) if c_max and pd.notna(r[c_max]) else 50,
+                        "regras": v_rg
+                    }
+                    fleet_rows_for_db.append({
+                        "veiculo": v_name,
+                        "capacidade_kg": v_kg,
+                        "capacidade_volume": v_vol,
+                        "custo_km": _clean_num(r[c_ckm], 0.65) if c_ckm and pd.notna(r[c_ckm]) else 0.65,
+                        "velocidade_media": v_spd,
+                        "horario_inicio": v_s_t,
+                        "horario_fim": v_e_t,
+                        "armazem": v_wh,
+                        "regras": v_rg
+                    })
+            break
+
+    if fleet_rows_for_db:
+        from database import save_frota_projeto
+        save_frota_projeto(project_id, fleet_rows_for_db)
+
+    # 3. Regras
+    rules_matrix = []
+    for s in xls.sheet_names:
+        if any(k in _norm(s) for k in ['regr', 'rule', 'restri', 'matriz']):
+            df_r = pd.read_excel(xls, sheet_name=s)
+            if not df_r.empty:
+                c_vt = _match(df_r.columns, ['Tag_Veiculo', 'Tag_Viatura', 'Veiculo_Tag'])
+                c_et = _match(df_r.columns, ['Tag_Entrega', 'Tag_Cliente', 'Entrega_Tag'])
+                c_pm = _match(df_r.columns, ['Permissao', 'Permitido', 'Status'])
+                c_ds = _match(df_r.columns, ['Descricao', 'Descrição', 'Notas'])
+                for _, r in df_r.iterrows():
+                    vt = str(r[c_vt]).strip() if c_vt and pd.notna(r[c_vt]) else ""
+                    et = str(r[c_et]).strip() if c_et and pd.notna(r[c_et]) else ""
+                    if vt.lower() == 'nan': vt = ""
+                    if et.lower() == 'nan': et = ""
+                    if vt or et:
+                        rules_matrix.append({
+                            "tag_veiculo": vt,
+                            "tag_entrega": et,
+                            "permissao": str(r[c_pm]).strip() if c_pm and pd.notna(r[c_pm]) else "SIM",
+                            "descricao": str(r[c_ds]).strip() if c_ds and pd.notna(r[c_ds]) else ""
+                        })
+            break
+
+    # 4. Motoristas
+    drivers_list = []
+    for s in xls.sheet_names:
+        if any(k in _norm(s) for k in ['motorista', 'driver', 'condutor', 'equipa']):
+            df_dr = pd.read_excel(xls, sheet_name=s)
+            if not df_dr.empty:
+                c_dn = _match(df_dr.columns, ['Motorista', 'Nome', 'Nome_Motorista', 'Driver'])
+                c_dp = _match(df_dr.columns, ['PIN/Password', 'PIN', 'Password', 'Pin'])
+                c_dv = _match(df_dr.columns, ['Viatura', 'Veiculo', 'Vehicle', 'Carro'])
+                c_dm = _match(df_dr.columns, ['Matricula', 'Plate'])
+                c_dt = _match(df_dr.columns, ['Telemovel', 'Telefone', 'Phone', 'Contacto'])
+                c_dr = _match(df_dr.columns, ['Rota Atribuida', 'Rota_Atribuida', 'Rota'])
+                for _, r in df_dr.iterrows():
+                    dn = str(r[c_dn]).strip() if c_dn and pd.notna(r[c_dn]) else ""
+                    if not dn or dn.lower() == 'nan': continue
+                    pin_val = str(r[c_dp]).strip() if c_dp and pd.notna(r[c_dp]) else "1234"
+                    if pin_val.endswith('.0'): pin_val = pin_val[:-2]
+                    drivers_list.append({
+                        "name": dn,
+                        "pin": pin_val,
+                        "phone": str(r[c_dt]).strip() if c_dt and pd.notna(r[c_dt]) else "",
+                        "vehicle": str(r[c_dv]).strip() if c_dv and pd.notna(r[c_dv]) else "",
+                        "matricula": str(r[c_dm]).strip() if c_dm and pd.notna(r[c_dm]) else "",
+                        "route": str(r[c_dr]).strip() if c_dr and pd.notna(r[c_dr]) else "",
+                        "is_active": 1
+                    })
+            break
+
+    # 5. Justificação entregas
+    reasons_list = []
+    for s in xls.sheet_names:
+        if any(k in _norm(s) for k in ['justifica', 'motivo', 'reason', 'falha']):
+            df_rs = pd.read_excel(xls, sheet_name=s)
+            if not df_rs.empty:
+                c_rn = _match(df_rs.columns, ['Motivo de Nao Entrega', 'Motivo', 'Reason', 'Justificacao'])
+                c_rc = _match(df_rs.columns, ['Categoria / Acao', 'Categoria', 'Category'])
+                for _, r in df_rs.iterrows():
+                    rv = str(r[c_rn]).strip() if c_rn and pd.notna(r[c_rn]) else ""
+                    if not rv or rv.lower() == 'nan': continue
+                    reasons_list.append({
+                        "reason": rv,
+                        "category": str(r[c_rc]).strip() if c_rc and pd.notna(r[c_rc]) else "Geral"
+                    })
+            break
+
+    # 6. Rotas (Planning)
+    routes_solution_list = []
+    for s in xls.sheet_names:
+        if any(k in _norm(s) for k in ['rota', 'route', 'plano', 'planea']):
+            df_rt = pd.read_excel(xls, sheet_name=s)
+            if not df_rt.empty:
+                c_r_v = _match(df_rt.columns, ['Rota', 'Veiculo', 'Veículo', 'Vehicle', 'Route', 'Carro'])
+                c_r_ord = _match(df_rt.columns, ['Ordem', 'Ordem_Paragem', 'Stop_Order', 'Seq'])
+                c_r_doc = _match(df_rt.columns, ['ID_Original', 'Doc_ID', 'Documento', 'Codigo_Cliente', 'Cod_Cliente', 'Doc'])
+                c_r_cli = _match(df_rt.columns, ['Cliente', 'Nome_Cliente', 'Nome'])
+                c_r_addr = _match(df_rt.columns, ['Morada', 'Address', 'Rua'])
+                c_r_cp = _match(df_rt.columns, ['CP', 'CodPostal', 'Codigo_Postal'])
+                c_r_loc = _match(df_rt.columns, ['Localidade', 'Cidade', 'City'])
+                c_r_lat = _match(df_rt.columns, ['Latitude', 'Lat'])
+                c_r_lon = _match(df_rt.columns, ['Longitude', 'Lon', 'Lng'])
+                c_r_kg = _match(df_rt.columns, ['Peso', 'Peso_KG', 'Carga_Restante_KG'])
+                c_r_vol = _match(df_rt.columns, ['Volumes', 'Volume_M3', 'Volume_m3'])
+                c_r_arr = _match(df_rt.columns, ['Chegada', 'Hora_Chegada_Prevista', 'Chegada_Prevista', 'Hora_Chegada'])
+                c_r_dep = _match(df_rt.columns, ['Saida', 'Hora_Saida_Prevista', 'Saida_Prevista', 'Hora_Saida'])
+                c_r_dist = _match(df_rt.columns, ['Distancia_KM', 'Distancia', 'KM', 'KM_Anterior'])
+                c_r_cum = _match(df_rt.columns, ['Distancia_Acumulada_KM', 'Distancia_Acumulada', 'Dist_Acum'])
+                c_r_obs = _match(df_rt.columns, ['Observacoes', 'Observações', 'Notas_Motorista', 'Notas'])
+                c_r_vend = _match(df_rt.columns, ['Vendedor', 'vendedor', 'Comercial'])
+                c_r_tel = _match(df_rt.columns, ['Telefone', 'Telefone_Cliente', 'Contacto'])
+                c_r_win = _match(df_rt.columns, ['Janela_Horaria', 'Janela_Horária', 'Janela'])
+                c_r_wh = _match(df_rt.columns, ['Armazem', 'Armazém', 'Warehouse'])
+
+                for r_idx, r in df_rt.iterrows():
+                    v_val = str(r[c_r_v]).strip() if c_r_v and pd.notna(r[c_r_v]) else "Por Distribuir"
+                    if not v_val or v_val.lower() == 'nan': v_val = "Por Distribuir"
+                    
+                    doc_val = str(r[c_r_doc]).strip() if c_r_doc and pd.notna(r[c_r_doc]) else f"CLI_{r_idx+1}"
+                    cli_val = str(r[c_r_cli]).replace("_x000D_", "").strip() if c_r_cli and pd.notna(r[c_r_cli]) else doc_val
+                    
+                    routes_solution_list.append({
+                        "id": r_idx + 1,
+                        "ID_Original": doc_val,
+                        "Doc_ID": doc_val,
+                        "Codigo_Cliente": doc_val,
+                        "Cliente": cli_val,
+                        "Nome_Cliente": cli_val,
+                        "Morada": str(r[c_r_addr]).strip() if c_r_addr and pd.notna(r[c_r_addr]) else "",
+                        "CP": str(r[c_r_cp]).strip() if c_r_cp and pd.notna(r[c_r_cp]) else "",
+                        "Localidade": str(r[c_r_loc]).strip() if c_r_loc and pd.notna(r[c_r_loc]) else "",
+                        "Telefone": str(r[c_r_tel]).strip() if c_r_tel and pd.notna(r[c_r_tel]) else "",
+                        "Latitude": _clean_num(r[c_r_lat]) if c_r_lat and pd.notna(r[c_r_lat]) else 0.0,
+                        "Longitude": _clean_num(r[c_r_lon]) if c_r_lon and pd.notna(r[c_r_lon]) else 0.0,
+                        "Rota": v_val,
+                        "Veiculo": v_val,
+                        "Armazem": str(r[c_r_wh]).strip() if c_r_wh and pd.notna(r[c_r_wh]) else (wh_rows[0]["Nome_Armazem"] if wh_rows else "Negrini Portugal Lda"),
+                        "Ordem": int(_clean_num(r[c_r_ord], r_idx+1)) if c_r_ord and pd.notna(r[c_r_ord]) else (r_idx + 1),
+                        "Janela_Horaria": str(r[c_r_win]).strip() if c_r_win and pd.notna(r[c_r_win]) else "08:00 - 18:00",
+                        "Chegada": str(r[c_r_arr]).strip() if c_r_arr and pd.notna(r[c_r_arr]) else "08:00",
+                        "Saida": str(r[c_r_dep]).strip() if c_r_dep and pd.notna(r[c_r_dep]) else "08:15",
+                        "KM_Anterior": _clean_num(r[c_r_dist]) if c_r_dist and pd.notna(r[c_r_dist]) else 0.0,
+                        "Dist_Acum": _clean_num(r[c_r_cum]) if c_r_cum and pd.notna(r[c_r_cum]) else 0.0,
+                        "Peso_KG": _clean_num(r[c_r_kg], 10.0) if c_r_kg and pd.notna(r[c_r_kg]) else 10.0,
+                        "Volume_m3": _clean_num(r[c_r_vol], 0.1) if c_r_vol and pd.notna(r[c_r_vol]) else 0.1,
+                        "Observacoes": str(r[c_r_obs]).strip() if c_r_obs and pd.notna(r[c_r_obs]) else "",
+                        "Notas_Motorista": str(r[c_r_obs]).strip() if c_r_obs and pd.notna(r[c_r_obs]) else "",
+                        "Vendedor": str(r[c_r_vend]).strip() if c_r_vend and pd.notna(r[c_r_vend]) else ""
+                    })
+            break
+
+    # Persist in snapshot
+    df_wh = pd.DataFrame(wh_rows) if wh_rows else pd.DataFrame()
+    df_rt_imp = pd.DataFrame(routes_solution_list) if routes_solution_list else None
+    
+    from utils.persistence_manager import serialize_state
+    state_dict = {
+        "warehouses_geocoded": df_wh,
+        "fleet_config": fleet_dict,
+        "rules_matrix": rules_matrix,
+        "routes_solution": df_rt_imp,
+        "drivers": drivers_list,
+        "reasons": reasons_list,
+        "phase_1_complete": True,
+        "phase_2_complete": bool(fleet_dict),
+        "phase_3_complete": df_rt_imp is not None
+    }
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # If routes exist in Rotas sheet, sync entregas table rota and ordem_paragem
+        if routes_solution_list:
+            for rt_item in routes_solution_list:
+                doc_k = rt_item.get("Doc_ID")
+                if doc_k:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ?, ordem_paragem = ? WHERE (codigo_cliente = ? OR nome_cliente = ?) AND projeto_id = ?",
+                        (rt_item["Rota"], rt_item["Ordem"], doc_k, doc_k, project_id)
+                    )
+                    
+        payload = serialize_state(state_dict)
+        fase_num = 3 if df_rt_imp is not None else (2 if fleet_dict else 1)
+        snap_name = f"Importação GeoRoutePlan ({datetime.now().strftime('%H:%M:%S')})"
+        cursor.execute(
+            "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
+            (project_id, user_id, fase_num, snap_name, payload)
+        )
+        conn.commit()
+
+    return True
+
+
 
 
 router = APIRouter(prefix="/geocoding", tags=["geocoding"])
@@ -486,7 +798,9 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
                 
 
-        os.remove(file_path)
+        _parse_and_persist_workbook_sheets(file_path, mapping.project_id, current_user.id)
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
         
 
@@ -506,6 +820,8 @@ async def start_geocoding(mapping: ColumnMapping, current_user: UserResponse = D
 
         if os.path.exists(file_path):
 
+            _parse_and_persist_workbook_sheets(file_path, mapping.project_id, current_user.id)
+        if os.path.exists(file_path):
             os.remove(file_path)
 
         raise HTTPException(status_code=500, detail=f"Erro durante a geocodificação: {str(e)}")
