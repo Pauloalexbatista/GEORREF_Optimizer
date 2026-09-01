@@ -951,6 +951,16 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
         if not df_r.empty:
             return df_r.copy()
 
+    # Load fleet vehicle names for smart vendor/tag fallback
+    fleet_veh_names = {}
+    with get_db() as conn:
+        f_cursor = conn.cursor()
+        f_cursor.execute("SELECT veiculo FROM frota WHERE projeto_id = ? AND is_active = 1", (project_id,))
+        for f_row in f_cursor.fetchall():
+            v_n = str(f_row[0]).strip()
+            if v_n:
+                fleet_veh_names[v_n.upper()] = v_n
+
     merged_records = []
     for idx, d in enumerate(db_deliveries):
         d_id_str = str(d["id"]).strip().upper()
@@ -964,9 +974,39 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
             {}
         )
         
-        assigned_rota = str(matched.get("Rota") or d.get("rota") or "Por Distribuir")
-        if "PENDENTE" in assigned_rota.upper():
-            assigned_rota = "Por Distribuir"
+        assigned_rota = str(matched.get("Rota") or d.get("rota") or "").strip()
+        if not assigned_rota or "PENDENTE" in assigned_rota.upper() or assigned_rota.lower() == "nan" or assigned_rota == "Por Distribuir":
+            # Smart Vendor & Georeference Fallback
+            c_lat = float(d.get("latitude") or 0.0)
+            c_lon = float(d.get("longitude") or 0.0)
+            if c_lat == 0.0 or c_lon == 0.0 or pd.isna(c_lat) or pd.isna(c_lon):
+                if "POR_IDENTIFICAR" in fleet_veh_names:
+                    assigned_rota = fleet_veh_names["POR_IDENTIFICAR"]
+                else:
+                    assigned_rota = "Por Distribuir"
+            else:
+                vend_upper = str(d.get("vendedor") or "").strip().upper()
+                regr_upper = str(d.get("regras") or d.get("observacoes") or "").strip().upper()
+                if vend_upper in fleet_veh_names:
+                    assigned_rota = fleet_veh_names[vend_upper]
+                else:
+                    found_v = None
+                    for v_key, v_orig in fleet_veh_names.items():
+                        if v_key in [x.strip() for x in regr_upper.split(",")]:
+                            found_v = v_orig
+                            break
+                    if found_v:
+                        assigned_rota = found_v
+                    elif vend_upper in ["CSERVICE", "CUSTOMER SERVICE"] and "CSERVICE" in fleet_veh_names:
+                        assigned_rota = fleet_veh_names["CSERVICE"]
+                    elif "GRANDES CUENTAS" in vend_upper and "GRANDES CUENTAS" in fleet_veh_names:
+                        assigned_rota = fleet_veh_names["GRANDES CUENTAS"]
+                    elif "GRANDES CUENTAS" in regr_upper and "GRANDES CUENTAS" in fleet_veh_names:
+                        assigned_rota = fleet_veh_names["GRANDES CUENTAS"]
+                    elif ("CSERVICE" in regr_upper or "CUSTOMER SERVICE" in regr_upper) and "CSERVICE" in fleet_veh_names:
+                        assigned_rota = fleet_veh_names["CSERVICE"]
+                    else:
+                        assigned_rota = "Por Distribuir"
             
         merged_records.append({
             "id": d["id"],
