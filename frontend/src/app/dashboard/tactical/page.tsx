@@ -216,18 +216,34 @@ export default function TacticalPage() {
   };
 
   const handleReoptimizeSelected = async (options: {
+    selectedRoutes?: string[];
     objective: "distance" | "group";
     balanceRoutes: boolean;
     respectTimeWindows: boolean;
   }) => {
-    if (!selectedProject || selectedRouteNames.length === 0) return;
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    const targetRoutes = options.selectedRoutes && options.selectedRoutes.length > 0 
+      ? options.selectedRoutes 
+      : selectedRouteNames;
+
+    if (!projId) {
+      alert("Nenhum projeto ativo selecionado. Por favor recarregue a página.");
+      return;
+    }
+    if (!targetRoutes || targetRoutes.length === 0) {
+      alert("Selecione pelo menos 2 rotas para re-otimizar.");
+      return;
+    }
+
     setActionLoading("reoptimizing_subset");
+    setStatusMsg("A re-otimizar rotas selecionadas via OR-Tools...");
+
     try {
       const res = await apiRequest("/api/solver/reoptimize-selected-routes", {
         method: "POST",
         body: JSON.stringify({
-          project_id: selectedProject.id,
-          selected_routes: selectedRouteNames,
+          project_id: projId,
+          selected_routes: targetRoutes,
           objective: options.objective,
           balance_routes: options.balanceRoutes,
           respect_time_windows: options.respectTimeWindows,
@@ -240,11 +256,14 @@ export default function TacticalPage() {
         }
         broadcastUpdate(res.routes, vehicles, warehouses, fleetList);
         setStatusMsg(res.message || "Rotas re-otimizadas com sucesso!");
-        setTimeout(() => setStatusMsg(""), 4000);
+        setTimeout(() => setStatusMsg(""), 5000);
         setSelectedRouteNames([]);
+      } else {
+        alert("O solver não devolveu rotas atualizadas.");
       }
     } catch (err: any) {
       alert("Erro ao re-otimizar rotas selecionadas: " + (err.message || "Erro desconhecido"));
+      throw err;
     } finally {
       setActionLoading(null);
     }

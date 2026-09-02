@@ -30,19 +30,26 @@ export default function DetachedMapPage() {
   const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
 
   const handleReoptimizeSubset = async (options: {
+    selectedRoutes?: string[];
     objective: "distance" | "group";
     balanceRoutes: boolean;
     respectTimeWindows: boolean;
   }) => {
     const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
-    if (!projId || modalSelectedRoutes.length === 0) return;
+    const targetRoutes = options.selectedRoutes && options.selectedRoutes.length > 0 
+      ? options.selectedRoutes 
+      : modalSelectedRoutes;
+    if (!projId || !targetRoutes || targetRoutes.length === 0) {
+      alert("Nenhum projeto ou rotas selecionadas.");
+      return;
+    }
     setStatusMsg("A re-otimizar rotas selecionadas...");
     try {
       const res = await apiRequest("/api/solver/reoptimize-selected-routes", {
         method: "POST",
         body: JSON.stringify({
           project_id: projId,
-          selected_routes: modalSelectedRoutes,
+          selected_routes: targetRoutes,
           objective: options.objective,
           balance_routes: options.balanceRoutes,
           respect_time_windows: options.respectTimeWindows,

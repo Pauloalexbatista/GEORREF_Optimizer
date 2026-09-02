@@ -9,6 +9,7 @@ interface ReoptimizeModalProps {
   stopsCount: number;
   totalKg: number;
   onConfirm: (options: {
+    selectedRoutes: string[];
     objective: "distance" | "group";
     balanceRoutes: boolean;
     respectTimeWindows: boolean;
@@ -27,20 +28,27 @@ export default function ReoptimizeModal({
   const [balanceRoutes, setBalanceRoutes] = useState<boolean>(true);
   const [respectTimeWindows, setRespectTimeWindows] = useState<boolean>(true);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleExecute = async () => {
+    if (!selectedRoutes || selectedRoutes.length === 0) {
+      setErrorMsg("Nenhuma rota selecionada.");
+      return;
+    }
+    setErrorMsg(null);
     setLoading(true);
     try {
       await onConfirm({
+        selectedRoutes,
         objective,
         balanceRoutes,
         respectTimeWindows,
       });
       onClose();
-    } catch (err) {
-      console.error("Erro ao re-otimizar:", err);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Erro desconhecido ao re-otimizar.");
     } finally {
       setLoading(false);
     }
@@ -81,6 +89,13 @@ export default function ReoptimizeModal({
         {/* Body Content */}
         <div className="p-5 space-y-5 overflow-y-auto flex-1">
           
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500 text-rose-200 text-xs font-bold flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           {/* Summary Box */}
           <div className="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -97,8 +112,8 @@ export default function ReoptimizeModal({
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs font-mono font-bold text-indigo-800 dark:text-indigo-300">
-              <span>Paragens: {stopsCount}</span>
-              <span>Carga: {Math.round(totalKg)} kg</span>
+              <span>📍 {stopsCount} Paragens</span>
+              <span>⚖️ {Math.round(totalKg)} kg</span>
             </div>
           </div>
 
@@ -123,7 +138,7 @@ export default function ReoptimizeModal({
               >
                 <div className="flex items-start justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold">Menor Distância</span>
+                    <span className="text-sm font-bold">🎯 Menor Distância</span>
                   </div>
                   {objective === "distance" && (
                     <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +162,7 @@ export default function ReoptimizeModal({
               >
                 <div className="flex items-start justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold">Agrupar e Compactar</span>
+                    <span className="text-sm font-bold">📦 Agrupar e Compactar</span>
                   </div>
                   {objective === "group" && (
                     <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -184,7 +199,7 @@ export default function ReoptimizeModal({
               >
                 <div className="flex items-start justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold">Sim, Equilibrar</span>
+                    <span className="text-sm font-bold">⚖️ Sim, Equilibrar</span>
                   </div>
                   {balanceRoutes && (
                     <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +223,7 @@ export default function ReoptimizeModal({
               >
                 <div className="flex items-start justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold">Não, Preenchimento Livre</span>
+                    <span className="text-sm font-bold">⚡ Não, Preenchimento Livre</span>
                   </div>
                   {!balanceRoutes && (
                     <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
