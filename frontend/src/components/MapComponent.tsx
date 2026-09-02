@@ -70,6 +70,7 @@ export interface MapComponentProps {
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
   filterState?: MapFilterState;
   onFilterChange?: (filters: MapFilterState) => void;
+  onReoptimizeSubset?: (selectedRoutes: string[]) => void;
 }
 
 function formatTimeWindow(winStr?: string): string {
@@ -349,6 +350,7 @@ export default function MapComponent({
   onUpdateClientCoords,
   filterState,
   onFilterChange,
+  onReoptimizeSubset,
 }: MapComponentProps) {
   const { t } = useI18n();
 

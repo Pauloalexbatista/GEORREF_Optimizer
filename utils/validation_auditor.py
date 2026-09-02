@@ -122,7 +122,15 @@ def audit_route_plan(
             
         v_conf = {}
         if isinstance(fleet_config, dict):
-            v_conf = fleet_config.get(r_name, {})
+            raw_v = fleet_config.get(r_name, {})
+            if hasattr(raw_v, "dict") and callable(raw_v.dict):
+                v_conf = raw_v.dict()
+            elif hasattr(raw_v, "__dict__") and not isinstance(raw_v, dict):
+                v_conf = raw_v.__dict__
+            elif isinstance(raw_v, dict):
+                v_conf = raw_v
+            else:
+                v_conf = {}
         elif isinstance(fleet_config, pd.DataFrame) and not fleet_config.empty:
             match = fleet_config[fleet_config.get("Veiculo", fleet_config.get("veiculo", "")) == r_name]
             if not match.empty:

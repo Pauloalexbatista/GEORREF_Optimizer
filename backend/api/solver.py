@@ -1726,3 +1726,204 @@ def get_route_audit(project_id: int, current_user: UserResponse = Depends(get_cu
         
         audit_res = audit_route_plan(df_routes, fleet_cfg, wh_df, rules_mat)
         return audit_res
+
+
+class ReoptimizeSelectedRoutesRequest(BaseModel):
+    project_id: int
+    selected_routes: List[str]
+    objective: str = "distance"  # "distance" | "group"
+    balance_routes: bool = False
+    respect_time_windows: bool = True
+
+@router.post("/reoptimize-selected-routes")
+def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(req.project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
+            row = cursor.fetchone()
+            state_dict = deserialize_state(row["payload_json"]) if (row and row["payload_json"]) else {}
+
+        df_canonical = _build_routes_from_state_or_db(req.project_id, state_dict)
+        if df_canonical.empty:
+            raise HTTPException(status_code=400, detail="Não existem rotas para otimizar.")
+            
+        warehouses_df = state_dict.get("warehouses_geocoded")
+        if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
+            warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
+        fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
+        
+        target_routes = [r.strip() for r in req.selected_routes if r.strip()]
+        if not target_routes:
+            raise HTTPException(status_code=400, detail="Nenhuma rota selecionada.")
+            
+        # Target vehicles from fleet
+        target_vehicles = [v for v in target_routes if v in fleet_dict]
+        if not target_vehicles:
+            # If only "Por Distribuir" was selected or unknown names, pick active vehicles or return error
+            raise HTTPException(status_code=400, detail="Selecione pelo menos 1 viatura da frota para distribuir as entregas.")
+            
+        # Subset of stops belonging to the selected routes
+        subset_mask = df_canonical["Rota"].astype(str).str.strip().isin(target_routes)
+        subset_df = df_canonical[subset_mask].copy()
+        
+        if subset_df.empty:
+            raise HTTPException(status_code=400, detail="As rotas selecionadas não têm paragens atribuídas.")
+            
+        # Build subset problem representation
+        locations = []
+        demands = []
+        volume_demands = []
+        service_times = []
+        warehouse_indices = {}
+
+        for idx, row_w in warehouses_df.iterrows():
+            wh_name = str(row_w.get("Nome_Armazem", row_w.get("Nome", f"Armazem_{idx}")))
+            locations.append((float(row_w["Latitude"]), float(row_w["Longitude"])))
+            demands.append(0.0)
+            volume_demands.append(0.0)
+            service_times.append(0)
+            pos_idx = len(locations) - 1
+            warehouse_indices[wh_name.strip().lower()] = pos_idx
+            warehouse_indices[wh_name.strip()] = pos_idx
+
+        num_warehouses = len(locations)
+        subset_indices = list(subset_df.index)
+
+        for idx_row in subset_indices:
+            row_s = df_canonical.loc[idx_row]
+            locations.append((float(row_s["Latitude"]), float(row_s["Longitude"])))
+            demands.append(float(row_s.get("Peso_KG") or 50.0))
+            volume_demands.append(float(row_s.get("Volume_m3") or 0.1))
+            service_times.append(int(row_s.get("Tempo_Entrega") or row_s.get("tempo_descarga_min") or 10))
+
+        dist_matrix = calculate_haversine_matrix(locations)
+
+        v_caps = [fleet_dict[v]["capacity"] for v in target_vehicles]
+        v_vol_caps = [fleet_dict[v]["capacity_volume"] for v in target_vehicles]
+        v_depots = [warehouse_indices.get(str(fleet_dict[v].get("warehouse", "")).strip().lower(), 0) for v in target_vehicles]
+        v_starts = [parse_time_to_minutes(fleet_dict[v].get("start_time", "06:30"), 390) for v in target_vehicles]
+        v_ends = [parse_time_to_minutes(fleet_dict[v].get("end_time", "14:00"), 840) for v in target_vehicles]
+        
+        # Max stops per vehicle logic
+        if req.balance_routes and len(target_vehicles) > 1:
+            tot_s = len(subset_indices)
+            n_v = len(target_vehicles)
+            # Balanced capacity: ceil(N / K) + 1 allowance
+            v_max_stops = [max(1, math.ceil(tot_s / n_v) + (1 if tot_s % n_v != 0 else 0)) for _ in target_vehicles]
+        else:
+            v_max_stops = [int(fleet_dict[v].get("max_entregas", 30) or 30) for v in target_vehicles]
+
+        client_tw = [(0, 1440) for _ in range(num_warehouses)]
+        for idx_row in subset_indices:
+            row_s = df_canonical.loc[idx_row]
+            s_min = parse_time_to_minutes(str(row_s.get("Janela_Inicio", "")), 0)
+            e_min = parse_time_to_minutes(str(row_s.get("Janela_Fim", "")), 1440)
+            client_tw.append((s_min, e_min))
+
+        client_wh = ["" for _ in range(num_warehouses)] + list(subset_df["Armazem"].fillna(""))
+        v_wh = [str(fleet_dict[v].get("warehouse", "")).strip() for v in target_vehicles]
+        client_r = ["" for _ in range(num_warehouses)] + list(subset_df.get("regras", pd.Series([""] * len(subset_df))).fillna(""))
+        v_r = [str(fleet_dict[v].get("regras", "")) for v in target_vehicles]
+
+        opt = AdvancedRouteOptimizer()
+        opt_res = opt.optimize_routes(
+            distance_matrix=dist_matrix,
+            demands=demands,
+            vehicle_capacities=v_caps,
+            depot_indices=v_depots,
+            num_warehouses=num_warehouses,
+            volume_demands=volume_demands,
+            vehicle_volume_capacities=v_vol_caps,
+            client_warehouses=client_wh,
+            vehicle_warehouses=v_wh,
+            vehicle_start_times=v_starts,
+            vehicle_end_times=v_ends,
+            client_time_windows=client_tw,
+            locations=locations,
+            client_rules=client_r,
+            vehicle_rules=v_r,
+            rules_matrix=[],
+            vehicle_max_stops=v_max_stops,
+            client_service_times=service_times,
+            optimization_params={"time_limit_seconds": 5, "respect_time_windows": req.respect_time_windows}
+        )
+
+        assigned_subset_nodes = set()
+        for v_idx, v_stops in enumerate(opt_res["routes"]):
+            v_name = target_vehicles[v_idx]
+            v_info = fleet_dict.get(v_name, {})
+            wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
+            depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
+            v_start_str = v_info.get("start_time", "06:30:00")
+            v_speed = float(v_info.get("speed", 50.0))
+
+            raw_v_stops = []
+            for node_idx in v_stops:
+                assigned_subset_nodes.add(node_idx)
+                client_pos = node_idx - num_warehouses
+                orig_df_idx = subset_indices[client_pos]
+                row_dict = df_canonical.loc[orig_df_idx].to_dict()
+                row_dict["Rota"] = v_name
+                row_dict["Tempo_Entrega"] = service_times[node_idx]
+                raw_v_stops.append((orig_df_idx, row_dict))
+
+            # Recalculate timing & stop sequence for this vehicle
+            if raw_v_stops:
+                stops_dicts = [s[1] for s in raw_v_stops]
+                processed_stops = recalculate_route_stops(stops_dicts, depot_lat, depot_lon, v_start_str, v_speed, default_service_time=10)
+                for p_idx, p_stop in enumerate(processed_stops):
+                    orig_df_idx = raw_v_stops[p_idx][0]
+                    for k, val in p_stop.items():
+                        if k in df_canonical.columns:
+                            df_canonical.at[orig_df_idx, k] = val
+
+        # Handle any unassigned stops from subset -> Por Distribuir
+        for c_pos, orig_df_idx in enumerate(subset_indices):
+            node_idx = num_warehouses + c_pos
+            if node_idx not in assigned_subset_nodes:
+                df_canonical.at[orig_df_idx, "Rota"] = "Por Distribuir"
+                df_canonical.at[orig_df_idx, "Ordem"] = 0
+                df_canonical.at[orig_df_idx, "Ordem_Paragem"] = 0
+                df_canonical.at[orig_df_idx, "Chegada"] = "00:00"
+                df_canonical.at[orig_df_idx, "Saida"] = "00:00"
+                df_canonical.at[orig_df_idx, "Dist_Acum"] = 0.0
+
+        # Persist updated routes to SQLite
+        with get_db() as conn:
+            cursor = conn.cursor()
+            for idx_row in subset_indices:
+                r_item = df_canonical.loc[idx_row]
+                d_id = r_item.get("id") or r_item.get("ID_Original")
+                if d_id:
+                    cursor.execute("""
+                        UPDATE entregas 
+                        SET rota = ?, ordem_paragem = ?
+                        WHERE id = ?
+                    """, (str(r_item["Rota"]), int(r_item.get("Ordem", 0) or 0), int(d_id)))
+
+            cursor.execute("SELECT id, payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
+            snap_row = cursor.fetchone()
+            if snap_row:
+                state_dict["routes_solution"] = df_canonical
+                new_payload = serialize_state(state_dict)
+                cursor.execute("UPDATE snapshots SET payload_json = ? WHERE id = ?", (new_payload, snap_row["id"]))
+            conn.commit()
+
+        # Audit updated plan
+        audit_res = audit_route_plan(df_canonical, fleet_config, warehouses_df, service_time_default=10)
+        routes_list = df_canonical.to_dict(orient="records")
+
+        return sanitize_json_data({
+            "status": "success",
+            "message": f"Re-otimizadas com sucesso {len(target_routes)} rotas ({len(subset_indices)} paragens).",
+            "routes": routes_list,
+            "quality_metrics": sanitize_json_data(audit_res)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

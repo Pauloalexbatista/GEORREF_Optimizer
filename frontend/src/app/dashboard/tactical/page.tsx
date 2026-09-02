@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import AuditModal, { ViolationItem } from "@/components/AuditModal";
+import ReoptimizeModal from "@/components/ReoptimizeModal";
+
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
@@ -204,6 +206,49 @@ export default function TacticalPage() {
     all_violations: [],
   });
   const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [selectedRouteNames, setSelectedRouteNames] = useState<string[]>([]);
+  const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
+
+  const toggleRouteSelection = (routeName: string) => {
+    setSelectedRouteNames((prev) =>
+      prev.includes(routeName) ? prev.filter((r) => r !== routeName) : [...prev, routeName]
+    );
+  };
+
+  const handleReoptimizeSelected = async (options: {
+    objective: "distance" | "group";
+    balanceRoutes: boolean;
+    respectTimeWindows: boolean;
+  }) => {
+    if (!selectedProject || selectedRouteNames.length === 0) return;
+    setActionLoading("reoptimizing_subset");
+    try {
+      const res = await apiRequest("/api/solver/reoptimize-selected-routes", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: selectedProject.id,
+          selected_routes: selectedRouteNames,
+          objective: options.objective,
+          balance_routes: options.balanceRoutes,
+          respect_time_windows: options.respectTimeWindows,
+        }),
+      });
+      if (res && res.routes) {
+        setRoutes(res.routes);
+        if (res.quality_metrics) {
+          setAuditData(res.quality_metrics);
+        }
+        broadcastUpdate(res.routes, vehicles, warehouses, fleetList);
+        setStatusMsg(res.message || "Rotas re-otimizadas com sucesso!");
+        setTimeout(() => setStatusMsg(""), 4000);
+        setSelectedRouteNames([]);
+      }
+    } catch (err: any) {
+      alert("Erro ao re-otimizar rotas selecionadas: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   useEffect(() => {
     let interval: any = null;
@@ -1134,6 +1179,20 @@ export default function TacticalPage() {
               <span>{loading ? "A carregar..." : "Recarregar"}</span>
             </button>
 
+            {/* Re-optimize Selected Routes Subset */}
+            {selectedRouteNames.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => setReoptimizeModalOpen(true)}
+                disabled={actionLoading === "reoptimizing_subset" || solving}
+                className="cursor-pointer bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-lg shadow-indigo-500/25 transition-all flex items-center space-x-2 animate-in fade-in"
+                title="Re-planear e otimizar conjuntamente apenas as viaturas selecionadas"
+              >
+                <svg className="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
+                <span>Re-otimizar Seleção ({selectedRouteNames.length})</span>
+              </button>
+            )}
+
             {/* Optimize Sequences TSP */}
             <button
               onClick={handleOptimizeAllSequences}
@@ -1664,9 +1723,20 @@ export default function TacticalPage() {
                                 : "hover:bg-zinc-900/60"
                             }`}
                           >
-                            {/* Expand Indicator */}
-                            <td className="py-2.5 px-3 text-center text-zinc-400 group-hover:text-zinc-100 font-bold">
-                              {isExpanded ? "▼" : "▶"}
+                            {/* Selection Checkbox & Expand Indicator */}
+                            <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-center space-x-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRouteNames.includes(routeName)}
+                                  onChange={() => toggleRouteSelection(routeName)}
+                                  className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer border-zinc-600 bg-zinc-800"
+                                  title="Selecionar para Re-Otimização Conjunta"
+                                />
+                                <span className="text-zinc-400 group-hover:text-zinc-100 font-bold text-xs cursor-pointer" onClick={() => toggleRouteExpand(routeName)}>
+                                  {isExpanded ? "▼" : "▶"}
+                                </span>
+                              </div>
                             </td>
 
                             {/* Rota / Viatura */}

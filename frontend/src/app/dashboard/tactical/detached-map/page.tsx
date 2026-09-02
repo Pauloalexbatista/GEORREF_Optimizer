@@ -7,6 +7,7 @@ import { useI18n } from "@/context/I18nContext";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import { MapFilterState } from "@/components/MapComponent";
+import ReoptimizeModal from "@/components/ReoptimizeModal";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
@@ -25,6 +26,61 @@ export default function DetachedMapPage() {
   const [vehicles, setVehicles] = useState<string[]>([]);
   const [fleet, setFleet] = useState<any[]>([]);
   const [statusMsg, setStatusMsg] = useState("A aguardar sincronização...");
+  const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
+  const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
+
+  const handleReoptimizeSubset = async (options: {
+    objective: "distance" | "group";
+    balanceRoutes: boolean;
+    respectTimeWindows: boolean;
+  }) => {
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    if (!projId || modalSelectedRoutes.length === 0) return;
+    setStatusMsg("A re-otimizar rotas selecionadas...");
+    try {
+      const res = await apiRequest("/api/solver/reoptimize-selected-routes", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projId,
+          selected_routes: modalSelectedRoutes,
+          objective: options.objective,
+          balance_routes: options.balanceRoutes,
+          respect_time_windows: options.respectTimeWindows,
+        }),
+      });
+      if (res && res.routes) {
+        const mappedClients = res.routes.map((r: any) => ({
+          ...r,
+          id: r.id || r.ID_Original,
+          ID_Original: r.id || r.ID_Original,
+          Doc_ID: r.Doc_ID || r.doc_id || "",
+          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+          Nome_Cliente: r.Nome_Cliente || r.Cliente,
+          Telefone: r.Telefone || r.Telefone_Cliente || "",
+          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
+          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
+          Vendedor: r.Vendedor || (r as any).vendedor || "",
+        }));
+        setClients(mappedClients);
+        setStatusMsg(res.message || "Rotas re-otimizadas com sucesso!");
+        const payload = {
+          type: "MAP_UPDATE",
+          clients: mappedClients,
+          warehouses,
+          vehicles,
+          fleet,
+          timestamp: Date.now(),
+        };
+        try {
+          channelRef.current?.postMessage(payload);
+          localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+        } catch (e) {}
+      }
+    } catch (err: any) {
+      alert("Erro ao re-otimizar: " + (err.message || "Erro desconhecido"));
+    }
+  };
 
   // Synchronized Filter State (Bidirectional with 1st Screen)
   const [filters, setFilters] = useState<MapFilterState>(() => {
@@ -453,6 +509,20 @@ export default function DetachedMapPage() {
           onMoveClientRoute={handleMoveClientRoute}
           onBulkReassign={handleBulkReassign}
           onUpdateClientCoords={handleUpdateClientCoords}
+          onReoptimizeSubset={(rNames) => {
+            setModalSelectedRoutes(rNames);
+            setReoptimizeModalOpen(true);
+          }}
+        />
+
+        {/* Re-optimize Selected Routes Modal on 2nd Monitor */}
+        <ReoptimizeModal
+          isOpen={reoptimizeModalOpen}
+          onClose={() => setReoptimizeModalOpen(false)}
+          selectedRoutes={modalSelectedRoutes}
+          stopsCount={clients.filter(c => modalSelectedRoutes.includes(c.Rota)).length}
+          totalKg={clients.filter(c => modalSelectedRoutes.includes(c.Rota)).reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0)}
+          onConfirm={handleReoptimizeSubset}
         />
       </div>
     </div>
