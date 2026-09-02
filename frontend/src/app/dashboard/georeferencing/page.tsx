@@ -27,6 +27,14 @@ interface Delivery {
   morada_encontrada: string;
   motivo_falha?: string;
   armazem?: string;
+  vendedor?: string;
+  telefone?: string;
+  tempo_descarga_min?: number;
+  regras?: string;
+  valor_cobrar?: number;
+  observacoes?: string;
+  rota?: string;
+  ordem?: number;
 }
 
 export default function GeoreferencingPage() {
@@ -38,6 +46,71 @@ export default function GeoreferencingPage() {
   const [filename, setFilename] = useState("");
   const [columns, setColumns] = useState<string[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [newModalOpen, setNewModalOpen] = useState(false);
+  const [newDelivForm, setNewDelivForm] = useState({
+    codigo_cliente: "",
+    nome_cliente: "",
+    morada: "",
+    codigo_postal: "",
+    concelho: "",
+    armazem: "Armazém Principal",
+    peso_kg: 0,
+    volume_m3: 0,
+    janela_inicio: "08:00",
+    janela_fim: "19:00",
+    tempo_descarga_min: 10,
+    telefone: "",
+    vendedor: "",
+    valor_cobrar: 0,
+    regras: "",
+    observacoes: "",
+    latitude: 0,
+    longitude: 0,
+  });
+
+  const handleCreateNewDelivery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProject) return;
+    if (!newDelivForm.morada || !newDelivForm.codigo_postal) {
+      alert("A morada e o código postal são obrigatórios.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiRequest(`/api/geocoding/delivery/${selectedProject.id}`, {
+        method: "POST",
+        body: JSON.stringify(newDelivForm),
+      });
+      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+      setDeliveries(data);
+      setNewModalOpen(false);
+      setNewDelivForm({
+        codigo_cliente: "",
+        nome_cliente: "",
+        morada: "",
+        codigo_postal: "",
+        concelho: "",
+        armazem: "Armazém Principal",
+        peso_kg: 0,
+        volume_m3: 0,
+        janela_inicio: "08:00",
+        janela_fim: "19:00",
+        tempo_descarga_min: 10,
+        telefone: "",
+        vendedor: "",
+        valor_cobrar: 0,
+        regras: "",
+        observacoes: "",
+        latitude: 0,
+        longitude: 0,
+      });
+      alert("Nova encomenda criada e geocodificada com sucesso!");
+    } catch (err: any) {
+      alert(err.message || "Erro ao criar encomenda.");
+    } finally {
+      setLoading(false);
+    }
+  };
   
   // Mapping state
   const [colCode, setColCode] = useState("");
@@ -534,6 +607,12 @@ export default function GeoreferencingPage() {
 
               <div className="flex items-center space-x-2">
                 <button
+                  onClick={() => setNewModalOpen(true)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center space-x-1.5 transition-all cursor-pointer mr-2"
+                >
+                  <span>➕ Nova Entrega Manual</span>
+                </button>
+                <button
                   onClick={() => setStatusFilter("all")}
                   className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
                     statusFilter === "all" ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
@@ -705,43 +784,257 @@ export default function GeoreferencingPage() {
         )}
 
 
-        {/* Unified Correction Modal */}
-        {editingDelivery && (
-          <UnifiedGeocodingModal
-            isOpen={!!editingDelivery}
-            title={`Georreferenciação Manual do Cliente: ${editingDelivery.codigo_cliente || ""} ${editingDelivery.nome_cliente ? `(${editingDelivery.nome_cliente})` : ""}`}
-            entityType="delivery"
-            initialData={{
-              name: editingDelivery.nome_cliente || editingDelivery.codigo_cliente || "",
-              address: editingDelivery.morada || "",
-              cp: editingDelivery.codigo_postal || "",
-              locality: editingDelivery.concelho || "",
-              lat: editingDelivery.latitude || 0,
-              lon: editingDelivery.longitude || 0,
-            }}
-            onSave={async (data) => {
-              if (!editingDelivery) return;
-              try {
-                await apiRequest(`/api/geocoding/delivery/${editingDelivery.id}`, {
-                  method: "PUT",
-                  body: JSON.stringify({
-                    morada: data.address,
-                    codigo_postal: data.cp,
-                    concelho: data.locality,
-                    latitude: data.lat,
-                    longitude: data.lon,
-                  }),
-                });
-                await loadDeliveries();
-                setEditingDelivery(null);
-              } catch (err: any) {
-                alert("Erro ao guardar georreferenciação: " + (err.message || "Erro desconhecido"));
-              }
-            }}
-            onClose={() => setEditingDelivery(null)}
-          />
-        )}
-      </div>
+        {/* MODAL CRIAR NOVA ENTREGA MANUAL */}
+      {newModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950">
+              <div className="flex items-center space-x-2.5">
+                <span className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 font-bold">📦</span>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-100">Criar Nova Entrega Manual</h3>
+                  <p className="text-xs text-zinc-400">Insira todos os dados da encomenda. O sistema geocodifica automaticamente.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNewModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewDelivery} className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Doc ID / Código *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: FT-2026/099"
+                    value={newDelivForm.codigo_cliente}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, codigo_cliente: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Nome do Cliente *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: Restaurante Central"
+                    value={newDelivForm.nome_cliente}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, nome_cliente: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-zinc-400 font-semibold mb-1">Morada Completa *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: Rua Garrett, 24"
+                    value={newDelivForm.morada}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, morada: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Código Postal (CP4 ou CP7) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: 1200-204"
+                    value={newDelivForm.codigo_postal}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, codigo_postal: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Localidade / Concelho</label>
+                  <input
+                    type="text"
+                    placeholder="ex: Lisboa"
+                    value={newDelivForm.concelho}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, concelho: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Armazém Base</label>
+                  <input
+                    type="text"
+                    value={newDelivForm.armazem}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, armazem: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Telefone de Contacto</label>
+                  <input
+                    type="text"
+                    placeholder="ex: 912345678"
+                    value={newDelivForm.telefone}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, telefone: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Peso (KG)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={newDelivForm.peso_kg}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, peso_kg: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Volume (m³)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newDelivForm.volume_m3}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, volume_m3: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Janela Início (HH:MM)</label>
+                  <input
+                    type="text"
+                    value={newDelivForm.janela_inicio}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, janela_inicio: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Janela Fim (HH:MM)</label>
+                  <input
+                    type="text"
+                    value={newDelivForm.janela_fim}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, janela_fim: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Tempo Descarga (min)</label>
+                  <input
+                    type="number"
+                    value={newDelivForm.tempo_descarga_min}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, tempo_descarga_min: parseInt(e.target.value) || 10 })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Valor a Cobrar (€ COD)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newDelivForm.valor_cobrar}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, valor_cobrar: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Vendedor</label>
+                  <input
+                    type="text"
+                    placeholder="ex: João Silva"
+                    value={newDelivForm.vendedor}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, vendedor: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Tags / Regras (ex: [FRIO], [PESADOS])</label>
+                  <input
+                    type="text"
+                    placeholder="ex: [FRIO]"
+                    value={newDelivForm.regras}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, regras: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-zinc-400 font-semibold mb-1">Observações / Notas de Entrega</label>
+                  <input
+                    type="text"
+                    placeholder="ex: Tocar à campainha das traseiras"
+                    value={newDelivForm.observacoes}
+                    onChange={(e) => setNewDelivForm({ ...newDelivForm, observacoes: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setNewModalOpen(false)}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 cursor-pointer"
+                >
+                  {loading ? "A criar e geocodificar..." : "💾 Gravar e Geocodificar Entrega"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Unified Correction Modal */}
+      {editingDelivery && (
+        <UnifiedGeocodingModal
+          isOpen={!!editingDelivery}
+          title={`Georreferenciação Manual do Cliente: ${editingDelivery.codigo_cliente || ""} ${editingDelivery.nome_cliente ? `(${editingDelivery.nome_cliente})` : ""}`}
+          entityType="delivery"
+          initialData={{
+            name: editingDelivery.nome_cliente || editingDelivery.codigo_cliente || "",
+            address: editingDelivery.morada || "",
+            cp: editingDelivery.codigo_postal || "",
+            locality: editingDelivery.concelho || "",
+            lat: editingDelivery.latitude || 0,
+            lon: editingDelivery.longitude || 0,
+          }}
+          onSave={async (data) => {
+            if (!editingDelivery || !selectedProject) return;
+            try {
+              await apiRequest(`/api/geocoding/delivery/${editingDelivery.id}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                  morada: data.address,
+                  codigo_postal: data.cp,
+                  concelho: data.locality,
+                  latitude: data.lat,
+                  longitude: data.lon,
+                }),
+              });
+              const res = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+              setDeliveries(res);
+              setEditingDelivery(null);
+            } catch (err: any) {
+              alert("Erro ao guardar georreferenciação: " + (err.message || "Erro desconhecido"));
+            }
+          }}
+          onClose={() => setEditingDelivery(null)}
+        />
+      )}
+    </div>
   </DashboardLayout>
   );
 }

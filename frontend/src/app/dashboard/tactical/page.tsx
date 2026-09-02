@@ -21,6 +21,9 @@ interface RouteNode {
   CP: string;
   Localidade: string;
   Janela_Horaria: string;
+  Janela_Inicio?: string;
+  Janela_Fim?: string;
+  Dist_Km?: number;
   Latitude: number;
   Longitude: number;
   Chegada: string;
@@ -178,6 +181,17 @@ export default function TacticalPage() {
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sortField, setSortField] = useState<"name" | "warehouse" | "stops" | "km" | "weight_pct" | "vol_pct" | "time">("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (field: "name" | "warehouse" | "stops" | "km" | "weight_pct" | "vol_pct" | "time") => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
   const [solving, setSolving] = useState(false);
   const [solvingSeconds, setSolvingSeconds] = useState(0);
   const [auditData, setAuditData] = useState<{
@@ -943,30 +957,58 @@ export default function TacticalPage() {
       });
     }
 
-    // Sort list
+    // Sort list with user-selected criteria
     list.sort((a, b) => {
       const cfgA = vehicleMap[a];
       const cfgB = vehicleMap[b];
       const stopsA = groupedRoutes[a] || [];
       const stopsB = groupedRoutes[b] || [];
 
-      const whA = (cfgA?.armazem || (stopsA.length > 0 ? stopsA[0].Armazem : "") || (a.includes("_") ? a.split("_")[0] : a) || "").trim().toLowerCase();
-      const whB = (cfgB?.armazem || (stopsB.length > 0 ? stopsB[0].Armazem : "") || (b.includes("_") ? b.split("_")[0] : b) || "").trim().toLowerCase();
-      if (whA !== whB) {
-        return whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
-      }
+      const maxKgA = cfgA?.capacidade_kg || 1000;
+      const maxKgB = cfgB?.capacidade_kg || 1000;
+      const totalKgA = stopsA.length > 0 ? (stopsA[stopsA.length - 1].Carga_Acum || stopsA.reduce((sum, item) => sum + (item.Peso_KG || 0), 0)) : 0;
+      const totalKgB = stopsB.length > 0 ? (stopsB[stopsB.length - 1].Carga_Acum || stopsB.reduce((sum, item) => sum + (item.Peso_KG || 0), 0)) : 0;
+      const kgPctA = (totalKgA / maxKgA) * 100;
+      const kgPctB = (totalKgB / maxKgB) * 100;
 
-      const isActiveA = stopsA.length > 0;
-      const isActiveB = stopsB.length > 0;
+      const maxVolA = cfgA?.capacidade_vol || 5.0;
+      const maxVolB = cfgB?.capacidade_vol || 5.0;
+      const totalVolA = stopsA.length > 0 ? (stopsA[stopsA.length - 1].Carga_Vol_Acum || stopsA.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0)) : 0;
+      const totalVolB = stopsB.length > 0 ? (stopsB[stopsB.length - 1].Carga_Vol_Acum || stopsB.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0)) : 0;
+      const volPctA = (totalVolA / maxVolA) * 100;
+      const volPctB = (totalVolB / maxVolB) * 100;
 
-      if (isActiveA !== isActiveB) return isActiveA ? -1 : 1;
-      if (stopsA.length !== stopsB.length) return stopsB.length - stopsA.length;
+      const whA = (cfgA?.armazem || (stopsA.length > 0 ? stopsA[0].Armazem : "") || "").trim();
+      const whB = (cfgB?.armazem || (stopsB.length > 0 ? stopsB[0].Armazem : "") || "").trim();
+
+      const kmA = stopsA.length > 0 ? (stopsA[stopsA.length - 1].Dist_Acum || 0) : 0;
+      const kmB = stopsB.length > 0 ? (stopsB[stopsB.length - 1].Dist_Acum || 0) : 0;
 
       const timeA = cfgA?.horario_inicio || "08:00";
       const timeB = cfgB?.horario_inicio || "08:00";
-      if (timeA !== timeB) return timeA.localeCompare(timeB);
 
-      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      let comp = 0;
+      if (sortField === "name") {
+        comp = a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      } else if (sortField === "warehouse") {
+        comp = whA.localeCompare(whB, undefined, { numeric: true, sensitivity: "base" });
+      } else if (sortField === "stops") {
+        comp = stopsA.length - stopsB.length;
+      } else if (sortField === "km") {
+        comp = kmA - kmB;
+      } else if (sortField === "weight_pct") {
+        comp = kgPctA - kgPctB;
+      } else if (sortField === "vol_pct") {
+        comp = volPctA - volPctB;
+      } else if (sortField === "time") {
+        comp = timeA.localeCompare(timeB);
+      }
+
+      if (comp === 0) {
+        comp = a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      }
+
+      return sortDirection === "asc" ? comp : -comp;
     });
 
     // Handle "Por Distribuir" inclusion based on status filter
@@ -1441,10 +1483,10 @@ export default function TacticalPage() {
           </div>
         </div>
 
-        {/* MAIN FULL-WIDTH ROUTES MATRIX ACCORDION */}
-        <div className="space-y-4">
+        {/* MAIN FULL-WIDTH ROUTES MATRIX: EXCEL DATA GRID TABLE */}
+        <div className="border border-zinc-800 rounded-2xl overflow-hidden bg-zinc-950/90 shadow-2xl">
           {displayRouteKeys.length === 0 ? (
-            <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-12 text-center space-y-3">
+            <div className="p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-xl bg-zinc-800/80 flex items-center justify-center mx-auto text-zinc-500">
                 🚚
               </div>
@@ -1468,510 +1510,600 @@ export default function TacticalPage() {
               </button>
             </div>
           ) : (
-            displayRouteKeys.map((routeName) => {
-              try {
-
-              const isPending = isPendingRoute(routeName);
-              const allStops = groupedRoutes[routeName] || [];
-              
-              // Apply search filter to stops within this vehicle
-              const filteredStops = searchQuery.trim() === ""
-                ? allStops
-                : allStops.filter((s) => {
-                    const q = searchQuery.toLowerCase();
-                    return (
-                      s.Cliente.toLowerCase().includes(q) ||
-                      (s.Nome_Cliente && s.Nome_Cliente.toLowerCase().includes(q)) ||
-                      s.Morada.toLowerCase().includes(q) ||
-                      s.Localidade.toLowerCase().includes(q) ||
-                      s.CP.toLowerCase().includes(q)
-                    );
-                  });
-
-              const isExpanded = !!expandedRoutes[routeName];
-              const isEmptyVehicle = !isPending && allStops.length === 0;
-              const color = getRouteColor(routeName, vehicles);
-
-              // Vehicle configuration & warehouse
-              const vConfig = vehicleMap[routeName];
-              const whName = vConfig?.armazem || (allStops.length > 0 ? allStops[0].Armazem : warehouses[0]?.name) || "Armazém Principal";
-              const whData = warehouseMap[whName] || warehouses[0] || {
-                name: whName,
-                address: "Base Central",
-                cp: "0000-000",
-                locality: "Principal",
-                lat: 38.6593,
-                lon: -9.1758,
-              };
-
-              const startTimeStr = vConfig?.horario_inicio || "08:00";
-              const speed = vConfig?.velocidade_media || 50.0;
-              const maxKg = vConfig?.capacidade_kg || 1000;
-              const maxVol = vConfig?.capacidade_vol || 5.0;
-
-              const totalKg = allStops.length > 0
-                ? (allStops[allStops.length - 1].Carga_Acum || allStops.reduce((sum, item) => sum + (item.Peso_KG || 0), 0))
-                : 0;
-              const totalVol = allStops.length > 0
-                ? (allStops[allStops.length - 1].Carga_Vol_Acum || allStops.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0))
-                : 0;
-              const kgPct = Math.round((totalKg / maxKg) * 100);
-              const volPct = Math.round((totalVol / maxVol) * 100);
-
-              // Return trip calculation
-              let returnDist = 0.0;
-              let returnArrivalTimeStr = startTimeStr;
-              let totalRouteKm = 0.0;
-
-              if (allStops.length > 0) {
-                const lastStop = allStops[allStops.length - 1];
-                if (whData && whData.lat && whData.lon) {
-                  returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
-                }
-                const returnTravelMin = (returnDist / speed) * 60.0;
-                returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
-                totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
-              }
-
-              const totalDurationStr = allStops.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
-
-              const routeAudit = auditData?.routes_status?.[routeName];
-              const hasRouteErrors = routeAudit && !routeAudit.is_valid;
-
-              return (
-                <div
-                  key={routeName}
-                  className={`border rounded-2xl overflow-hidden shadow-xl transition-all ${
-                    hasRouteErrors ? "bg-rose-950/15 border-rose-800/80 shadow-rose-950/20" : "bg-zinc-950/80 border-zinc-800"
-                  }`}
-                  style={{ borderLeft: hasRouteErrors ? "6px solid #ef4444" : `6px solid ${color}` }}
-                >
-                  {/* VEHICLE CARD HEADER */}
-                  <div className="p-4 bg-zinc-900/80 border-b border-zinc-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    {/* Left: Info */}
-                    <div
-                      onClick={() => toggleRouteExpand(routeName)}
-                      className="flex items-center space-x-3.5 cursor-pointer flex-1 min-w-0"
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-zinc-900/90 border-b border-zinc-800 text-zinc-400 font-bold uppercase tracking-wider text-[10px] select-none sticky top-0 z-20">
+                    <th className="py-2.5 px-3 w-8 text-center"></th>
+                    <th
+                      onClick={() => handleSort("name")}
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[170px]"
                     >
-                      <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-md" style={{ backgroundColor: color }} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2 flex-wrap">
-                          <h2 className={`text-base font-black ${isPending ? "text-amber-400" : "text-zinc-100"}`}>
-                            {isPending ? "⚠️ Por Distribuir" : routeName}
-                          </h2>
-
-                          {!isPending && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold border border-zinc-700">
-                              🏠 {whData.name}
-                            </span>
-                          )}
-
-                          {hasRouteErrors && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setAuditModalOpen(true);
-                              }}
-                              className="text-[10.5px] px-2.5 py-0.5 rounded-full font-black bg-rose-600 hover:bg-rose-500 text-white shadow-md flex items-center gap-1 cursor-pointer animate-pulse transition-all"
-                              title="Clique para ver o relatório detalhado de erros"
-                            >
-                              🚨 {routeAudit.violations_count} {routeAudit.violations_count === 1 ? "Erro" : "Erros"}
-                            </button>
-                          )}
-
-                          {isEmptyVehicle && (
-                            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-zinc-800/90 text-zinc-400 rounded-full font-bold border border-zinc-700">
-                              Disponível • 0 Paragens
-                            </span>
-                          )}
-
-                          {isPending && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 font-bold border border-amber-800/60">
-                              {allStops.length} Encomendas Pendentes
-                            </span>
-                          )}
-                        </div>
-
-                        {!isPending && !isEmptyVehicle && (
-                          <div className="flex items-center space-x-3 text-xs text-zinc-400 mt-1 font-mono flex-wrap">
-                            <span className="text-emerald-400 font-bold">
-                              🛫 {startTimeStr} ➔ 🏁 {returnArrivalTimeStr} ({totalDurationStr})
-                            </span>
-                            <span>•</span>
-                            <span className="text-zinc-200 font-semibold">{allStops.length} paragens</span>
-                            <span>•</span>
-                            <span className="text-indigo-300 font-semibold">{totalRouteKm.toFixed(1)} km totais</span>
-                          </div>
-                        )}
+                      <div className="flex items-center space-x-1">
+                        <span>Rota / Viatura</span>
+                        <span className="text-indigo-400">{sortField === "name" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
                       </div>
-                    </div>
-
-                    {/* Middle: Capacity Bars (if assigned vehicle) */}
-                    {!isPending && !isEmptyVehicle && (
-                      <div className="flex items-center space-x-4 shrink-0 bg-zinc-950/80 px-4 py-2 rounded-xl border border-zinc-800">
-                        {/* Weight capacity */}
-                        <div className="w-32">
-                          <div className="flex justify-between text-[10px] font-mono mb-1">
-                            <span className="text-zinc-400">Peso: {totalKg.toFixed(0)}/{maxKg}kg</span>
-                            <span className={`font-bold ${kgPct > 100 ? "text-rose-400" : kgPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
-                              {kgPct}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                kgPct > 100 ? "bg-rose-500" : kgPct > 80 ? "bg-amber-500" : "bg-emerald-500"
-                              }`}
-                              style={{ width: `${Math.min(kgPct, 100)}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Volume capacity */}
-                        <div className="w-32">
-                          <div className="flex justify-between text-[10px] font-mono mb-1">
-                            <span className="text-zinc-400">Vol: {totalVol.toFixed(1)}/{maxVol}m³</span>
-                            <span className={`font-bold ${volPct > 100 ? "text-rose-400" : volPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
-                              {volPct}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                volPct > 100 ? "bg-rose-500" : volPct > 80 ? "bg-amber-500" : "bg-emerald-500"
-                              }`}
-                              style={{ width: `${Math.min(volPct, 100)}%` }}
-                            />
-                          </div>
-                        </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort("warehouse")}
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[130px]"
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Armazém</span>
+                        <span className="text-indigo-400">{sortField === "warehouse" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
                       </div>
-                    )}
+                    </th>
+                    <th
+                      onClick={() => handleSort("time")}
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[150px]"
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Horário Previsto</span>
+                        <span className="text-indigo-400">{sortField === "time" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </div>
+                    </th>
+                    <th className="py-2.5 px-3 min-w-[80px]">Duração</th>
+                    <th
+                      onClick={() => handleSort("stops")}
+                      className="py-2.5 px-3 text-center cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[90px]"
+                    >
+                      <div className="flex items-center justify-center space-x-1">
+                        <span>Paragens</span>
+                        <span className="text-indigo-400">{sortField === "stops" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort("km")}
+                      className="py-2.5 px-3 text-center cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[90px]"
+                    >
+                      <div className="flex items-center justify-center space-x-1">
+                        <span>Distância</span>
+                        <span className="text-indigo-400">{sortField === "km" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort("weight_pct")}
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px]"
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Carga (Peso)</span>
+                        <span className="text-indigo-400">{sortField === "weight_pct" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleSort("vol_pct")}
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px]"
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Volume (m³)</span>
+                        <span className="text-indigo-400">{sortField === "vol_pct" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </div>
+                    </th>
+                    <th className="py-2.5 px-3 text-center min-w-[110px]">Estado / Erros</th>
+                    <th className="py-2.5 px-3 text-right min-w-[280px]">Ações Rápidas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-850">
+                  {displayRouteKeys.map((routeName) => {
+                    try {
+                      const isPending = isPendingRoute(routeName);
+                      const allStops = groupedRoutes[routeName] || [];
 
-                    {/* Right: Actions */}
-                    <div className="flex items-center space-x-2 shrink-0">
-                      {!isPending && allStops.length > 1 && (
-                        <button
-                          onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
-                          disabled={actionLoading === `opt_${routeName}`}
-                          className="bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow-sm"
-                          title="Ordenar sequência pelo menor trajeto"
-                        >
-                          <span>{actionLoading === `opt_${routeName}` ? "A ordenar..." : "⚡ Ordenar Trajeto"}</span>
-                        </button>
-                      )}
+                      const filteredStops = searchQuery.trim() === ""
+                        ? allStops
+                        : allStops.filter((s) => {
+                            const q = searchQuery.toLowerCase();
+                            return (
+                              s.Cliente.toLowerCase().includes(q) ||
+                              (s.Nome_Cliente && s.Nome_Cliente.toLowerCase().includes(q)) ||
+                              s.Morada.toLowerCase().includes(q) ||
+                              s.Localidade.toLowerCase().includes(q) ||
+                              s.CP.toLowerCase().includes(q)
+                            );
+                          });
 
-                      {allStops.length > 0 && (
-                        <select
-                          defaultValue=""
-                          onChange={(e) => {
-                            const tgt = e.target.value;
-                            if (!tgt) return;
-                            handleTransferEntireRoute(routeName, tgt);
-                            e.target.value = "";
-                          }}
-                          className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500 cursor-pointer shadow-sm font-semibold"
-                          title="Transferir todas as paragens desta rota em lote"
-                        >
-                          <option value="" disabled>
-                            ⇄ Mover Toda a Rota ({allStops.length})
-                          </option>
-                          {!isPending && (
-                            <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
-                              📦 Esvaziar para Por Distribuir
-                            </option>
-                          )}
-                          {vehicles
-                            .filter((v) => v !== routeName)
-                            .map((v) => (
-                              <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
-                                🚚 Transferir para {v}
-                              </option>
-                            ))}
-                        </select>
-                      )}
+                      const isExpanded = !!expandedRoutes[routeName];
+                      const isEmptyVehicle = !isPending && allStops.length === 0;
+                      const color = getRouteColor(routeName, vehicles);
 
-                      <button
-                        onClick={() => toggleRouteExpand(routeName)}
-                        className="p-1.5 text-zinc-400 hover:text-zinc-200 bg-zinc-950 rounded-xl border border-zinc-800 cursor-pointer transition-colors"
-                        title={isExpanded ? "Colapsar rota" : "Expandir rota"}
-                      >
-                        <svg
-                          className={`w-4 h-4 transform transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
+                      const vConfig = vehicleMap[routeName];
+                      const whName = vConfig?.armazem || (allStops.length > 0 ? allStops[0].Armazem : warehouses[0]?.name) || "Armazém Principal";
+                      const whData = warehouseMap[whName] || warehouses[0] || {
+                        name: whName,
+                        address: "Base Central",
+                        cp: "0000-000",
+                        locality: "Principal",
+                        lat: 38.6593,
+                        lon: -9.1758,
+                      };
 
-                  {/* EXPANDED STOPS TABLE */}
-                  {isExpanded && (
-                    <div className="overflow-auto max-h-[480px] relative rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-inner">
-                      {filteredStops.length === 0 ? (
-                        <div className="p-8 text-center text-zinc-500 text-xs italic">
-                          {isEmptyVehicle
-                            ? "Viatura disponível e sem paragens atribuídas. Pode transferir encomendas para esta viatura usando os seletores de paragens."
-                            : "Nenhuma paragem corresponde à pesquisa efetuada."}
-                        </div>
-                      ) : (
-                        <table className="w-full text-left text-xs border-collapse font-sans">
-                          <thead>
-                            <tr className="bg-zinc-100 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-850 text-[9px] font-black text-zinc-700 dark:text-zinc-400 uppercase tracking-wider">
-                              <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10"># Ordem</th>
-                              <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Doc ID / Cliente</th>
-                              <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Morada & Localidade</th>
-                              <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Contacto / Vend.</th>
-                              <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Janela Horária</th>
-                              <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Previsão Turno</th>
-                              <th className="py-2 px-2 w-[100px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Peso / Volume</th>
-                              <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Distância</th>
-                              <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-100 dark:bg-zinc-950 z-10">Mover / Reatribuir</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-850">
-                            {/* 1ª LINHA: ARMAZÉM DE ORIGEM (PARTIDA) */}
-                            {!isPending && (
-                              <tr className="bg-indigo-950/25 border-b border-indigo-800/40 text-indigo-200 font-medium">
-                                <td className="py-2 px-3 text-center">
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-indigo-900/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
-                                    Partida
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="font-bold text-indigo-300">{whData.name}</div>
-                                  <div className="text-[9px] text-indigo-400/80 font-mono">Armazém de Origem</div>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="text-zinc-200 truncate max-w-xs">{whData.address}</div>
-                                  <div className="text-[9px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
-                                </td>
-                                <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
-                                  --
-                                </td>
-                                <td className="py-2 px-2 text-center">
-                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
-                                    Início Turno
-                                  </span>
-                                </td>
-                                <td className="py-2 px-2 text-center">
-                                  <div className="font-mono text-xs font-bold text-emerald-400">
-                                    {startTimeStr}
-                                  </div>
-                                </td>
-                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
-                                  0 kg / 0 m³
-                                </td>
-                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
-                                  0.0 km
-                                </td>
-                                <td className="py-2 px-3 text-center text-[10px] text-indigo-350 font-semibold">
-                                  Base Central
-                                </td>
-                              </tr>
-                            )}
+                      const startTimeStr = vConfig?.horario_inicio || "08:00";
+                      const speed = vConfig?.velocidade_media || 50.0;
+                      const maxKg = vConfig?.capacidade_kg || 1000;
+                      const maxVol = vConfig?.capacidade_vol || 5.0;
 
-                            {filteredStops.map((stop, idx) => {
-                              const isLate = !isPending && isDeliveryLate(stop.Chegada, stop.Janela_Horaria);
-                              const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
-                              const isRowLoading = actionLoading === actKey;
+                      const totalKg = allStops.length > 0
+                        ? (allStops[allStops.length - 1].Carga_Acum || allStops.reduce((sum, item) => sum + (item.Peso_KG || 0), 0))
+                        : 0;
+                      const totalVol = allStops.length > 0
+                        ? (allStops[allStops.length - 1].Carga_Vol_Acum || allStops.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0))
+                        : 0;
+                      const kgPct = Math.round((totalKg / maxKg) * 100);
+                      const volPct = Math.round((totalVol / maxVol) * 100);
 
-                              return (
-                                <tr
-                                  key={`${stop.Cliente}-${stop.id || idx}`}
-                                  className={`hover:bg-zinc-850/40 transition-colors ${
-                                    isLate ? "bg-rose-950/20" : ""
-                                  }`}
-                                >
-                                  {/* # Ordem with Reorder Arrows */}
-                                  <td className="py-2.5 px-3.5 text-center">
-                                    <div className="flex items-center justify-center space-x-1">
-                                      <span className="w-6 h-6 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center font-mono font-bold text-zinc-200 text-xs shadow-inner">
-                                        {stop.Ordem}
-                                      </span>
-                                      {!isPending && (
-                                        <div className="flex flex-col">
-                                          <button
-                                            onClick={() => handleReorder(routeName, stop.Cliente, stop.Ordem, "up", stop.id, stop.Morada)}
-                                            disabled={stop.Ordem === 1 || isRowLoading}
-                                            className="text-zinc-400 hover:text-indigo-400 disabled:opacity-20 cursor-pointer p-0.5 leading-none text-[10px]"
-                                            title="Subir na sequência"
-                                          >
-                                            ▲
-                                          </button>
-                                          <button
-                                            onClick={() => handleReorder(routeName, stop.Cliente, stop.Ordem, "down", stop.id, stop.Morada)}
-                                            disabled={stop.Ordem === allStops.length || isRowLoading}
-                                            className="text-zinc-400 hover:text-indigo-400 disabled:opacity-20 cursor-pointer p-0.5 leading-none text-[10px]"
-                                            title="Descer na sequência"
-                                          >
-                                            ▼
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </td>
+                      let returnDist = 0.0;
+                      let returnArrivalTimeStr = startTimeStr;
+                      let totalRouteKm = 0.0;
 
-                                  {/* Cliente / Código */}
-                                  {/* Doc ID / Cliente */}
-                                  <td className="py-2 px-3">
-                                    <div className="font-bold text-zinc-900 dark:text-zinc-100">{stop.Doc_ID || stop.Cliente || "S/ Doc"}</div>
-                                    <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold font-mono">{stop.Cliente}</div>
-                                    <div className="text-[9px] text-zinc-600 dark:text-zinc-400">{stop.Nome_Cliente}</div>
-                                  </td>
+                      if (allStops.length > 0) {
+                        const lastStop = allStops[allStops.length - 1];
+                        if (whData && whData.lat && whData.lon) {
+                          returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
+                        }
+                        const returnTravelMin = (returnDist / speed) * 60.0;
+                        returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
+                        totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
+                      }
 
-                                  {/* Morada & Concelho */}
-                                  <td className="py-2 px-3">
-                                    <div className="text-zinc-800 dark:text-zinc-200 truncate max-w-xs" title={stop.Morada}>
-                                      {stop.Morada}
-                                    </div>
-                                    <div className="text-[9px] text-zinc-500 dark:text-zinc-400 flex items-center space-x-1 mt-0.5">
-                                      <span className="font-mono text-indigo-600 dark:text-indigo-400">{stop.CP}</span>
-                                      <span>•</span>
-                                      <span>{stop.Localidade}</span>
-                                    </div>
-                                  </td>
+                      const totalDurationStr = allStops.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
+                      const routeAudit = auditData?.routes_status?.[routeName];
+                      const hasRouteErrors = routeAudit && !routeAudit.is_valid;
 
-                                  {/* Contacto / Vendedor */}
-                                  <td className="py-2 px-2 text-center">
-                                    <div className="font-mono text-zinc-300 font-semibold">{stop.Telefone || stop.Telefone_Cliente || "--"}</div>
-                                    <div className="text-[9px] text-zinc-400">{stop.Vendedor || "--"}</div>
-                                  </td>
+                      return (
+                        <React.Fragment key={routeName}>
+                          {/* MASTER ROUTE ROW (EXCEL DENSE ROW) */}
+                          <tr
+                            onClick={() => toggleRouteExpand(routeName)}
+                            className={`group cursor-pointer transition-colors border-b border-zinc-800/80 ${
+                              hasRouteErrors
+                                ? "bg-rose-950/20 hover:bg-rose-900/30"
+                                : isPending
+                                ? "bg-amber-950/20 hover:bg-amber-900/30"
+                                : isExpanded
+                                ? "bg-zinc-900/80 hover:bg-zinc-850"
+                                : "hover:bg-zinc-900/60"
+                            }`}
+                          >
+                            {/* Expand Indicator */}
+                            <td className="py-2.5 px-3 text-center text-zinc-400 group-hover:text-zinc-100 font-bold">
+                              {isExpanded ? "▼" : "▶"}
+                            </td>
 
-                                  {/* Janela Horária */}
-                                  <td className="py-2 px-2 text-center">
-                                    <span className="font-mono text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800 text-[10px] inline-block">
-                                      {formatTimeWindow(stop.Janela_Horaria)}
+                            {/* Rota / Viatura */}
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center space-x-2">
+                                <span
+                                  className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                                  style={{ backgroundColor: color }}
+                                />
+                                <span className={`font-black text-xs ${isPending ? "text-amber-400" : "text-zinc-100"}`}>
+                                  {isPending ? "⚠️ Por Distribuir" : routeName}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Armazém */}
+                            <td className="py-2.5 px-3">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-zinc-900 text-zinc-300 border border-zinc-700/80">
+                                🏠 {whName}
+                              </span>
+                            </td>
+
+                            {/* Horário */}
+                            <td className="py-2.5 px-3 font-mono text-[11px]">
+                              {!isPending && !isEmptyVehicle ? (
+                                <span className="text-emerald-400 font-bold">
+                                  🛫 {startTimeStr} ➔ 🏁 {returnArrivalTimeStr}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-500">--:--</span>
+                              )}
+                            </td>
+
+                            {/* Duração */}
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-zinc-300">
+                              {!isPending && !isEmptyVehicle ? totalDurationStr : "--"}
+                            </td>
+
+                            {/* Paragens */}
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                                isPending
+                                  ? "bg-amber-900/80 text-amber-300 border border-amber-700/60"
+                                  : allStops.length > 0
+                                  ? "bg-indigo-950 text-indigo-300 border border-indigo-800/60"
+                                  : "bg-zinc-900 text-zinc-500 border border-zinc-800"
+                              }`}>
+                                {allStops.length}
+                              </span>
+                            </td>
+
+                            {/* Distância KM */}
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-300">
+                              {!isPending && !isEmptyVehicle ? `${totalRouteKm.toFixed(1)} km` : "--"}
+                            </td>
+
+                            {/* Carga Peso */}
+                            <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                              {!isPending && !isEmptyVehicle ? (
+                                <div className="w-32">
+                                  <div className="flex justify-between text-[10px] font-mono mb-0.5">
+                                    <span className="text-zinc-400">{totalKg.toFixed(0)}/{maxKg}kg</span>
+                                    <span className={`font-bold ${kgPct > 100 ? "text-rose-400" : kgPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                                      {kgPct}%
                                     </span>
-                                  </td>
+                                  </div>
+                                  <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        kgPct > 100 ? "bg-rose-500" : kgPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                                      }`}
+                                      style={{ width: `${Math.min(kgPct, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-zinc-600 text-[10px]">--</span>
+                              )}
+                            </td>
 
-                                  {/* Previsão Turno & Alerta de Atraso */}
-                                  <td className="py-2 px-2 text-center">
-                                    {!isPending ? (
-                                      <div>
-                                        <div className="font-mono text-xs font-bold text-zinc-100">
-                                          {stop.Chegada} » {stop.Saida}
-                                        </div>
-                                        {isLate ? (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-rose-950 text-rose-450 border border-rose-800 mt-0.5">
-                                            Atraso
-                                          </span>
-                                        ) : (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 mt-0.5">
-                                            No Horário
-                                          </span>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-zinc-500 font-mono text-xs">-- : --</span>
-                                    )}
-                                  </td>
+                            {/* Volume */}
+                            <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                              {!isPending && !isEmptyVehicle ? (
+                                <div className="w-32">
+                                  <div className="flex justify-between text-[10px] font-mono mb-0.5">
+                                    <span className="text-zinc-400">{totalVol.toFixed(1)}/{maxVol}m³</span>
+                                    <span className={`font-bold ${volPct > 100 ? "text-rose-400" : volPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                                      {volPct}%
+                                    </span>
+                                  </div>
+                                  <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        volPct > 100 ? "bg-rose-500" : volPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                                      }`}
+                                      style={{ width: `${Math.min(volPct, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-zinc-600 text-[10px]">--</span>
+                              )}
+                            </td>
 
-                                  {/* Peso / Volume */}
-                                  <td className="py-2 px-2 text-center font-mono">
-                                    <div className="text-zinc-200 font-semibold">{(Number(stop.Peso_KG) || 0).toFixed(0)} kg</div>
-                                    <div className="text-[9px] text-zinc-400">{(Number(stop.Volume_m3) || 0.0).toFixed(2)} m³</div>
+                            {/* Estado / Erros */}
+                            <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              {hasRouteErrors ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setAuditModalOpen(true);
+                                  }}
+                                  className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-600 hover:bg-rose-500 text-white shadow flex items-center justify-center gap-1 cursor-pointer mx-auto animate-pulse"
+                                  title="Clique para ver relatório detalhado de erros"
+                                >
+                                  🚨 {routeAudit.violations_count} {routeAudit.violations_count === 1 ? "Erro" : "Erros"}
+                                </button>
+                              ) : isPending ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 font-bold border border-amber-800/60">
+                                  {allStops.length} Pendentes
+                                </span>
+                              ) : isEmptyVehicle ? (
+                                <span className="text-[10px] px-2 py-0.5 bg-zinc-900 text-zinc-400 rounded-full font-bold border border-zinc-800">
+                                  Disponível
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-2 py-0.5 bg-emerald-950 text-emerald-300 rounded-full font-bold border border-emerald-800/60">
+                                  Em Rota
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Ações Rápidas */}
+                            <td className="py-2 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end space-x-1.5">
+                                {!isPending && allStops.length > 1 && (
+                                  <button
+                                    onClick={(e) => handleOptimizeSingleRoute(routeName, e)}
+                                    disabled={actionLoading === `opt_${routeName}`}
+                                    className="bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
+                                    title="Ordenar sequência pelo menor trajeto"
+                                  >
+                                    <span>{actionLoading === `opt_${routeName}` ? "A ordenar..." : "⚡ Ordenar"}</span>
+                                  </button>
+                                )}
+
+                                {allStops.length > 0 && (
+                                  <select
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                      const tgt = e.target.value;
+                                      if (!tgt) return;
+                                      handleTransferEntireRoute(routeName, tgt);
+                                      e.target.value = "";
+                                    }}
+                                    className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer font-semibold max-w-[160px]"
+                                    title="Transferir todas as paragens desta rota em lote"
+                                  >
+                                    <option value="" disabled>
+                                      ⇄ Mover Rota ({allStops.length})
+                                    </option>
                                     {!isPending && (
-                                      <div className="text-[8px] text-zinc-500 font-normal">
-                                        Acum: {(Number(stop.Carga_Acum !== undefined && stop.Carga_Acum !== null ? stop.Carga_Acum : stop.Peso_KG) || 0).toFixed(0)} kg
-                                      </div>
+                                      <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
+                                        📦 Esvaziar para Por Distribuir
+                                      </option>
                                     )}
-                                  </td>
-
-                                  {/* Distância */}
-                                  <td className="py-2 px-2 text-center font-mono">
-                                    {!isPending ? (
-                                      <div>
-                                        <div className="text-zinc-200 font-semibold">{(Number(stop.KM_Anterior) || 0).toFixed(1)} km</div>
-                                        <div className="text-[9px] text-zinc-400">Acum: {(Number(stop.Dist_Acum) || 0).toFixed(1)} km</div>
-                                      </div>
-                                    ) : (
-                                      <span className="text-zinc-500 text-xs">--</span>
-                                    )}
-                                  </td>
-
-                                  {/* Quick Reassign Dropdown */}
-                                  <td className="py-2.5 px-4 text-center">
-                                    <select
-                                      value={isPending ? "Por Distribuir" : routeName}
-                                      disabled={isRowLoading}
-                                      onChange={(e) => {
-                                        const newR = e.target.value;
-                                        if (newR === routeName) return;
-                                        handleReassign(stop.Cliente, newR, stop.id || stop.ID_Original, stop.Morada);
-                                      }}
-                                      className="bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 hover:border-indigo-500 text-zinc-200 rounded-xl px-2.5 py-1 text-xs outline-none focus:border-indigo-500 cursor-pointer shadow-sm w-full max-w-[170px]"
-                                    >
-                                      {reassignOptions.map((opt) => (
-                                        <option key={opt} value={opt} className={isPendingRoute(opt) ? "text-amber-400 font-bold" : ""}>
-                                          {isPendingRoute(opt) ? "⚠️ Por Distribuir" : `🚚 ${opt}`}
+                                    {vehicles
+                                      .filter((v) => v !== routeName)
+                                      .map((v) => (
+                                        <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
+                                          🚚 Para {v}
                                         </option>
                                       ))}
-                                    </select>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                  </select>
+                                )}
 
-                            {/* ÚLTIMA LINHA: REGRESSO AO ARMAZÉM (CHEGADA) */}
-                            {!isPending && allStops.length > 0 && (
-                              <tr className="bg-emerald-950/25 border-t border-emerald-800/40 text-emerald-200 font-medium">
-                                <td className="py-2 px-3 text-center">
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 shadow-sm">
-                                    Regresso
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="font-bold text-emerald-300">{whData.name}</div>
-                                  <div className="text-[9px] text-emerald-400/80 font-mono">Regresso ao Armazém</div>
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="text-zinc-200 truncate max-w-xs">{whData.address}</div>
-                                  <div className="text-[9px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
-                                </td>
-                                <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
-                                  --
-                                </td>
-                                <td className="py-2 px-2 text-center">
-                                  <span className="font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
-                                    Fim Turno
-                                  </span>
-                                </td>
-                                <td className="py-2 px-2 text-center">
-                                  <div className="font-mono text-xs font-bold text-emerald-400">
-                                    {returnArrivalTimeStr}
-                                  </div>
-                                </td>
-                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
-                                  --
-                                </td>
-                                <td className="py-2 px-2 text-center font-mono text-zinc-450">
-                                  Acum: {totalRouteKm.toFixed(1)} km
-                                </td>
-                                <td className="py-2 px-3 text-center text-[10px] text-emerald-400 font-semibold font-sans">
-                                  Fim de Turno
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            
-              } catch (renderError: any) {
-                console.error("Error rendering route card:", routeName, renderError);
-                return (
-                  <div key={routeName} className="bg-rose-950/40 border border-rose-800 p-4 rounded-xl text-xs text-rose-300 font-mono">
-                    Erro ao renderizar rota {routeName}: {renderError.message}
-                  </div>
-                );
-              }
-})
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleRouteExpand(routeName);
+                                  }}
+                                  className="p-1 text-zinc-400 hover:text-zinc-200 bg-zinc-900 rounded-lg border border-zinc-800 cursor-pointer text-xs"
+                                  title={isExpanded ? "Colapsar detalhes" : "Expandir paragens"}
+                                >
+                                  {isExpanded ? "▲" : "▼"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* EXPANDED SUB-TABLE (STOPS / CLIENTS) */}
+                          {isExpanded && (
+                            <tr className="bg-zinc-950">
+                              <td colSpan={11} className="p-3 bg-zinc-950/90 border-b border-zinc-800">
+                                <div className="border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-900/50 shadow-inner">
+                                  {allStops.length === 0 ? (
+                                    <div className="p-6 text-center text-zinc-500 text-xs">
+                                      Nenhuma paragem atribuída a esta viatura. Arraste clientes ou use o seletor para atribuir entregas.
+                                    </div>
+                                  ) : (
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                          <tr className="bg-zinc-950 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                            <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-950 z-10"># Ordem</th>
+                                            <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-950 z-10">Doc ID / Cliente</th>
+                                            <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-950 z-10">Morada & Localidade</th>
+                                            <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-10">Contacto / Vend.</th>
+                                            <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-950 z-10">Janela Horária</th>
+                                            <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-10">Previsão Chegada</th>
+                                            <th className="py-2 px-2 w-[100px] text-center sticky top-0 bg-zinc-950 z-10">Peso / Volume</th>
+                                            <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-950 z-10">Distância</th>
+                                            <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-950 z-10">Mover / Reatribuir</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-850">
+                                          {/* 1ª LINHA: ARMAZÉM DE ORIGEM (PARTIDA) */}
+                                          {!isPending && (
+                                            <tr className="bg-indigo-950/25 border-b border-indigo-800/40 text-indigo-200 font-medium">
+                                              <td className="py-2 px-3 text-center">
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-indigo-900/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
+                                                  Partida
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-3">
+                                                <div className="font-bold text-indigo-300">{whData.name}</div>
+                                                <div className="text-[9px] text-indigo-400/80 font-mono">Armazém de Origem</div>
+                                              </td>
+                                              <td className="py-2 px-3">
+                                                <div className="text-zinc-200 truncate max-w-xs">{whData.address}</div>
+                                                <div className="text-[9px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
+                                                --
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <span className="font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
+                                                  Início Turno
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <div className="font-mono text-xs font-bold text-emerald-400">
+                                                  {startTimeStr}
+                                                </div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                                0 kg / 0 m³
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                                0.0 km
+                                              </td>
+                                              <td className="py-2 px-3 text-center text-[10px] text-indigo-350 font-semibold">
+                                                Base Central
+                                              </td>
+                                            </tr>
+                                          )}
+
+                                          {filteredStops.map((stop, idx) => {
+                                            const isLate = !isPending && isDeliveryLate(stop.Chegada, stop.Janela_Horaria);
+                                            const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
+                                            const isRowLoading = actionLoading === actKey;
+
+                                            return (
+                                              <tr
+                                                key={`${stop.Cliente}-${stop.id || idx}`}
+                                                className={`hover:bg-zinc-850/40 transition-colors ${
+                                                  isLate ? "bg-rose-950/20" : ""
+                                                }`}
+                                              >
+                                                {/* # Ordem with Reorder Arrows */}
+                                                <td className="py-2.5 px-3.5 text-center">
+                                                  <div className="flex items-center justify-center space-x-1">
+                                                    <span className="w-6 h-6 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center font-mono font-bold text-zinc-200 text-xs shadow-inner">
+                                                      {stop.Ordem}
+                                                    </span>
+                                                    {!isPending && (
+                                                      <div className="flex flex-col">
+                                                        <button
+                                                          onClick={() => handleReorder(routeName, stop.Cliente, stop.Ordem, "up", stop.id, stop.Morada)}
+                                                          disabled={stop.Ordem === 1 || isRowLoading}
+                                                          className="text-zinc-400 hover:text-indigo-400 disabled:opacity-20 cursor-pointer p-0.5 leading-none text-[10px]"
+                                                          title="Subir na sequência"
+                                                        >
+                                                          ▲
+                                                        </button>
+                                                        <button
+                                                          onClick={() => handleReorder(routeName, stop.Cliente, stop.Ordem, "down", stop.id, stop.Morada)}
+                                                          disabled={stop.Ordem === allStops.length || isRowLoading}
+                                                          className="text-zinc-400 hover:text-indigo-400 disabled:opacity-20 cursor-pointer p-0.5 leading-none text-[10px]"
+                                                          title="Descer na sequência"
+                                                        >
+                                                          ▼
+                                                        </button>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </td>
+
+                                                {/* Doc ID / Cliente */}
+                                                <td className="py-2 px-3">
+                                                  <div className="font-bold text-zinc-100">{stop.Doc_ID || stop.Cliente || "S/ Doc"}</div>
+                                                  <div className="text-[10px] text-zinc-400 truncate max-w-xs">{stop.Nome_Cliente || stop.Cliente}</div>
+                                                </td>
+
+                                                {/* Morada & Localidade */}
+                                                <td className="py-2 px-3">
+                                                  <div className="text-zinc-200 truncate max-w-xs">{stop.Morada}</div>
+                                                  <div className="text-[10px] text-zinc-400 font-mono">{stop.CP} {stop.Localidade}</div>
+                                                </td>
+
+                                                {/* Contacto / Vendedor */}
+                                                <td className="py-2 px-2 text-center">
+                                                  <div className="font-mono text-[10px] text-zinc-300">{stop.Telefone_Cliente || stop.Telefone || "--"}</div>
+                                                  <div className="text-[9px] text-zinc-500">{stop.Vendedor || stop.vendedor || "--"}</div>
+                                                </td>
+
+                                                {/* Janela Horária */}
+                                                <td className="py-2 px-2 text-center">
+                                                  <span className="font-mono text-zinc-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[10px]">
+                                                    {stop.Janela_Horaria || (stop.Janela_Inicio && stop.Janela_Fim ? `${stop.Janela_Inicio}-${stop.Janela_Fim}` : "08:00-19:00")}
+                                                  </span>
+                                                </td>
+
+                                                {/* Previsão Chegada */}
+                                                <td className="py-2 px-2 text-center">
+                                                  <div className="flex items-center justify-center space-x-1">
+                                                    <span className={`font-mono text-xs font-bold ${
+                                                      isLate ? "text-rose-400 bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-800" : "text-emerald-400"
+                                                    }`}>
+                                                      {stop.Chegada || "--:--"}
+                                                    </span>
+                                                    {isLate && <span title="Atraso face à janela do cliente">⚠️</span>}
+                                                  </div>
+                                                </td>
+
+                                                {/* Peso / Volume */}
+                                                <td className="py-2 px-2 text-center font-mono text-zinc-300">
+                                                  <div>{stop.Peso_KG || 0} kg</div>
+                                                  <div className="text-[9px] text-zinc-500">{(stop.Volume_m3 || 0).toFixed(2)} m³</div>
+                                                </td>
+
+                                                {/* Distância */}
+                                                <td className="py-2 px-2 text-center font-mono text-indigo-300">
+                                                  <div>{(stop.Dist_Km || 0).toFixed(1)} km</div>
+                                                  <div className="text-[9px] text-zinc-500">Acum: {(stop.Dist_Acum || 0).toFixed(1)}</div>
+                                                </td>
+
+                                                {/* Mover / Reatribuir */}
+                                                <td className="py-2 px-3 text-center">
+                                                  <select
+                                                    value={isPending ? "Por Distribuir" : routeName}
+                                                    disabled={isRowLoading}
+                                                    onChange={(e) => {
+                                                      const tgt = e.target.value;
+                                                      if (tgt === routeName) return;
+                                                      handleReassign(stop.Cliente, tgt, stop.id, stop.Morada);
+                                                    }}
+                                                    className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer font-semibold max-w-[150px]"
+                                                  >
+                                                    <option value="Por Distribuir" className="text-amber-400 font-bold bg-zinc-900">
+                                                      ⚠️ Por Distribuir
+                                                    </option>
+                                                    {vehicles.map((v) => (
+                                                      <option key={v} value={v} className="bg-zinc-900 text-zinc-200">
+                                                        🚚 {v}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+
+                                          {/* ÚLTIMA LINHA: REGRESSO AO ARMAZÉM */}
+                                          {!isPending && (
+                                            <tr className="bg-emerald-950/20 border-t border-emerald-800/40 text-emerald-200 font-medium">
+                                              <td className="py-2 px-3 text-center">
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 shadow-sm">
+                                                  Regresso
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-3">
+                                                <div className="font-bold text-emerald-300">{whData.name}</div>
+                                                <div className="text-[9px] text-emerald-400/80 font-mono">Regresso ao Armazém</div>
+                                              </td>
+                                              <td className="py-2 px-3">
+                                                <div className="text-zinc-200 truncate max-w-xs">{whData.address}</div>
+                                                <div className="text-[9px] text-zinc-400 font-mono">{whData.cp} {whData.locality}</div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
+                                                --
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <span className="font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
+                                                  Fim Turno
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <div className="font-mono text-xs font-bold text-emerald-400">
+                                                  {returnArrivalTimeStr}
+                                                </div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                                --
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                                Acum: {totalRouteKm.toFixed(1)} km
+                                              </td>
+                                              <td className="py-2 px-3 text-center text-[10px] text-emerald-400 font-semibold">
+                                                Fim de Turno
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    } catch (renderError: any) {
+                      console.error("Error rendering route row:", routeName, renderError);
+                      return (
+                        <tr key={routeName} className="bg-rose-950/40 border border-rose-800">
+                          <td colSpan={11} className="p-4 text-xs text-rose-300 font-mono">
+                            Erro ao renderizar rota {routeName}: {renderError.message}
+                          </td>
+                        </tr>
+                      );
+                    }
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
         {/* Quality Audit Modal */}

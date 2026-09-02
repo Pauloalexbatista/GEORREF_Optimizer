@@ -1,14 +1,19 @@
 ﻿@echo off
-title GeoRoute Pro - Parar
+title GeoRoute Pro - Parar Servicos
 
-echo A parar o servidor...
-taskkill /F /IM streamlit.exe 2>nul
+cd /d "%~dp0"
 
-rem Matar qualquer processo python que esteja a escutar na porta 8503
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8503 ^| findstr LISTENING') do (
+echo A terminar servicos do GeoRoute Pro...
+
+:: Terminar processos na porta 8000 (Backend)
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING 2^>nul') do (
     taskkill /F /PID %%a 2>nul
 )
 
-echo.
-echo Servidor GeoRoute parado com sucesso!
-echo.
+:: Terminar processos na porta 3000 (Frontend)
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING 2^>nul') do (
+    taskkill /F /PID %%a 2>nul
+)
+
+echo Servicos terminados com sucesso.
+exit

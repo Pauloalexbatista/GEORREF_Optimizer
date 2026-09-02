@@ -405,16 +405,29 @@ class ColumnMapping(BaseModel):
 
 
 class DeliveryCorrection(BaseModel):
-
+    codigo_cliente: Optional[str] = None
+    nome_cliente: Optional[str] = None
     morada: str
-
     codigo_postal: str
-
     concelho: str
+    latitude: float = 0.0
+    longitude: float = 0.0
+    telefone: Optional[str] = ""
+    peso_kg: Optional[float] = 0.0
+    volume_m3: Optional[float] = 0.0
+    janela_inicio: Optional[str] = "08:00"
+    janela_fim: Optional[str] = "19:00"
+    tempo_descarga_min: Optional[int] = 10
+    regras: Optional[str] = ""
+    vendedor: Optional[str] = ""
+    valor_cobrar: Optional[float] = 0.0
+    observacoes: Optional[str] = ""
+    armazem: Optional[str] = "Armazém Principal"
+    rota: Optional[str] = "Por Distribuir"
+    ordem: Optional[int] = 0
 
-    latitude: float
-
-    longitude: float
+class DeliveryCreate(DeliveryCorrection):
+    pass
 
 
 
@@ -1178,10 +1191,15 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
 
                     "motivo_falha": reason,
 
-                    "armazem": r["armazem"] if "armazem" in r.keys() else None,
-
-                    "vendedor": r["vendedor"] if "vendedor" in r.keys() else "" 
-
+                    "armazem": r["armazem"] if "armazem" in r.keys() else "Armazém Principal",
+                    "vendedor": r["vendedor"] if "vendedor" in r.keys() else "",
+                    "telefone": r["telefone"] if "telefone" in r.keys() else "",
+                    "tempo_descarga_min": r["tempo_descarga_min"] if "tempo_descarga_min" in r.keys() else 10,
+                    "regras": r["regras"] if "regras" in r.keys() else "",
+                    "valor_cobrar": r["valor_cobrar"] if "valor_cobrar" in r.keys() else 0.0,
+                    "observacoes": r["observacoes"] if "observacoes" in r.keys() else "",
+                    "rota": r["rota"] if "rota" in r.keys() else "Por Distribuir",
+                    "ordem": r["ordem"] if "ordem" in r.keys() else 0
                 })
 
             return res
@@ -1230,10 +1248,35 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
 
             cursor.execute("""
                 UPDATE entregas 
-                SET morada = ?, codigo_postal = ?, _concelho = ?,
-                    latitude = ?, longitude = ?, nivel_qualidade = 1, fonte_match = 'CORRECAO_MANUAL'
+                SET morada = COALESCE(?, morada),
+                    codigo_postal = COALESCE(?, codigo_postal),
+                    _concelho = COALESCE(?, _concelho),
+                    latitude = COALESCE(?, latitude),
+                    longitude = COALESCE(?, longitude),
+                    nivel_qualidade = CASE WHEN ? != 0.0 THEN 1 ELSE nivel_qualidade END,
+                    fonte_match = CASE WHEN ? != 0.0 THEN 'CORRECAO_MANUAL' ELSE fonte_match END,
+                    codigo_cliente = COALESCE(?, codigo_cliente),
+                    nome_cliente = COALESCE(?, nome_cliente),
+                    telefone = COALESCE(?, telefone),
+                    peso_kg = COALESCE(?, peso_kg),
+                    volume_m3 = COALESCE(?, volume_m3),
+                    janela_inicio = COALESCE(?, janela_inicio),
+                    janela_fim = COALESCE(?, janela_fim),
+                    tempo_descarga_min = COALESCE(?, tempo_descarga_min),
+                    regras = COALESCE(?, regras),
+                    vendedor = COALESCE(?, vendedor),
+                    valor_cobrar = COALESCE(?, valor_cobrar),
+                    observacoes = COALESCE(?, observacoes),
+                    armazem = COALESCE(?, armazem)
                 WHERE id = ?
-            """, (corr.morada, corr.codigo_postal, corr.concelho, corr.latitude, corr.longitude, delivery_id))
+            """, (
+                corr.morada, corr.codigo_postal, corr.concelho, corr.latitude, corr.longitude,
+                corr.latitude, corr.latitude,
+                corr.codigo_cliente, corr.nome_cliente, corr.telefone, corr.peso_kg, corr.volume_m3,
+                corr.janela_inicio, corr.janela_fim, corr.tempo_descarga_min, corr.regras, corr.vendedor,
+                corr.valor_cobrar, corr.observacoes, corr.armazem,
+                delivery_id
+            ))
 
             # Persistir / Enriquecer a Base de Dados Permanente (geocoding.db)
             if corr.latitude != 0.0 and corr.longitude != 0.0:
@@ -1606,6 +1649,88 @@ def export_geocoding_results(
 
 
 
+
+@router.post("/delivery/{project_id}")
+def create_delivery_stop(project_id: int, deliv: DeliveryCreate, current_user: UserResponse = Depends(get_current_user)):
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, empresa_id FROM projetos WHERE id = ?", (project_id,))
+            proj = cursor.fetchone()
+            if not proj:
+                raise HTTPException(status_code=404, detail="Projeto não encontrado.")
+            if proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False):
+                raise HTTPException(status_code=403, detail="Não tem permissão neste projeto.")
+            
+            lat = float(deliv.latitude or 0.0)
+            lon = float(deliv.longitude or 0.0)
+            quality = 1 if lat != 0.0 and lon != 0.0 else 8
+            fonte = "MANUAL_EXATO" if quality == 1 else "PENDENTE"
+            
+            if lat == 0.0 and lon == 0.0 and (deliv.morada or deliv.codigo_postal):
+                try:
+                    from utils.geocoder_engine import WaterfallGeocoder
+                    geocoder = WaterfallGeocoder(db_path=DB_GEO_PATH)
+                    res = geocoder.geocode(deliv.morada, deliv.codigo_postal, deliv.concelho)
+                    if res and res.get("lat"):
+                        lat = float(res["lat"])
+                        lon = float(res["lon"])
+                        quality = int(res.get("quality", 1))
+                        fonte = str(res.get("source", "WATERFALL"))
+                except Exception as e:
+                    print(f"[AVISO] Geocoding falhou ao criar entrega: {e}")
+
+            import time
+            doc_id = deliv.codigo_cliente or f"MAN-{int(time.time())}"
+            nome = deliv.nome_cliente or doc_id
+            
+            cursor.execute("""
+                INSERT INTO entregas (
+                    projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal,
+                    _concelho, peso_kg, volume_m3, prioridade, janela_inicio,
+                    janela_fim, observacoes, telefone, armazem, vendedor, valor_cobrar,
+                    tempo_descarga_min, latitude, longitude, nivel_qualidade, fonte_match,
+                    morada_encontrada, rota, ordem, regras
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                project_id, doc_id, nome, deliv.morada, deliv.codigo_postal,
+                deliv.concelho, float(deliv.peso_kg or 0.0), float(deliv.volume_m3 or 0.0),
+                deliv.janela_inicio or "08:00", deliv.janela_fim or "19:00",
+                deliv.observacoes or "", deliv.telefone or "", deliv.armazem or "Armazém Principal",
+                deliv.vendedor or "", float(deliv.valor_cobrar or 0.0), int(deliv.tempo_descarga_min or 10),
+                lat, lon, quality, fonte, deliv.morada, deliv.rota or "Por Distribuir",
+                int(deliv.ordem or 0), deliv.regras or ""
+            ))
+            new_id = cursor.lastrowid
+            conn.commit()
+            
+            return {
+                "id": new_id,
+                "codigo_cliente": doc_id,
+                "nome_cliente": nome,
+                "morada": deliv.morada,
+                "codigo_postal": deliv.codigo_postal,
+                "concelho": deliv.concelho,
+                "latitude": lat,
+                "longitude": lon,
+                "nivel_qualidade": quality,
+                "peso_kg": deliv.peso_kg,
+                "volume_m3": deliv.volume_m3,
+                "janela_inicio": deliv.janela_inicio,
+                "janela_fim": deliv.janela_fim,
+                "armazem": deliv.armazem,
+                "vendedor": deliv.vendedor,
+                "valor_cobrar": deliv.valor_cobrar,
+                "telefone": deliv.telefone,
+                "tempo_descarga_min": deliv.tempo_descarga_min,
+                "regras": deliv.regras,
+                "observacoes": deliv.observacoes,
+                "rota": deliv.rota or "Por Distribuir"
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/delivery/{delivery_id}")
 def delete_delivery(delivery_id: int, current_user: UserResponse = Depends(get_current_user)):

@@ -1,0 +1,2371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+    <Document id="15595">
+        <Placemark id="15597">
+            <name>Sarmento Vieira</name>
+            <description>Score: 100.0</description>
+            <Point id="15596">
+                <coordinates>-8.4627343,38.6746649,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15599">
+            <name>Marcos da Catrina</name>
+            <description>Score: 48.648648648648646</description>
+            <Point id="15598">
+                <coordinates>-8.7187111,38.6264988,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15601">
+            <name>Morgada</name>
+            <description>Score: 100.0</description>
+            <Point id="15600">
+                <coordinates>-8.8033488,38.5215135,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15603">
+            <name>Morgada</name>
+            <description>Score: 100.0</description>
+            <Point id="15602">
+                <coordinates>-8.8033488,38.5215135,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15605">
+            <name>Ponte Velha Pontes</name>
+            <description>Score: 75.86206896551724</description>
+            <Point id="15604">
+                <coordinates>-8.8108569,38.5487074,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15607">
+            <name>Travessa 31 De Agosto Nº1</name>
+            <description>Score: 100.0</description>
+            <Point id="15606">
+                <coordinates>-8.813759,38.5248137,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15609">
+            <name>Quinta Nova</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="15608">
+                <coordinates>-8.9176512,38.6118099,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15611">
+            <name>Trabalhadores da Terra</name>
+            <description>Score: 92.6829268292683</description>
+            <Point id="15610">
+                <coordinates>-8.83604,38.5679312,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15613">
+            <name>Quinta da Amizade Urbanização Quinta da Amizade</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="15612">
+                <coordinates>-8.8567211,38.5422604,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15615">
+            <name>13 de Novembro</name>
+            <description>Score: 72.72727272727272</description>
+            <Point id="15614">
+                <coordinates>-8.8136052,38.5254004,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15617">
+            <name>Laranjeiras</name>
+            <description>Score: 100.0</description>
+            <Point id="15616">
+                <coordinates>-8.8559545,38.5441362,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15619">
+            <name>Joaquim Campos Manteigadas</name>
+            <description>Score: 70.0</description>
+            <Point id="15618">
+                <coordinates>-8.8611004,38.5197536,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15621">
+            <name>Mestre Lima de Freitas</name>
+            <description>Score: 92.6829268292683</description>
+            <Point id="15620">
+                <coordinates>-8.875426,38.5413687,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15623">
+            <name>Rua Diogo Cão</name>
+            <description>Score: 53.84615384615385</description>
+            <Point id="15622">
+                <coordinates>-8.8739004,38.5234722,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15625">
+            <name>Amendoeiras</name>
+            <description>Score: 100.0</description>
+            <Point id="15624">
+                <coordinates>-8.8612665,38.5218916,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15627">
+            <name>Bela Vista</name>
+            <description>Score: 100.0</description>
+            <Point id="15626">
+                <coordinates>-8.8664649,38.5213346,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15629">
+            <name>Bela Vista</name>
+            <description>Score: 100.0</description>
+            <Point id="15628">
+                <coordinates>-8.8664649,38.5213346,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15631">
+            <name>Gonçalves Zarco</name>
+            <description>Score: 100.0</description>
+            <Point id="15630">
+                <coordinates>-8.868334,38.5365198,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15633">
+            <name>Valverde</name>
+            <description>Score: 100.0</description>
+            <Point id="15632">
+                <coordinates>-8.8674192,38.5323144,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15635">
+            <name>Gomes Cardim</name>
+            <description>Score: 58.8235294117647</description>
+            <Point id="15634">
+                <coordinates>-8.8769221,38.5255697,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15637">
+            <name>Alecrim</name>
+            <description>Score: 63.63636363636363</description>
+            <Point id="15636">
+                <coordinates>-8.8477596,38.5418368,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15639">
+            <name>António Carvalho Serra</name>
+            <description>Score: 87.5</description>
+            <Point id="15638">
+                <coordinates>-8.8684671,38.5266858,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15641">
+            <name>José Joaquim Cabecinha</name>
+            <description>Score: 87.17948717948718</description>
+            <Point id="15640">
+                <coordinates>-8.8710908,38.5247008,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15643">
+            <name>Vale de Cerejeiras</name>
+            <description>Score: 90.9090909090909</description>
+            <Point id="15642">
+                <coordinates>-8.8776339,38.5325647,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15645">
+            <name>Coração de Maria</name>
+            <description>Score: 89.65517241379311</description>
+            <Point id="15644">
+                <coordinates>-8.8771273,38.539261,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15647">
+            <name>Augusto da Costa</name>
+            <description>Score: 89.65517241379311</description>
+            <Point id="15646">
+                <coordinates>-8.8793787,38.5253511,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15649">
+            <name>São Tomé e Príncipe Padre Nabeto</name>
+            <description>Score: 60.317460317460316</description>
+            <Point id="15648">
+                <coordinates>-8.8796189,38.5615528,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15651">
+            <name>Aires Aires</name>
+            <description>Score: 100.0</description>
+            <Point id="15650">
+                <coordinates>-8.8844812,38.5720173,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15653">
+            <name>Central da Azeda</name>
+            <description>Score: 89.65517241379311</description>
+            <Point id="15652">
+                <coordinates>-8.8801853,38.5387636,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15655">
+            <name>General Gomes Freire</name>
+            <description>Score: 78.78787878787878</description>
+            <Point id="15654">
+                <coordinates>-8.8799427,38.5270171,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15657">
+            <name>Pedro Augusto da Fonseca Aires</name>
+            <description>Score: 82.35294117647058</description>
+            <Point id="15656">
+                <coordinates>-8.8829762,38.5704958,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15659">
+            <name>Pedro Augusto da Fonseca Aires</name>
+            <description>Score: 82.35294117647058</description>
+            <Point id="15658">
+                <coordinates>-8.8829762,38.5704958,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15661">
+            <name>Bento Gonçalves</name>
+            <description>Score: 100.0</description>
+            <Point id="15660">
+                <coordinates>-8.8838511,38.5268825,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15663">
+            <name>Cristóvão de Figueiredo</name>
+            <description>Score: 75.47169811320755</description>
+            <Point id="15662">
+                <coordinates>-8.8839296,38.5396733,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15665">
+            <name>Quinta Tomé Dias Baixa de Palmela</name>
+            <description>Score: 44.73684210526316</description>
+            <Point id="15664">
+                <coordinates>-8.8905134,38.5540348,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15667">
+            <name>Mormugão</name>
+            <description>Score: 58.333333333333336</description>
+            <Point id="15666">
+                <coordinates>-8.888324,38.5317678,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15669">
+            <name>Mormugão</name>
+            <description>Score: 56.0</description>
+            <Point id="15668">
+                <coordinates>-8.888324,38.5317678,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15671">
+            <name>Major Afonso Pala</name>
+            <description>Score: 100.0</description>
+            <Point id="15670">
+                <coordinates>-8.8900767,38.5247834,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15673">
+            <name>Alexandre Herculano</name>
+            <description>Score: 100.0</description>
+            <Point id="15672">
+                <coordinates>-8.8900422,38.5276133,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15675">
+            <name>Manuel Nunes de Almeida</name>
+            <description>Score: 75.67567567567568</description>
+            <Point id="15674">
+                <coordinates>-8.8909369,38.5335239,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15677">
+            <name>Doutor Miguel Homem Sampaio e Melo</name>
+            <description>Score: 84.7457627118644</description>
+            <Point id="15676">
+                <coordinates>-8.8925674,38.536251,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15679">
+            <name>Bento Gonçalves</name>
+            <description>Score: 100.0</description>
+            <Point id="15678">
+                <coordinates>-8.8927245,38.6072379,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15681">
+            <name>Doutor Miguel Homem Sampaio e Melo</name>
+            <description>Score: 84.7457627118644</description>
+            <Point id="15680">
+                <coordinates>-8.8925674,38.536251,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15683">
+            <name>Salgueirinha</name>
+            <description>Score: 100.0</description>
+            <Point id="15682">
+                <coordinates>-8.9079157,38.6345642,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15685">
+            <name>Doutor António Rodrigues Manito</name>
+            <description>Score: 88.23529411764706</description>
+            <Point id="15684">
+                <coordinates>-8.8947369,38.5384896,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15687">
+            <name>Doutor Miguel Osório de Castro</name>
+            <description>Score: 81.81818181818181</description>
+            <Point id="15686">
+                <coordinates>-8.8951565,38.5382908,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15689">
+            <name>São Joaquim</name>
+            <description>Score: 77.77777777777777</description>
+            <Point id="15688">
+                <coordinates>-8.8896232,38.541292,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15691">
+            <name>São Joaquim</name>
+            <description>Score: 100.0</description>
+            <Point id="15690">
+                <coordinates>-8.8896232,38.541292,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15693">
+            <name>Palmela</name>
+            <description>Score: 100.0</description>
+            <Point id="15692">
+                <coordinates>-8.8978565,38.5420655,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15695">
+            <name>Liberdade</name>
+            <description>Score: 100.0</description>
+            <Point id="15694">
+                <coordinates>-8.8902415,38.6076305,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15697">
+            <name>Sem Nome Vale de Figueira</name>
+            <description>Score: 50.79365079365079</description>
+            <Point id="15696">
+                <coordinates>-8.9565318,38.7375413,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15699">
+            <name>Augusto Nobre</name>
+            <description>Score: 70.0</description>
+            <Point id="15698">
+                <coordinates>-8.908223,38.527751,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15701">
+            <name>Boavista</name>
+            <description>Score: 100.0</description>
+            <Point id="15700">
+                <coordinates>-8.9026989,38.5679476,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15703">
+            <name>José Régio</name>
+            <description>Score: 55.172413793103445</description>
+            <Point id="15702">
+                <coordinates>-8.9085676,38.6330631,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15705">
+            <name>Francisco António Bento</name>
+            <description>Score: 78.94736842105263</description>
+            <Point id="15704">
+                <coordinates>-8.9121059,38.6339979,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15707">
+            <name>Mouzinho de Albuquerque</name>
+            <description>Score: 93.02325581395348</description>
+            <Point id="15706">
+                <coordinates>-8.914804,38.6285209,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15709">
+            <name>Mário Cesariny</name>
+            <description>Score: 84.84848484848484</description>
+            <Point id="15708">
+                <coordinates>-8.9147733,38.5710327,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15711">
+            <name>Avenida</name>
+            <description>Score: 100.0</description>
+            <Point id="15710">
+                <coordinates>-8.8595995,38.6748539,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15713">
+            <name>Canastra</name>
+            <description>Score: 100.0</description>
+            <Point id="15712">
+                <coordinates>-8.9348254,38.6014249,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15715">
+            <name>Andorinhas Bairro do Miranda</name>
+            <description>Score: 94.33962264150944</description>
+            <Point id="15714">
+                <coordinates>-8.9258043,38.6736694,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15717">
+            <name>Zeca Afonso</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="15716">
+                <coordinates>-8.9590594,38.6818635,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15719">
+            <name>Venâncio da Costa Lima</name>
+            <description>Score: 92.6829268292683</description>
+            <Point id="15718">
+                <coordinates>-8.9372376,38.5674562,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15721">
+            <name>Venâncio da Costa Lima</name>
+            <description>Score: 73.46938775510205</description>
+            <Point id="15720">
+                <coordinates>-8.9372376,38.5674562,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15723">
+            <name>Venâncio da Costa Lima</name>
+            <description>Score: 92.6829268292683</description>
+            <Point id="15722">
+                <coordinates>-8.9372376,38.5674562,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15725">
+            <name>Monte Corvo</name>
+            <description>Score: 62.5</description>
+            <Point id="15724">
+                <coordinates>-8.9016937,38.569441,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15727">
+            <name>Adega Cooperativa do Montijo</name>
+            <description>Score: 47.05882352941177</description>
+            <Point id="15726">
+                <coordinates>-8.9303313,38.7003393,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15729">
+            <name>Real</name>
+            <description>Score: 100.0</description>
+            <Point id="15728">
+                <coordinates>-8.9016937,38.569441,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15731">
+            <name>Fernando Pessoa</name>
+            <description>Score: 100.0</description>
+            <Point id="15730">
+                <coordinates>-8.9512184,38.7539272,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15733">
+            <name>Aquilino Ribeiro Colinas do Oriente</name>
+            <description>Score: 76.19047619047619</description>
+            <Point id="15732">
+                <coordinates>-8.9534344,38.7092038,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15735">
+            <name>Aquilino Ribeiro Colinas do Oriente</name>
+            <description>Score: 84.21052631578948</description>
+            <Point id="15734">
+                <coordinates>-8.9534344,38.7092038,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15737">
+            <name>Regina Quintanilha</name>
+            <description>Score: 100.0</description>
+            <Point id="15736">
+                <coordinates>-8.9543964,38.7064923,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15739">
+            <name>Gomes Eanes de Azurara Bairro do Esteval</name>
+            <description>Score: 73.07692307692308</description>
+            <Point id="15738">
+                <coordinates>-8.9554409,38.7151529,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15741">
+            <name>Dom Nuno Álvares Pereira</name>
+            <description>Score: 67.9245283018868</description>
+            <Point id="15740">
+                <coordinates>-8.9613327,38.756483,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15743">
+            <name>Doutor António Campos Ferreira Trindade Bairro do Esteval</name>
+            <description>Score: 64.0</description>
+            <Point id="15742">
+                <coordinates>-8.9616845,38.7132116,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15745">
+            <name>Damião de Góis</name>
+            <description>Score: 58.8235294117647</description>
+            <Point id="15744">
+                <coordinates>-8.9644493,38.7109264,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15747">
+            <name>Cercal</name>
+            <description>Score: 100.0</description>
+            <Point id="15746">
+                <coordinates>-8.9683502,38.7382508,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15749">
+            <name>Dom Manuel I</name>
+            <description>Score: 100.0</description>
+            <Point id="15748">
+                <coordinates>-8.9241231,38.7064754,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15751">
+            <name>Gaivotas Urbanização do Valbom</name>
+            <description>Score: 55.172413793103445</description>
+            <Point id="15750">
+                <coordinates>-8.9682594,38.7472059,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15753">
+            <name>António Aleixo</name>
+            <description>Score: 70.27027027027027</description>
+            <Point id="15752">
+                <coordinates>-9.0015117,38.7197013,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15755">
+            <name>João Fernandes Bairro Serrano</name>
+            <description>Score: 59.25925925925926</description>
+            <Point id="15754">
+                <coordinates>-8.969593,38.7024643,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15757">
+            <name>João Fernandes Bairro Serrano</name>
+            <description>Score: 59.64912280701754</description>
+            <Point id="15756">
+                <coordinates>-8.969593,38.7024643,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15759">
+            <name>Aldeia Velha</name>
+            <description>Score: 100.0</description>
+            <Point id="15758">
+                <coordinates>-8.9717749,38.710587,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15761">
+            <name>Visconde Tojal Cabanas</name>
+            <description>Score: 62.22222222222222</description>
+            <Point id="15760">
+                <coordinates>-8.976332,38.5525092,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15763">
+            <name>Comandante Francisco Silva Júnior</name>
+            <description>Score: 88.13559322033899</description>
+            <Point id="15762">
+                <coordinates>-8.9756305,38.7076658,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15765">
+            <name>Comandante Francisco Silva Júnior</name>
+            <description>Score: 80.0</description>
+            <Point id="15764">
+                <coordinates>-8.9756305,38.7076658,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15767">
+            <name>Fábrica</name>
+            <description>Score: 100.0</description>
+            <Point id="15766">
+                <coordinates>-8.9727674,38.7048643,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15769">
+            <name>Matemática</name>
+            <description>Score: 58.064516129032256</description>
+            <Point id="15768">
+                <coordinates>-8.9807987,38.7103932,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15771">
+            <name>Biologia</name>
+            <description>Score: 100.0</description>
+            <Point id="15770">
+                <coordinates>-8.9813398,38.7111533,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15773">
+            <name>Rua Da Fe Lt55 Fontainhas</name>
+            <description>Score: 95.83333333333333</description>
+            <Point id="15772">
+                <coordinates>-9.205028,38.7987822,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15775">
+            <name>Cidade do Porto</name>
+            <description>Score: 88.88888888888889</description>
+            <Point id="15774">
+                <coordinates>-8.9839503,38.707581,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15777">
+            <name>Circular</name>
+            <description>Score: 100.0</description>
+            <Point id="15776">
+                <coordinates>-8.9654535,38.7105694,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15779">
+            <name>Projectada à Rua 25 de Abril Lagoa da Pega</name>
+            <description>Score: 72.0</description>
+            <Point id="15778">
+                <coordinates>-9.0107111,38.6498236,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15781">
+            <name>Cidade de Ponta Delgada</name>
+            <description>Score: 79.24528301886792</description>
+            <Point id="15780">
+                <coordinates>-8.9864372,38.7101366,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15783">
+            <name>5 de Outubro</name>
+            <description>Score: 73.6842105263158</description>
+            <Point id="15782">
+                <coordinates>-9.0282209,38.6559158,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15785">
+            <name>Cidade de Coimbra</name>
+            <description>Score: 90.3225806451613</description>
+            <Point id="15784">
+                <coordinates>-8.9871143,38.7067086,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15787">
+            <name>Professor António Guerreiro Dias</name>
+            <description>Score: 100.0</description>
+            <Point id="15786">
+                <coordinates>-8.9875414,38.6454286,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15789">
+            <name>Vasco Santana</name>
+            <description>Score: 100.0</description>
+            <Point id="15788">
+                <coordinates>-8.9876369,38.651189,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15791">
+            <name>Cidade de Faro</name>
+            <description>Score: 88.0</description>
+            <Point id="15790">
+                <coordinates>-8.9881529,38.7088544,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15793">
+            <name>Buenos Aires</name>
+            <description>Score: 100.0</description>
+            <Point id="15792">
+                <coordinates>-8.9908663,38.6479391,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15795">
+            <name>Professor Bento de Jesus Caraça</name>
+            <description>Score: 94.91525423728814</description>
+            <Point id="15794">
+                <coordinates>-8.9910493,38.6514998,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15797">
+            <name>Ivone Silva Bairro da Caneira</name>
+            <description>Score: 78.57142857142857</description>
+            <Point id="15796">
+                <coordinates>-8.9922857,38.7104521,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15799">
+            <name>Fernando Pessoa</name>
+            <description>Score: 100.0</description>
+            <Point id="15798">
+                <coordinates>-8.9924382,38.6568425,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15801">
+            <name>Camilo Castelo Branco</name>
+            <description>Score: 100.0</description>
+            <Point id="15800">
+                <coordinates>-8.9790546,38.6611683,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15803">
+            <name>Plátanos</name>
+            <description>Score: 100.0</description>
+            <Point id="15802">
+                <coordinates>-9.0025729,38.5385,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15805">
+            <name>Arroteias</name>
+            <description>Score: 100.0</description>
+            <Point id="15804">
+                <coordinates>-9.0201344,38.6513144,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15807">
+            <name>Emigrantes Bairro do Macho</name>
+            <description>Score: 93.87755102040816</description>
+            <Point id="15806">
+                <coordinates>-9.0023328,38.6445149,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15809">
+            <name>Vila Morena Bairro Alentejano</name>
+            <description>Score: 84.61538461538461</description>
+            <Point id="15808">
+                <coordinates>-9.0044662,38.6023186,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15811">
+            <name>Fernando Pessoa Quinta da Asseca</name>
+            <description>Score: 81.48148148148148</description>
+            <Point id="15810">
+                <coordinates>-8.8936096,38.5572106,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15813">
+            <name>Silveira</name>
+            <description>Score: 100.0</description>
+            <Point id="15812">
+                <coordinates>-9.0258898,38.5394257,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15815">
+            <name>Rua 1º de Maio Bairro Vila Morena</name>
+            <description>Score: 76.19047619047619</description>
+            <Point id="15814">
+                <coordinates>-8.9537341,38.6421621,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15817">
+            <name>Rocha Martins Bairro da Piedade</name>
+            <description>Score: 80.59701492537313</description>
+            <Point id="15816">
+                <coordinates>-9.001491,38.6080209,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15819">
+            <name>Rua Dos Queijinhos N31</name>
+            <description>Score: 95.23809523809524</description>
+            <Point id="15818">
+                <coordinates>-9.0124722,38.5350604,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15821">
+            <name>Roseiral</name>
+            <description>Score: 100.0</description>
+            <Point id="15820">
+                <coordinates>-9.0160789,38.5585549,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15823">
+            <name>Albertino Urbano Penalva Norte</name>
+            <description>Score: 64.51612903225806</description>
+            <Point id="15822">
+                <coordinates>-9.0182007,38.6012506,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15825">
+            <name>Trindade Coelho</name>
+            <description>Score: 85.71428571428571</description>
+            <Point id="15824">
+                <coordinates>-9.0187896,38.649064,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15827">
+            <name>Lisboa</name>
+            <description>Score: 100.0</description>
+            <Point id="15826">
+                <coordinates>-9.0145099,38.5195653,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15829">
+            <name>Projectada à Rua das Beiras</name>
+            <description>Score: 50.0</description>
+            <Point id="15828">
+                <coordinates>-9.0428764,38.6371876,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15831">
+            <name>Lirios</name>
+            <description>Score: 100.0</description>
+            <Point id="15830">
+                <coordinates>-9.0217496,38.5253196,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15833">
+            <name>Brejoeira</name>
+            <description>Score: 100.0</description>
+            <Point id="15832">
+                <coordinates>-9.0249183,38.5488617,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15835">
+            <name>Sophia de Mello Breyner Andersen</name>
+            <description>Score: 89.85507246376811</description>
+            <Point id="15834">
+                <coordinates>-9.024283,38.5313867,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15837">
+            <name>Artur Paiva Bairro Gouveia</name>
+            <description>Score: 78.57142857142857</description>
+            <Point id="15836">
+                <coordinates>-9.0230691,38.650885,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15839">
+            <name>Rua Da Ceramica Nr 42 St Antonio Charneca</name>
+            <description>Score: 100.0</description>
+            <Point id="15838">
+                <coordinates>-9.0235102,38.6262963,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15841">
+            <name>Rua Da Ceramica Nr 42 St Antonio Charneca</name>
+            <description>Score: 100.0</description>
+            <Point id="15840">
+                <coordinates>-9.0235102,38.6262963,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15843">
+            <name>José Afonso</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="15842">
+                <coordinates>-8.9766113,38.6677305,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15845">
+            <name>Azevedo Coutinho Bairro Gouveia</name>
+            <description>Score: 78.04878048780488</description>
+            <Point id="15844">
+                <coordinates>-9.0263219,38.6500303,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15847">
+            <name>Brejos</name>
+            <description>Score: 100.0</description>
+            <Point id="15846">
+                <coordinates>-8.992636,38.5401001,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15849">
+            <name>Sebastião José da Costa</name>
+            <description>Score: 59.15492957746479</description>
+            <Point id="15848">
+                <coordinates>-9.028258,38.5335274,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15851">
+            <name>Rua 1º De Maio Nº 30</name>
+            <description>Score: 91.66666666666667</description>
+            <Point id="15850">
+                <coordinates>-9.1842257,38.7806758,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15853">
+            <name>Fronteira</name>
+            <description>Score: 52.17391304347826</description>
+            <Point id="15852">
+                <coordinates>-9.0193485,38.622812,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15855">
+            <name>Cidade de Setubal</name>
+            <description>Score: 59.45945945945946</description>
+            <Point id="15854">
+                <coordinates>-9.0324474,38.6254744,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15857">
+            <name>13 Quinta da Mina</name>
+            <description>Score: 88.0</description>
+            <Point id="15856">
+                <coordinates>-9.0344128,38.6322794,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15859">
+            <name>Projectada Á Rua 32 Penalva Norte</name>
+            <description>Score: 60.0</description>
+            <Point id="15858">
+                <coordinates>-9.0324474,38.6254744,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15861">
+            <name>Projectada Á Rua 32 Penalva Norte</name>
+            <description>Score: 100.0</description>
+            <Point id="15860">
+                <coordinates>-9.0324474,38.6254744,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15863">
+            <name>Sara Afonso</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="15862">
+                <coordinates>-9.1679056,38.5899339,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15865">
+            <name>Jaime Cortesão</name>
+            <description>Score: 59.09090909090909</description>
+            <Point id="15864">
+                <coordinates>-9.0398201,38.5655597,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15867">
+            <name>Francisco Miguel</name>
+            <description>Score: 100.0</description>
+            <Point id="15866">
+                <coordinates>-9.0411165,38.6538411,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15869">
+            <name>Garcia de Orta</name>
+            <description>Score: 88.0</description>
+            <Point id="15868">
+                <coordinates>-9.0415061,38.5744582,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15871">
+            <name>Padre Cruz</name>
+            <description>Score: 100.0</description>
+            <Point id="15870">
+                <coordinates>-9.0419914,38.554783,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15873">
+            <name>Liberdade</name>
+            <description>Score: 100.0</description>
+            <Point id="15872">
+                <coordinates>-9.046,38.6543135,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15875">
+            <name>Projectada à Rua das Beiras</name>
+            <description>Score: 62.22222222222222</description>
+            <Point id="15874">
+                <coordinates>-9.0428764,38.6371876,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15877">
+            <name>Rua Da Ceramica Nr 42 St Antonio Charneca</name>
+            <description>Score: 78.57142857142857</description>
+            <Point id="15876">
+                <coordinates>-9.0235102,38.6262963,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15879">
+            <name>Minho</name>
+            <description>Score: 100.0</description>
+            <Point id="15878">
+                <coordinates>-9.043839,38.6376767,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15881">
+            <name>Minho</name>
+            <description>Score: 100.0</description>
+            <Point id="15880">
+                <coordinates>-9.043839,38.6376767,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15883">
+            <name>7 de Novembro</name>
+            <description>Score: 76.19047619047619</description>
+            <Point id="15882">
+                <coordinates>-9.0432443,38.6598406,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15885">
+            <name>Rua 1º De Maio Nº 30</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="15884">
+                <coordinates>-9.1842257,38.7806758,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15887">
+            <name>Av. Principal , 8B</name>
+            <description>Score: 75.86206896551724</description>
+            <Point id="15886">
+                <coordinates>-9.0496373,38.567545,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15889">
+            <name>Manuel da Fonseca</name>
+            <description>Score: 62.745098039215684</description>
+            <Point id="15888">
+                <coordinates>-9.0441568,38.6506815,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15891">
+            <name>Cidade do Barreiro</name>
+            <description>Score: 61.53846153846154</description>
+            <Point id="15890">
+                <coordinates>-9.053051,38.5636265,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15893">
+            <name>Barrancos</name>
+            <description>Score: 100.0</description>
+            <Point id="15892">
+                <coordinates>-9.0439661,38.4926855,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15895">
+            <name>José Dias Coelho</name>
+            <description>Score: 81.48148148148148</description>
+            <Point id="15894">
+                <coordinates>-9.0449204,38.6633527,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15897">
+            <name>Eucaliptos</name>
+            <description>Score: 100.0</description>
+            <Point id="15896">
+                <coordinates>-9.0457941,38.6405365,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15899">
+            <name>Santa Margarida</name>
+            <description>Score: 47.61904761904762</description>
+            <Point id="15898">
+                <coordinates>-9.0551038,38.6675285,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15901">
+            <name>Mestre Manuel dos Santos Cabanas Urbanização dos Fidalguinhos</name>
+            <description>Score: 66.01941747572815</description>
+            <Point id="15900">
+                <coordinates>-9.048777,38.653684,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15903">
+            <name>Joaquim José Fernandes</name>
+            <description>Score: 87.17948717948718</description>
+            <Point id="15902">
+                <coordinates>-9.0520907,38.6670299,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15905">
+            <name>Joaquim José Fernandes</name>
+            <description>Score: 100.0</description>
+            <Point id="15904">
+                <coordinates>-9.0520907,38.6670299,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15907">
+            <name>Palmira Bastos</name>
+            <description>Score: 100.0</description>
+            <Point id="15906">
+                <coordinates>-9.0510946,38.6681819,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15909">
+            <name>Carvalho Araújo</name>
+            <description>Score: 69.56521739130434</description>
+            <Point id="15908">
+                <coordinates>-9.0525762,38.667209,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15911">
+            <name>Castelo</name>
+            <description>Score: 100.0</description>
+            <Point id="15910">
+                <coordinates>-9.0812816,38.5550489,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15913">
+            <name>São Francisco</name>
+            <description>Score: 81.81818181818181</description>
+            <Point id="15912">
+                <coordinates>-9.0768888,38.6631115,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15915">
+            <name>São Francisco</name>
+            <description>Score: 81.81818181818181</description>
+            <Point id="15914">
+                <coordinates>-9.0768888,38.6631115,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15917">
+            <name>Victor Manuel Marques Pacheco Quinta Nova do Alto da Telha</name>
+            <description>Score: 85.29411764705883</description>
+            <Point id="15916">
+                <coordinates>-9.05594,38.6398,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15919">
+            <name>José Domingos Santos Urbanização Quinta dos Loios</name>
+            <description>Score: 43.58974358974359</description>
+            <Point id="15918">
+                <coordinates>-9.0521702,38.663042,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15921">
+            <name>Gomes Teixeira Casquilhos</name>
+            <description>Score: 77.77777777777777</description>
+            <Point id="15920">
+                <coordinates>-9.0583116,38.6517988,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15923">
+            <name>Gomes Teixeira Casquilhos</name>
+            <description>Score: 77.77777777777777</description>
+            <Point id="15922">
+                <coordinates>-9.0583116,38.6517988,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15925">
+            <name>Gomes Teixeira Casquilhos</name>
+            <description>Score: 71.7948717948718</description>
+            <Point id="15924">
+                <coordinates>-9.0583116,38.6517988,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15927">
+            <name>Casal do Sapo</name>
+            <description>Score: 86.95652173913044</description>
+            <Point id="15926">
+                <coordinates>-9.0717206,38.5517122,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15929">
+            <name>Alfredo da Silva</name>
+            <description>Score: 89.65517241379311</description>
+            <Point id="15928">
+                <coordinates>-9.0782717,38.6609839,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15931">
+            <name>1º de Maio</name>
+            <description>Score: 57.142857142857146</description>
+            <Point id="15930">
+                <coordinates>-9.0816564,38.6592968,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15933">
+            <name>Calouste Gulbenkian Alto do Seixalinho</name>
+            <description>Score: 82.6086956521739</description>
+            <Point id="15932">
+                <coordinates>-9.0612875,38.65241,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15935">
+            <name>São João Baptista de Ajudá Alto do Seixalinho</name>
+            <description>Score: 63.04347826086956</description>
+            <Point id="15934">
+                <coordinates>-9.0610046,38.6612447,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15937">
+            <name>São João Baptista de Ajudá Alto do Seixalinho</name>
+            <description>Score: 82.14285714285714</description>
+            <Point id="15936">
+                <coordinates>-9.0610046,38.6612447,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15939">
+            <name>São João Baptista de Ajudá Alto do Seixalinho</name>
+            <description>Score: 55.26315789473684</description>
+            <Point id="15938">
+                <coordinates>-9.0610046,38.6612447,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15941">
+            <name>Escola dos Fuzileiros Navais</name>
+            <description>Score: 92.3076923076923</description>
+            <Point id="15940">
+                <coordinates>-9.0579627,38.6416186,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15943">
+            <name>Nagar Aveli</name>
+            <description>Score: 41.37931034482759</description>
+            <Point id="15942">
+                <coordinates>-9.058591,38.6438913,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15945">
+            <name>Quinta da Maceda Quinta da Maceda</name>
+            <description>Score: 89.65517241379311</description>
+            <Point id="15944">
+                <coordinates>-9.0546357,38.6475304,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15947">
+            <name>Almeida Garrett Alto do Seixalinho</name>
+            <description>Score: 56.71641791044776</description>
+            <Point id="15946">
+                <coordinates>-9.0626856,38.6554412,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15949">
+            <name>Almeida Garrett Alto do Seixalinho</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="15948">
+                <coordinates>-9.0626856,38.6554412,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15951">
+            <name>Almeida Garrett Alto do Seixalinho</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="15950">
+                <coordinates>-9.0626856,38.6554412,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15953">
+            <name>Praia</name>
+            <description>Score: 100.0</description>
+            <Point id="15952">
+                <coordinates>-9.0798333,38.6637997,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15955">
+            <name>Brito Camacho Alto do Seixalinho</name>
+            <description>Score: 81.25</description>
+            <Point id="15954">
+                <coordinates>-9.064574,38.6577735,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15957">
+            <name>Oliveira</name>
+            <description>Score: 100.0</description>
+            <Point id="15956">
+                <coordinates>-9.0257971,38.5895314,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15959">
+            <name>31 de Janeiro Bairro das Palmeiras</name>
+            <description>Score: 50.0</description>
+            <Point id="15958">
+                <coordinates>-9.0642584,38.6627301,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15961">
+            <name>Projectada à Rua São João de Deus</name>
+            <description>Score: 61.53846153846154</description>
+            <Point id="15960">
+                <coordinates>-9.0609161,38.6592524,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15963">
+            <name>Professor Joaquim Vicente França Verderena</name>
+            <description>Score: 84.61538461538461</description>
+            <Point id="15962">
+                <coordinates>-9.0704205,38.655725,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15965">
+            <name>Dom Afonso Henriques Verderena</name>
+            <description>Score: 80.0</description>
+            <Point id="15964">
+                <coordinates>-9.0709836,38.6551454,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15967">
+            <name>Piloto Nascimento Costa Verderena</name>
+            <description>Score: 88.46153846153847</description>
+            <Point id="15966">
+                <coordinates>-9.0714276,38.6544485,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15969">
+            <name>Cidade do Barreiro</name>
+            <description>Score: 61.53846153846154</description>
+            <Point id="15968">
+                <coordinates>-9.053051,38.5636265,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15971">
+            <name>José Elias Garcia</name>
+            <description>Score: 82.75862068965517</description>
+            <Point id="15970">
+                <coordinates>-9.0757632,38.6612432,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15973">
+            <name>Fonte</name>
+            <description>Score: 100.0</description>
+            <Point id="15972">
+                <coordinates>-9.1746498,38.4708184,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15975">
+            <name>Agostinho da Silva Redondos</name>
+            <description>Score: 81.08108108108108</description>
+            <Point id="15974">
+                <coordinates>-9.0773234,38.5688111,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15977">
+            <name>Quinta do Moinho de Vento</name>
+            <description>Score: 86.36363636363636</description>
+            <Point id="15976">
+                <coordinates>-9.0794602,38.6232034,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15979">
+            <name>Heliodoro Salgado</name>
+            <description>Score: 100.0</description>
+            <Point id="15978">
+                <coordinates>-9.0798698,38.6590058,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15981">
+            <name>Heliodoro Salgado</name>
+            <description>Score: 69.38775510204081</description>
+            <Point id="15980">
+                <coordinates>-9.0798698,38.6590058,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15983">
+            <name>59 Catrapona 2</name>
+            <description>Score: 78.26086956521739</description>
+            <Point id="15982">
+                <coordinates>-9.1011497,38.5787825,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15985">
+            <name>Conselheiro Joaquim António D'Aguiar</name>
+            <description>Score: 87.17948717948718</description>
+            <Point id="15984">
+                <coordinates>-9.0793205,38.663697,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15987">
+            <name>Rua Serra Do Geres 14B</name>
+            <description>Score: 95.23809523809524</description>
+            <Point id="15986">
+                <coordinates>-9.0815344,38.5737195,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15989">
+            <name>Cidade da Covilhã Redondos</name>
+            <description>Score: 70.0</description>
+            <Point id="15988">
+                <coordinates>-9.0758587,38.5649935,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15991">
+            <name>Bento Rodrigues Quinta da Courela</name>
+            <description>Score: 88.23529411764706</description>
+            <Point id="15990">
+                <coordinates>-9.083801,38.6160336,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15993">
+            <name>Leonor Pimentel</name>
+            <description>Score: 100.0</description>
+            <Point id="15992">
+                <coordinates>-9.0891813,38.6189861,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15995">
+            <name>Olival</name>
+            <description>Score: 100.0</description>
+            <Point id="15994">
+                <coordinates>-9.090624,38.4675355,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15997">
+            <name>João Vilarett</name>
+            <description>Score: 77.41935483870968</description>
+            <Point id="15996">
+                <coordinates>-9.0894594,38.5731643,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="15999">
+            <name>Libertadores de Timor Loro Sae</name>
+            <description>Score: 94.73684210526315</description>
+            <Point id="15998">
+                <coordinates>-9.1123346,38.6132294,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16001">
+            <name>Fernando Pessoa</name>
+            <description>Score: 100.0</description>
+            <Point id="16000">
+                <coordinates>-9.0913507,38.5716968,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16003">
+            <name>General Humberto Delgado</name>
+            <description>Score: 80.0</description>
+            <Point id="16002">
+                <coordinates>-9.1048073,38.6175289,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16005">
+            <name>Maria Júdice da Costa</name>
+            <description>Score: 68.75</description>
+            <Point id="16004">
+                <coordinates>-9.0951423,38.6170403,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16007">
+            <name>Jorge Sena</name>
+            <description>Score: 100.0</description>
+            <Point id="16006">
+                <coordinates>-9.0960814,38.6102948,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16009">
+            <name>Vereador João Roque Murtinheira</name>
+            <description>Score: 71.42857142857143</description>
+            <Point id="16008">
+                <coordinates>-9.0963344,38.6349587,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16011">
+            <name>José Afonso</name>
+            <description>Score: 100.0</description>
+            <Point id="16010">
+                <coordinates>-9.0970583,38.4788742,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16013">
+            <name>José Afonso</name>
+            <description>Score: 100.0</description>
+            <Point id="16012">
+                <coordinates>-9.0970583,38.4788742,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16015">
+            <name>Zambujal</name>
+            <description>Score: 100.0</description>
+            <Point id="16014">
+                <coordinates>-9.1225057,38.4554513,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16017">
+            <name>Quinta Nova</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="16016">
+                <coordinates>-9.0975,38.6410676,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16019">
+            <name>Pinheiro Grande</name>
+            <description>Score: 100.0</description>
+            <Point id="16018">
+                <coordinates>-9.0998085,38.5630325,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16021">
+            <name>Cotovia</name>
+            <description>Score: 100.0</description>
+            <Point id="16020">
+                <coordinates>-9.1007638,38.4784179,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16023">
+            <name>Francisco Xavier Mignone</name>
+            <description>Score: 100.0</description>
+            <Point id="16022">
+                <coordinates>-9.102014,38.4677563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16025">
+            <name>B</name>
+            <description>Score: 100.0</description>
+            <Point id="16024">
+                <coordinates>-9.0921669,38.5968554,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16027">
+            <name>Carmen Miranda</name>
+            <description>Score: 100.0</description>
+            <Point id="16026">
+                <coordinates>-9.1011658,38.6143944,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16029">
+            <name>Poço</name>
+            <description>Score: 100.0</description>
+            <Point id="16028">
+                <coordinates>-9.1040249,38.4433147,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16031">
+            <name>Adelaide Cabete</name>
+            <description>Score: 69.56521739130434</description>
+            <Point id="16030">
+                <coordinates>-9.1014654,38.6146437,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16033">
+            <name>Doutor Arlindo Vicente</name>
+            <description>Score: 100.0</description>
+            <Point id="16032">
+                <coordinates>-9.1023681,38.6189879,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16035">
+            <name>Luís de Camões</name>
+            <description>Score: 60.0</description>
+            <Point id="16034">
+                <coordinates>-9.0785922,38.6031664,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16037">
+            <name>Luís de Camões</name>
+            <description>Score: 88.0</description>
+            <Point id="16036">
+                <coordinates>-9.0785922,38.6031664,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16039">
+            <name>Padre Cruz</name>
+            <description>Score: 100.0</description>
+            <Point id="16038">
+                <coordinates>-9.0632925,38.5425552,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16041">
+            <name>Pedro Nunes</name>
+            <description>Score: 100.0</description>
+            <Point id="16040">
+                <coordinates>-9.1018218,38.6181185,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16043">
+            <name>Aurélia de Sousa</name>
+            <description>Score: 73.6842105263158</description>
+            <Point id="16042">
+                <coordinates>-9.10304,38.6149451,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16045">
+            <name>Heliodoro Salgado</name>
+            <description>Score: 100.0</description>
+            <Point id="16044">
+                <coordinates>-9.1031597,38.5684451,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16047">
+            <name>Venda Nova</name>
+            <description>Score: 100.0</description>
+            <Point id="16046">
+                <coordinates>-9.1040948,38.4825223,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16049">
+            <name>Avenida 25 De Abril Nº73 -E</name>
+            <description>Score: 100.0</description>
+            <Point id="16048">
+                <coordinates>-8.9764523,38.7069437,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16051">
+            <name>Avenida 25 De Abril Nº73 -E</name>
+            <description>Score: 68.18181818181819</description>
+            <Point id="16050">
+                <coordinates>-8.9764523,38.7069437,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16053">
+            <name>Oceano Atlântico</name>
+            <description>Score: 100.0</description>
+            <Point id="16052">
+                <coordinates>-9.1117795,38.4663612,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16055">
+            <name>Diogo de Contreiras</name>
+            <description>Score: 50.0</description>
+            <Point id="16054">
+                <coordinates>-9.1241016,38.6324191,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16057">
+            <name>Salgueiro Maia</name>
+            <description>Score: 100.0</description>
+            <Point id="16056">
+                <coordinates>-9.1162894,38.6148384,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16059">
+            <name>Douro</name>
+            <description>Score: 100.0</description>
+            <Point id="16058">
+                <coordinates>-9.123978,38.6205272,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16061">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16060">
+                <coordinates>-9.1452986,38.6276888,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16063">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16062">
+                <coordinates>-9.1452986,38.6276888,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16065">
+            <name>Salgueiro Maia</name>
+            <description>Score: 100.0</description>
+            <Point id="16064">
+                <coordinates>-9.1162894,38.6148384,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16067">
+            <name>Ribeira</name>
+            <description>Score: 100.0</description>
+            <Point id="16066">
+                <coordinates>-9.1333162,38.4468812,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16069">
+            <name>Arquiteto José António Conde</name>
+            <description>Score: 64.51612903225806</description>
+            <Point id="16068">
+                <coordinates>-9.1307309,38.6333199,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16071">
+            <name>Palmeiras</name>
+            <description>Score: 100.0</description>
+            <Point id="16070">
+                <coordinates>-9.1464646,38.6448665,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16073">
+            <name>Pinheirinhos</name>
+            <description>Score: 100.0</description>
+            <Point id="16072">
+                <coordinates>-9.1487958,38.4413425,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16075">
+            <name>Professor Rui Luís Gomes</name>
+            <description>Score: 88.37209302325581</description>
+            <Point id="16074">
+                <coordinates>-9.1490226,38.6508975,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16077">
+            <name>António Nobre</name>
+            <description>Score: 80.0</description>
+            <Point id="16076">
+                <coordinates>-9.1498128,38.6480728,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16079">
+            <name>Gonçalves Crespo</name>
+            <description>Score: 100.0</description>
+            <Point id="16078">
+                <coordinates>-9.1499215,38.6867142,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16081">
+            <name>André de Resende</name>
+            <description>Score: 60.869565217391305</description>
+            <Point id="16080">
+                <coordinates>-9.1499906,38.6527255,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16083">
+            <name>Agostinho da Silva Vale Flores</name>
+            <description>Score: 41.935483870967744</description>
+            <Point id="16082">
+                <coordinates>-9.1727708,38.6484731,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16085">
+            <name>Vale Flores Vale Flores</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="16084">
+                <coordinates>-9.1743978,38.6513013,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16087">
+            <name>Esperança</name>
+            <description>Score: 100.0</description>
+            <Point id="16086">
+                <coordinates>-9.1511324,38.6551541,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16089">
+            <name>Eucaliptos</name>
+            <description>Score: 100.0</description>
+            <Point id="16088">
+                <coordinates>-9.1510364,38.6533714,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16091">
+            <name>Dom Duarte</name>
+            <description>Score: 100.0</description>
+            <Point id="16090">
+                <coordinates>-9.1499713,38.6538804,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16093">
+            <name>Barradas de Carvalho</name>
+            <description>Score: 91.89189189189189</description>
+            <Point id="16092">
+                <coordinates>-9.1513712,38.6810464,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16095">
+            <name>Cidade de Setúbal</name>
+            <description>Score: 90.3225806451613</description>
+            <Point id="16094">
+                <coordinates>-9.0542156,38.555313,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16097">
+            <name>Jaime Amorim Ferreira</name>
+            <description>Score: 100.0</description>
+            <Point id="16096">
+                <coordinates>-9.1529998,38.6543059,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16099">
+            <name>Jaime Amorim Ferreira</name>
+            <description>Score: 100.0</description>
+            <Point id="16098">
+                <coordinates>-9.1529998,38.6543059,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16101">
+            <name>José Carlos de Melo</name>
+            <description>Score: 73.33333333333333</description>
+            <Point id="16100">
+                <coordinates>-9.1547417,38.6601178,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16103">
+            <name>Cidade de Braga</name>
+            <description>Score: 88.88888888888889</description>
+            <Point id="16102">
+                <coordinates>-9.1546733,38.6414874,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16105">
+            <name>Dom Carlos I</name>
+            <description>Score: 48.275862068965516</description>
+            <Point id="16104">
+                <coordinates>-9.1565088,38.6585072,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16107">
+            <name>Vieira da Silva</name>
+            <description>Score: 88.88888888888889</description>
+            <Point id="16106">
+                <coordinates>-9.1518031,38.6281593,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16109">
+            <name>Cidade de Almada</name>
+            <description>Score: 89.65517241379311</description>
+            <Point id="16108">
+                <coordinates>-9.1554454,38.6396275,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16111">
+            <name>Luís de Queiroz</name>
+            <description>Score: 55.55555555555556</description>
+            <Point id="16110">
+                <coordinates>-9.1553818,38.6786863,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16113">
+            <name>Bartolomeu Constantino</name>
+            <description>Score: 100.0</description>
+            <Point id="16112">
+                <coordinates>-9.1553706,38.6503778,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16115">
+            <name>Olivença</name>
+            <description>Score: 100.0</description>
+            <Point id="16114">
+                <coordinates>-9.1558818,38.6805639,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16117">
+            <name>Olivença</name>
+            <description>Score: 45.16129032258065</description>
+            <Point id="16116">
+                <coordinates>-9.1558818,38.6805639,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16119">
+            <name>Dom Francisco de Melo e Noronha</name>
+            <description>Score: 83.01886792452831</description>
+            <Point id="16118">
+                <coordinates>-9.1561938,38.6611772,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16121">
+            <name>Rosas do Pombal</name>
+            <description>Score: 88.88888888888889</description>
+            <Point id="16120">
+                <coordinates>-9.1584451,38.6719106,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16123">
+            <name>João Villaret</name>
+            <description>Score: 57.142857142857146</description>
+            <Point id="16122">
+                <coordinates>-9.1572671,38.6524871,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16125">
+            <name>Luso</name>
+            <description>Score: 100.0</description>
+            <Point id="16124">
+                <coordinates>-9.1622529,38.6390226,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16127">
+            <name>Armeiro Mor</name>
+            <description>Score: 58.8235294117647</description>
+            <Point id="16126">
+                <coordinates>-9.1586247,38.6728724,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16129">
+            <name>Brigadeiro Baptista de Carvalho</name>
+            <description>Score: 76.3157894736842</description>
+            <Point id="16128">
+                <coordinates>-9.1587183,38.6554941,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16131">
+            <name>Escola Primária Cova da Piedade</name>
+            <description>Score: 71.42857142857143</description>
+            <Point id="16130">
+                <coordinates>-9.1581161,38.6733796,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16133">
+            <name>Professor Egas Moniz</name>
+            <description>Score: 100.0</description>
+            <Point id="16132">
+                <coordinates>-9.1609893,38.6745204,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16135">
+            <name>Clube Sargento da Armada</name>
+            <description>Score: 86.79245283018868</description>
+            <Point id="16134">
+                <coordinates>-9.1591239,38.6533367,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16137">
+            <name>Doutor José Lourenço de Carvalho</name>
+            <description>Score: 85.71428571428571</description>
+            <Point id="16136">
+                <coordinates>-9.159267,38.6801351,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16139">
+            <name>Conde Ferreira</name>
+            <description>Score: 100.0</description>
+            <Point id="16138">
+                <coordinates>-9.1598488,38.6817078,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16141">
+            <name>Gomes Leal</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="16140">
+                <coordinates>-9.160042,38.6601798,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16143">
+            <name>Oliveira Martins</name>
+            <description>Score: 100.0</description>
+            <Point id="16142">
+                <coordinates>-9.1611991,38.6559665,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16145">
+            <name>Duarte de Melo</name>
+            <description>Score: 88.0</description>
+            <Point id="16144">
+                <coordinates>-9.1614039,38.6487886,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16147">
+            <name>Duarte de Melo</name>
+            <description>Score: 88.0</description>
+            <Point id="16146">
+                <coordinates>-9.1614039,38.6487886,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16149">
+            <name>Ary dos Santos</name>
+            <description>Score: 83.33333333333333</description>
+            <Point id="16148">
+                <coordinates>-9.1617767,38.658328,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16151">
+            <name>Vale Torrão</name>
+            <description>Score: 68.9655172413793</description>
+            <Point id="16150">
+                <coordinates>-9.1626569,38.6532566,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16153">
+            <name>António Calado Vale Mourelos</name>
+            <description>Score: 87.5</description>
+            <Point id="16152">
+                <coordinates>-9.1828888,38.6608297,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16155">
+            <name>Nuno Álvares Botelho</name>
+            <description>Score: 75.0</description>
+            <Point id="16154">
+                <coordinates>-9.1630308,38.6757483,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16157">
+            <name>General Humberto Delgado</name>
+            <description>Score: 100.0</description>
+            <Point id="16156">
+                <coordinates>-9.1639479,38.6782896,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16159">
+            <name>São Francisco Seixola</name>
+            <description>Score: 76.47058823529412</description>
+            <Point id="16158">
+                <coordinates>-9.1691413,38.5146022,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16161">
+            <name>Quinta da Niza</name>
+            <description>Score: 60.0</description>
+            <Point id="16160">
+                <coordinates>-9.1575735,38.641162,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16163">
+            <name>Doutor Alberto Araújo</name>
+            <description>Score: 76.47058823529412</description>
+            <Point id="16162">
+                <coordinates>-9.1646657,38.6688988,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16165">
+            <name>Doutor Alberto Araújo</name>
+            <description>Score: 74.4186046511628</description>
+            <Point id="16164">
+                <coordinates>-9.1646657,38.6688988,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16167">
+            <name>Maria Judite de Carvalho</name>
+            <description>Score: 76.66666666666667</description>
+            <Point id="16166">
+                <coordinates>-9.165326,38.652737,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16169">
+            <name>Cristo Rei</name>
+            <description>Score: 100.0</description>
+            <Point id="16168">
+                <coordinates>-9.1713581,38.6786369,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16171">
+            <name>Rua 1º De Maio Nº5</name>
+            <description>Score: 91.66666666666667</description>
+            <Point id="16170">
+                <coordinates>-9.1570097,38.6372641,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16173">
+            <name>Roberto Dias Nobre Quinta do Chiado</name>
+            <description>Score: 65.67164179104478</description>
+            <Point id="16172">
+                <coordinates>-9.1692351,38.6433408,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16175">
+            <name>Nicolau Coelho Carcereira</name>
+            <description>Score: 100.0</description>
+            <Point id="16174">
+                <coordinates>-9.1702188,38.6296724,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16177">
+            <name>Quinta do Forte</name>
+            <description>Score: 53.333333333333336</description>
+            <Point id="16176">
+                <coordinates>-9.1706597,38.6718802,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16179">
+            <name>Rua Dinis Fernandes, Nº30</name>
+            <description>Score: 100.0</description>
+            <Point id="16178">
+                <coordinates>-9.1713493,38.6293462,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16181">
+            <name>A da Quinta dos Tanoeiros</name>
+            <description>Score: 82.05128205128204</description>
+            <Point id="16180">
+                <coordinates>-9.1651047,38.6765238,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16183">
+            <name>Deniz Jacinto</name>
+            <description>Score: 78.78787878787878</description>
+            <Point id="16182">
+                <coordinates>-9.1761382,38.644582,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16185">
+            <name>Portugal</name>
+            <description>Score: 100.0</description>
+            <Point id="16184">
+                <coordinates>-9.1731163,38.5769378,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16187">
+            <name>Bela Vista Palhais</name>
+            <description>Score: 71.42857142857143</description>
+            <Point id="16186">
+                <coordinates>-9.1893154,38.6296084,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16189">
+            <name>Vale Fetal</name>
+            <description>Score: 100.0</description>
+            <Point id="16188">
+                <coordinates>-9.1881552,38.6320358,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16191">
+            <name>Hugo Casaes Quintinhas</name>
+            <description>Score: 54.90196078431372</description>
+            <Point id="16190">
+                <coordinates>-9.1817572,38.6048986,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16193">
+            <name>Hugo Casaes Quintinhas</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="16192">
+                <coordinates>-9.1817572,38.6048986,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16195">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16194">
+                <coordinates>-9.1936976,38.5896563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16197">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16196">
+                <coordinates>-9.1936976,38.5896563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16199">
+            <name>Dom Afonso III</name>
+            <description>Score: 83.33333333333333</description>
+            <Point id="16198">
+                <coordinates>-9.1832933,38.59423,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16201">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16200">
+                <coordinates>-9.1936976,38.5896563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16203">
+            <name>Maria Helena Matos</name>
+            <description>Score: 84.61538461538461</description>
+            <Point id="16202">
+                <coordinates>-9.2001169,38.6407804,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16205">
+            <name>Lavoura Fonte Santa</name>
+            <description>Score: 44.44444444444444</description>
+            <Point id="16204">
+                <coordinates>-9.2047143,38.668472,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16207">
+            <name>David Mourão Ferreira Quinta da Caneira</name>
+            <description>Score: 82.35294117647058</description>
+            <Point id="16206">
+                <coordinates>-9.1838571,38.6503812,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16209">
+            <name>Manuel Mendes</name>
+            <description>Score: 100.0</description>
+            <Point id="16208">
+                <coordinates>-9.1847326,38.5977384,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16211">
+            <name>António Gedeão Alcaniça</name>
+            <description>Score: 59.57446808510638</description>
+            <Point id="16210">
+                <coordinates>-9.1841462,38.6681368,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16213">
+            <name>Romeu Correia Quinta da Caneira</name>
+            <description>Score: 70.27027027027027</description>
+            <Point id="16212">
+                <coordinates>-9.1848135,38.6502556,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16215">
+            <name>Romeu Correia Quinta da Caneira</name>
+            <description>Score: 70.27027027027027</description>
+            <Point id="16214">
+                <coordinates>-9.1848135,38.6502556,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16217">
+            <name>Aristides Mendes Alcaniça</name>
+            <description>Score: 80.0</description>
+            <Point id="16216">
+                <coordinates>-9.1866329,38.6677098,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16219">
+            <name>Jorge Vieira Casal do Outeiro</name>
+            <description>Score: 63.1578947368421</description>
+            <Point id="16218">
+                <coordinates>-9.1873081,38.6516689,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16221">
+            <name>Nova Esperança</name>
+            <description>Score: 78.26086956521739</description>
+            <Point id="16220">
+                <coordinates>-9.2291174,38.6360801,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16223">
+            <name>António Alçada Baptista Quinta do Gil</name>
+            <description>Score: 73.84615384615384</description>
+            <Point id="16222">
+                <coordinates>-9.1988331,38.6153063,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16225">
+            <name>Largo Antonio Jose Piano Junior N2 Sobreda</name>
+            <description>Score: 98.79518072289157</description>
+            <Point id="16224">
+                <coordinates>-9.1894374,38.6501966,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16227">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16226">
+                <coordinates>-9.1936976,38.5896563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16229">
+            <name>Praia da Bela Vista</name>
+            <description>Score: 71.7948717948718</description>
+            <Point id="16228">
+                <coordinates>-9.2062794,38.5967703,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16231">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16230">
+                <coordinates>-9.1936976,38.5896563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16233">
+            <name>Ginjal</name>
+            <description>Score: 100.0</description>
+            <Point id="16232">
+                <coordinates>-9.1941802,38.6639972,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16235">
+            <name>N</name>
+            <description>Score: 100.0</description>
+            <Point id="16234">
+                <coordinates>-9.1936976,38.5896563,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16237">
+            <name>Maria Albergaria Urbanização Praia do Sol</name>
+            <description>Score: 49.23076923076923</description>
+            <Point id="16236">
+                <coordinates>-9.2361357,38.6433038,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16239">
+            <name>Quinta Nova Quinta Nova</name>
+            <description>Score: 70.58823529411765</description>
+            <Point id="16238">
+                <coordinates>-9.1900813,38.6277443,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16241">
+            <name>Rua Antonio Maria Eusebio, Nº17</name>
+            <description>Score: 100.0</description>
+            <Point id="16240">
+                <coordinates>-9.1997485,38.6177409,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16243">
+            <name>São Macário</name>
+            <description>Score: 100.0</description>
+            <Point id="16242">
+                <coordinates>-9.2003438,38.6428139,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16245">
+            <name>Vale da Rosa Botequim</name>
+            <description>Score: 60.0</description>
+            <Point id="16244">
+                <coordinates>-9.2049955,38.6319475,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16247">
+            <name>Quinta do Facho</name>
+            <description>Score: 57.142857142857146</description>
+            <Point id="16246">
+                <coordinates>-9.1983614,38.6668586,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16249">
+            <name>Marcelino</name>
+            <description>Score: 100.0</description>
+            <Point id="16248">
+                <coordinates>-9.2429405,38.6476244,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16251">
+            <name>Nova Bairro Campo da Bola</name>
+            <description>Score: 82.75862068965517</description>
+            <Point id="16250">
+                <coordinates>-9.2291174,38.6360801,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16253">
+            <name>Padre Manuel Bernardes</name>
+            <description>Score: 84.21052631578948</description>
+            <Point id="16252">
+                <coordinates>-9.2298884,38.6406388,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16255">
+            <name>Costa</name>
+            <description>Score: 100.0</description>
+            <Point id="16254">
+                <coordinates>-9.2352917,38.652366,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16257">
+            <name>9 de Julho</name>
+            <description>Score: 66.66666666666666</description>
+            <Point id="16256">
+                <coordinates>-9.2321396,38.6440882,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16259">
+            <name>A</name>
+            <description>Score: 100.0</description>
+            <Point id="16258">
+                <coordinates>-9.206957,38.676827,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16261">
+            <name>Oceano</name>
+            <description>Score: 100.0</description>
+            <Point id="16260">
+                <coordinates>-9.2335448,38.6502356,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16263">
+            <name>Oceano</name>
+            <description>Score: 100.0</description>
+            <Point id="16262">
+                <coordinates>-9.2335448,38.6502356,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16265">
+            <name>D</name>
+            <description>Score: 100.0</description>
+            <Point id="16264">
+                <coordinates>-9.2161782,38.6506219,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16267">
+            <name>Joaquim da Matosa</name>
+            <description>Score: 90.3225806451613</description>
+            <Point id="16266">
+                <coordinates>-9.2362434,38.6440058,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16269">
+            <name>E</name>
+            <description>Score: 100.0</description>
+            <Point id="16268">
+                <coordinates>-9.217101,38.6499711,0.0</coordinates>
+            </Point>
+        </Placemark>
+        <Placemark id="16271">
+            <name>Adolfo Rodrigues</name>
+            <description>Score: 72.0</description>
+            <Point id="16270">
+                <coordinates>-9.2191879,38.6524331,0.0</coordinates>
+            </Point>
+        </Placemark>
+    </Document>
+</kml>
