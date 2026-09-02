@@ -134,6 +134,8 @@ def init_database():
                 prioridade INTEGER DEFAULT 2,
                 janela_inicio TEXT DEFAULT '08:00',
                 janela_fim TEXT DEFAULT '18:00',
+                tempo_descarga_min INTEGER DEFAULT 10,
+                valor_cobrar REAL DEFAULT 0.0,
                 observacoes TEXT DEFAULT '',
                 telefone TEXT DEFAULT '',
                 vendedor TEXT DEFAULT '',
@@ -993,7 +995,7 @@ def obter_resumo_consumos_admin():
 
 
 def ensure_entregas_columns():
-    """Garante que todas as colunas necessárias existem na tabela entregas e frota (auto-migração sob demanda)."""
+    """Garante que todas as colunas necessarias existem na tabela entregas e frota (auto-migracao sob demanda)."""
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -1001,11 +1003,26 @@ def ensure_entregas_columns():
             cols = [info[1] for info in cursor.fetchall()]
             for col, col_type in [
                 ("armazem", "TEXT DEFAULT 'Armazém Principal'"),
+                ("codigo_cliente", "TEXT DEFAULT ''"),
                 ("nome_cliente", "TEXT DEFAULT ''"),
+                ("morada", "TEXT DEFAULT ''"),
+                ("codigo_postal", "TEXT DEFAULT ''"),
+                ("_concelho", "TEXT DEFAULT ''"),
                 ("telefone", "TEXT DEFAULT ''"),
                 ("observacoes", "TEXT DEFAULT ''"),
                 ("vendedor", "TEXT DEFAULT ''"),
+                ("peso_kg", "REAL DEFAULT 0.0"),
                 ("volume_m3", "REAL DEFAULT 0.1"),
+                ("prioridade", "INTEGER DEFAULT 2"),
+                ("janela_inicio", "TEXT DEFAULT '08:00'"),
+                ("janela_fim", "TEXT DEFAULT '18:00'"),
+                ("tempo_descarga_min", "INTEGER DEFAULT 10"),
+                ("valor_cobrar", "REAL DEFAULT 0.0"),
+                ("latitude", "REAL DEFAULT 0.0"),
+                ("longitude", "REAL DEFAULT 0.0"),
+                ("nivel_qualidade", "INTEGER DEFAULT 99"),
+                ("fonte_match", "TEXT DEFAULT 'PENDENTE'"),
+                ("morada_encontrada", "TEXT DEFAULT ''"),
                 ("rota", "TEXT DEFAULT ''"),
                 ("ordem", "INTEGER DEFAULT 0"),
                 ("ordem_paragem", "INTEGER DEFAULT 0"),
@@ -1014,13 +1031,18 @@ def ensure_entregas_columns():
                 if col not in cols:
                     try:
                         cursor.execute(f"ALTER TABLE entregas ADD COLUMN {col} {col_type}")
-                    except Exception:
+                    except Exception as ce:
                         pass
                         
             cursor.execute("PRAGMA table_info(frota)")
             cols_f = [info[1] for info in cursor.fetchall()]
             for col, col_type in [
+                ("capacidade_kg", "REAL DEFAULT 1000.0"),
                 ("capacidade_volume", "REAL DEFAULT 10.0"),
+                ("custo_km", "REAL DEFAULT 0.5"),
+                ("velocidade_media", "REAL DEFAULT 40.0"),
+                ("horario_inicio", "TEXT DEFAULT '08:00'"),
+                ("horario_fim", "TEXT DEFAULT '18:00'"),
                 ("armazem", "TEXT DEFAULT ''"),
                 ("regras", "TEXT DEFAULT ''"),
                 ("is_active", "BOOLEAN DEFAULT 1")
@@ -1028,7 +1050,7 @@ def ensure_entregas_columns():
                 if col not in cols_f:
                     try:
                         cursor.execute(f"ALTER TABLE frota ADD COLUMN {col} {col_type}")
-                    except Exception:
+                    except Exception as ce:
                         pass
                         
             conn.commit()

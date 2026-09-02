@@ -1213,9 +1213,8 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
 @router.put("/delivery/{delivery_id}")
 
 def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, current_user: UserResponse = Depends(get_current_user)):
-
     try:
-
+        ensure_entregas_columns()
         with get_db() as conn:
 
             cursor = conn.cursor()
@@ -1653,6 +1652,7 @@ def export_geocoding_results(
 @router.post("/delivery/{project_id}")
 def create_delivery_stop(project_id: int, deliv: DeliveryCreate, current_user: UserResponse = Depends(get_current_user)):
     try:
+        ensure_entregas_columns()
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, empresa_id FROM projetos WHERE id = ?", (project_id,))
