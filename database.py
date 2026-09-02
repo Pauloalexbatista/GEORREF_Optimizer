@@ -16,6 +16,9 @@ DB_FILE = DB_MULTI_PATH
 
 
 def get_db_connection():
+    db_dir = os.path.dirname(os.path.abspath(DB_FILE))
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     """Criar conexão com a base de dados"""
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
