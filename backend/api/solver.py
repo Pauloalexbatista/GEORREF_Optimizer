@@ -304,7 +304,7 @@ def get_depot_coords(warehouses_df, wh_name=None):
         print(f"Notice in get_depot_coords: {e}")
     return 38.6593, -9.1758
 
-def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 15, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False) -> list:
+def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 10, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False) -> list:
     stops_list = list(stops_iterable)
     if not stops_list:
         return []
@@ -678,6 +678,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "CP": str(client_row.get("Codigo_Postal", "N/A")),
                         "Localidade": str(client_row.get("Localidade", "")),
                         "Janela_Horaria": combined_window,
+                        "Janela_Inicio": str(win_s or ""),
+                        "Janela_Fim": str(win_e or ""),
                         "Latitude": float(client_row["Latitude"]),
                         "Longitude": float(client_row["Longitude"]),
                         "Peso_KG": float(client_row.get("Peso_KG", 50.0)),
@@ -686,7 +688,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "Observacoes": obs_val,
                         "Notas_Motorista": obs_val,
                         "Vendedor": vend_val,
-                        "Tempo_Entrega": 15,
+                        "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
                         "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0))
                     })
                     
@@ -1660,8 +1662,30 @@ def get_route_audit(project_id: int, current_user: UserResponse = Depends(get_cu
             return {"total_violations": 0, "routes_status": {}, "all_violations": []}
             
         df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-        fleet_cfg = state_dict.get("fleet_config", {})
-        wh_df = state_dict.get("warehouses_geocoded", state_dict.get("df_warehouses"))
+        
+        # Read fresh fleet from table 'frota'
+        fleet_cfg = {}
+        cursor.execute("SELECT * FROM frota WHERE projeto_id = ? AND is_active = 1", (project_id,))
+        f_rows = cursor.fetchall()
+        if f_rows:
+            col_names = [d[0] for d in cursor.description]
+            for row_f in f_rows:
+                dict_f = dict(zip(col_names, row_f))
+                v_name = str(dict_f["veiculo"])
+                fleet_cfg[v_name] = {
+                    "capacidade_kg": float(dict_f.get("capacidade_kg") or 20000.0),
+                    "capacidade_volume": float(dict_f.get("capacidade_volume") or 20000.0),
+                    "custo_km": float(dict_f.get("custo_km") or 0.65),
+                    "velocidade_media": float(dict_f.get("velocidade_media") or 50.0),
+                    "horario_inicio": str(dict_f.get("horario_inicio") or "06:30:00"),
+                    "horario_fim": str(dict_f.get("horario_fim") or "18:00:00"),
+                    "armazem": str(dict_f.get("armazem") or ""),
+                    "regras": str(dict_f.get("regras") or "")
+                }
+        if not fleet_cfg:
+            fleet_cfg = state_dict.get("fleet_config_used") or state_dict.get("fleet_config", {})
+            
+        wh_df = state_dict.get("warehouses_used") or state_dict.get("warehouses_geocoded", state_dict.get("df_warehouses"))
         rules_mat = state_dict.get("rules_matrix", [])
         
         audit_res = audit_route_plan(df_routes, fleet_cfg, wh_df, rules_mat)
