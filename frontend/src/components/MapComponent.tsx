@@ -701,18 +701,20 @@ export default function MapComponent({
         return false;
       }
 
-      // 3. Status Filter
+      // 3 & 4. Status Filter & Route Selection (Explicit selection takes absolute priority)
       const isPending = isPendingRoute(c.Rota);
+      if (selectedRoutes.length > 0) {
+        if (isPending) {
+          return selectedRoutes.some(sel => routesMatch(sel, "Por Distribuir"));
+        }
+        return selectedRoutes.some(sel => routesMatch(sel, c.Rota));
+      }
+
+      // If no explicit route is selected, apply general statusFilter
       if (statusFilter === "pending" && !isPending) return false;
       if (statusFilter === "with_cargo" && isPending) return false;
       if (statusFilter === "empty" && isPending) return false;
-
-      // 4. Route selection pills (Normalized & Case-Insensitive Matching)
-      if (selectedRoutes.length === 0) return true;
-      if (isPending) {
-        return selectedRoutes.some(sel => routesMatch(sel, "Por Distribuir"));
-      }
-      return selectedRoutes.some(sel => routesMatch(sel, c.Rota));
+      return true;
     });
   }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes, fleet]);
 
@@ -759,6 +761,11 @@ export default function MapComponent({
 
   const toggleRouteFilter = (v: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (routesMatch(v, "Por Distribuir")) {
+      if (statusFilter === "with_cargo" || statusFilter === "empty") {
+        handleStatusChange("all");
+      }
+    }
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
       if (selectedRoutes.some(r => routesMatch(r, v))) {
         const next = selectedRoutes.filter(r => !routesMatch(r, v));

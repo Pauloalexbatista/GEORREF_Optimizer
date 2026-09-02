@@ -261,7 +261,8 @@ def audit_route_plan(
                 last_lat = float(last_stop.get("Latitude", 0.0) or 0.0)
                 last_lon = float(last_stop.get("Longitude", 0.0) or 0.0)
                 return_dist_km = haversine_distance(last_lat, last_lon, depot_lat, depot_lon) * 1.30
-                return_travel_min = (return_dist_km / max(v_speed, 20.0)) * 60.0
+                ret_speed = 80.0 if return_dist_km > 25.0 else 65.0 if return_dist_km > 10.0 else max(v_speed, 45.0)
+                return_travel_min = (return_dist_km / ret_speed) * 60.0
                 return_arrival_min = int(round(last_exit_min + return_travel_min))
 
                 # Tolerância de 1 min de precisão numérica

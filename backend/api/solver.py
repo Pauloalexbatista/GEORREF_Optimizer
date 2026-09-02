@@ -343,8 +343,13 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             travel_min = float(g_legs[idx]["duration_min"])
         else:
             dist = haversine_distance(p_lat, p_lon, c_lat, c_lon) * 1.30
-            # Hybrid speed: 70 km/h for highway segments (>15km), else avg_speed (urban)
-            segment_speed = avg_speed
+            # Realistic Highway Segment Speed Model
+            if dist > 25.0:
+                segment_speed = 80.0
+            elif dist > 10.0:
+                segment_speed = 65.0
+            else:
+                segment_speed = max(avg_speed, 45.0)
             travel_min = (dist / segment_speed) * 60.0
         cumul_dist += dist
         arr_min = cur_time_min + travel_min

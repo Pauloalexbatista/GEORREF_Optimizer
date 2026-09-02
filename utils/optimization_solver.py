@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-GEOREF Optimizer - Official Google OR-Tools VRPTW Engine with Multi-Pass Route Squeeze
-========================================================================================
+GEOREF Optimizer - Official Google OR-Tools VRPTW Engine with Multi-Pass Route Squeeze & Highway Speed Model
+===============================================================================================================
 Enterprise-grade Vehicle Routing Problem with Time Windows (VRPTW):
 - Phase 1: High-Precision Google OR-Tools VRPTW Guided Local Search (GLS)
-- Phase 2: Multi-Pass Route Compression & Squeeze Engine (Iterative Fleet Elimination)
-- Phase 3: Exact 2-Opt TSP Sequence Polishing (Mileage & Time Optimization)
+- Phase 2: Multi-Pass Route Compression & Absorption Loop
+- Phase 3: Pairwise Route Fusion (Merges small regional routes into unified trucks)
+- Phase 4: Exact 2-Opt TSP Sequence Polishing
+- Realistic Segment Speed Model (Highway 80 km/h for >25km, 65 km/h for >10km, 50 km/h urban)
 - Strict Zero-Error Compliance on Capacities (KG/m3), Time Windows & Driver Shift Bounds
 """
 
@@ -15,8 +17,22 @@ from typing import List, Dict, Any, Tuple, Optional
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from utils.rules_engine import is_vehicle_compatible, extract_tags
 
-SPEED_KMH = 50.0
 ROAD_FACTOR = 1.30
+
+def get_segment_speed(dist_km: float, base_speed: float = 50.0) -> float:
+    if dist_km > 25.0:
+        return 80.0
+    elif dist_km > 10.0:
+        return 65.0
+    return max(base_speed, 45.0)
+
+def travel_time_seconds(dist_km: float, base_speed: float = 50.0) -> int:
+    speed = get_segment_speed(dist_km, base_speed)
+    return int(round((dist_km / speed) * 3600.0))
+
+def travel_time_minutes(dist_km: float, base_speed: float = 50.0) -> float:
+    speed = get_segment_speed(dist_km, base_speed)
+    return (dist_km / speed) * 60.0
 
 class AdvancedRouteOptimizer:
     def __init__(self):
@@ -76,7 +92,7 @@ class AdvancedRouteOptimizer:
         if not initial_solution.get("routes"):
             return initial_solution
 
-        # Phase 2 & 3: Multi-Pass Route Compression & 2-Opt Polishing
+        # Phase 2 & 3: Multi-Pass Route Compression, Fusion & 2-Opt Polishing
         squeezed_solution = self._compress_and_squeeze_routes(
             initial_solution=initial_solution,
             distance_matrix=distance_matrix,
@@ -200,14 +216,14 @@ class AdvancedRouteOptimizer:
                 "Max_Stops"
             )
 
-        # 6. Time Dimension in SECONDS for 100% Sub-Minute Precision
+        # 6. Time Dimension in SECONDS with Highway Speed Model
         HORIZON_SEC = 24 * 3600
 
         def time_seconds_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             dist_km = distance_matrix[from_node][to_node] * ROAD_FACTOR
-            travel_sec = (dist_km / SPEED_KMH) * 3600.0
+            travel_sec = travel_time_seconds(dist_km)
             serv_sec = (client_service_times[from_node] * 60) if (client_service_times and from_node < len(client_service_times)) else (600 if from_node >= num_warehouses else 0)
             return int(round(travel_sec + serv_sec))
 
@@ -331,9 +347,10 @@ class AdvancedRouteOptimizer:
         respect_time_windows: bool = True
     ) -> Dict[str, Any]:
         """
-        Multi-Pass Route Squeeze Algorithm:
-        Iteratively identifies small routes and absorbs their stops into other compliant routes,
-        completely cutting vehicles while strictly maintaining 0 errors!
+        Multi-Pass Route Squeeze & Pairwise Fusion Engine:
+        1. Absorbs small donor routes into larger compliant routes.
+        2. Fuses pairs of small regional routes into unified trucks.
+        3. Applies exact 2-opt TSP sequence polishing.
         """
         routes = [list(r) for r in initial_solution.get("routes", [])]
         num_vehicles = len(routes)
@@ -376,7 +393,7 @@ class AdvancedRouteOptimizer:
 
                 d = distance_matrix[p_node][n] * ROAD_FACTOR
                 tot_dist += d
-                arr = cur_t + (d / SPEED_KMH) * 60.0
+                arr = cur_t + travel_time_minutes(d)
                 
                 if respect_time_windows and client_time_windows and n < len(client_time_windows):
                     w_s, w_e = client_time_windows[n]
@@ -392,7 +409,7 @@ class AdvancedRouteOptimizer:
             # Return to depot check
             d_ret = distance_matrix[p_node][depot_indices[v_idx]] * ROAD_FACTOR
             tot_dist += d_ret
-            ret_arr = cur_t + (d_ret / SPEED_KMH) * 60.0
+            ret_arr = cur_t + travel_time_minutes(d_ret)
             if ret_arr > (v_end + 1):
                 return False, 0.0
 
@@ -423,14 +440,14 @@ class AdvancedRouteOptimizer:
                         break
             return best_stops
 
-        # Compression Loop
+        # Compression & Fusion Loop
         changed = True
         while changed:
             changed = False
             active_indices = [v for v, r in enumerate(routes) if len(r) > 0]
-            # Prioritize donor routes with the smallest number of stops
             sorted_candidates = sorted(active_indices, key=lambda v: len(routes[v]))
 
+            # 1. Multi-Pass Absorption
             for donor_v in sorted_candidates:
                 donor_stops = list(routes[donor_v])
                 if not donor_stops:
@@ -450,7 +467,6 @@ class AdvancedRouteOptimizer:
                         if not ok_base:
                             continue
 
-                        # Try all positions
                         for pos in range(len(curr_stops) + 1):
                             cand_stops = curr_stops[:pos] + [stop_n] + curr_stops[pos:]
                             cand_opt = optimize_stops_2opt(target_v, cand_stops)
@@ -469,11 +485,50 @@ class AdvancedRouteOptimizer:
                         break
 
                 if all_inserted:
-                    # Squeeze successful: eliminate donor vehicle!
                     routes[donor_v] = []
                     for v_k, v_stops in test_routes.items():
                         routes[v_k] = v_stops
                     changed = True
+                    break
+
+            if changed:
+                continue
+
+            # 2. Pairwise Regional Route Fusion (Merge R_A + R_B -> Single Vehicle)
+            active_indices = [v for v, r in enumerate(routes) if len(r) > 0]
+            sorted_candidates = sorted(active_indices, key=lambda v: len(routes[v]))
+
+            for i in range(len(sorted_candidates)):
+                v_a = sorted_candidates[i]
+                stops_a = routes[v_a]
+                if not stops_a or len(stops_a) > 12:
+                    continue
+
+                for j in range(i + 1, len(sorted_candidates)):
+                    v_b = sorted_candidates[j]
+                    stops_b = routes[v_b]
+                    if not stops_b or len(stops_b) > 12:
+                        continue
+
+                    # Test merging into v_a
+                    merged_a = optimize_stops_2opt(v_a, stops_a + stops_b)
+                    ok_a, dist_a = evaluate_feasibility(v_a, merged_a)
+                    if ok_a:
+                        routes[v_a] = merged_a
+                        routes[v_b] = []
+                        changed = True
+                        break
+
+                    # Test merging into v_b
+                    merged_b = optimize_stops_2opt(v_b, stops_b + stops_a)
+                    ok_b, dist_b = evaluate_feasibility(v_b, merged_b)
+                    if ok_b:
+                        routes[v_b] = merged_b
+                        routes[v_a] = []
+                        changed = True
+                        break
+
+                if changed:
                     break
 
         # Final 2-Opt Polish on all active routes
@@ -494,5 +549,5 @@ class AdvancedRouteOptimizer:
             "dropped_nodes": final_dropped,
             "status": "success",
             "elapsed_seconds": initial_solution.get("elapsed_seconds", 0.0),
-            "solver": "Google OR-Tools VRPTW + Multi-Pass Route Squeeze Engine"
+            "solver": "Google OR-Tools VRPTW + Multi-Pass Squeeze & Fusion Engine"
         }
