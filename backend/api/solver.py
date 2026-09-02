@@ -932,6 +932,17 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
         cols = [d[0] for d in cursor.description] if cursor.description else []
         db_deliveries = [dict(zip(cols, r)) for r in rows]
 
+    db_by_id = {}
+    db_by_code = {}
+    db_by_name = {}
+    for d in db_deliveries:
+        d_id = str(d["id"]).strip().upper()
+        db_by_id[d_id] = d
+        if d.get("codigo_cliente"):
+            db_by_code[str(d["codigo_cliente"]).strip().upper()] = d
+        if d.get("nome_cliente"):
+            db_by_name[str(d["nome_cliente"]).strip().upper()] = d
+
     raw_routes = state_dict.get("routes_solution")
     if raw_routes is None or (isinstance(raw_routes, pd.DataFrame) and raw_routes.empty):
         raw_routes = state_dict.get("routes_df")
@@ -943,25 +954,45 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
     if raw_routes is not None:
         df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
         if not df_r.empty:
+            # Sync fresh live coordinates and delivery data from database into df_r
             for idx, r in df_r.iterrows():
-                r_dict = r.to_dict()
-                d_id = r.get("id") or r.get("ID_Original")
-                if d_id is not None:
-                    route_map_by_id[str(d_id).strip().upper()] = r_dict
-                c_code = r.get("Doc_ID") or r.get("Codigo_Cliente")
-                if c_code:
-                    route_map_by_code[str(c_code).strip().upper()] = r_dict
-                c_name = r.get("Cliente") or r.get("Nome_Cliente")
-                if c_name:
-                    route_map_by_name[str(c_name).strip().upper()] = r_dict
+                d_id = str(r.get("id") or r.get("ID_Original") or "").strip().upper()
+                c_code = str(r.get("Doc_ID") or r.get("Codigo_Cliente") or r.get("Cliente") or "").strip().upper()
+                c_name = str(r.get("Nome_Cliente") or "").strip().upper()
+                
+                matched_db = db_by_id.get(d_id) or db_by_code.get(c_code) or db_by_name.get(c_name)
+                if matched_db:
+                    db_lat = float(matched_db.get("latitude") or 0.0)
+                    db_lon = float(matched_db.get("longitude") or 0.0)
+                    if db_lat != 0.0 and db_lon != 0.0 and not pd.isna(db_lat) and not pd.isna(db_lon):
+                        df_r.loc[idx, "Latitude"] = db_lat
+                        df_r.loc[idx, "Longitude"] = db_lon
+                    if matched_db.get("morada"):
+                        df_r.loc[idx, "Morada"] = matched_db["morada"]
+                    if matched_db.get("codigo_postal"):
+                        df_r.loc[idx, "CP"] = matched_db["codigo_postal"]
+                    if matched_db.get("_concelho"):
+                        df_r.loc[idx, "Localidade"] = matched_db["_concelho"]
+                    if matched_db.get("nome_cliente"):
+                        df_r.loc[idx, "Nome_Cliente"] = matched_db["nome_cliente"]
+                    if matched_db.get("peso_kg") is not None:
+                        df_r.loc[idx, "Peso_KG"] = float(matched_db["peso_kg"])
+                    if matched_db.get("volume_m3") is not None:
+                        df_r.loc[idx, "Volume_m3"] = float(matched_db["volume_m3"])
 
-    if raw_routes is not None:
-        df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-        if not df_r.empty and len(df_r) >= len(db_deliveries):
-            # Check if df_r has valid assigned routes (not all empty / Por Distribuir)
-            non_empty_routes = df_r[~df_r["Rota"].astype(str).str.upper().isin(["", "POR DISTRIBUIR", "PENDENTE", "NAN"])]
-            if not non_empty_routes.empty:
-                return df_r.copy()
+                r_dict = df_r.loc[idx].to_dict()
+                d_id_key = r.get("id") or r.get("ID_Original")
+                if d_id_key is not None:
+                    route_map_by_id[str(d_id_key).strip().upper()] = r_dict
+                if c_code:
+                    route_map_by_code[c_code] = r_dict
+                if c_name:
+                    route_map_by_name[c_name] = r_dict
+
+            if len(df_r) >= len(db_deliveries):
+                non_empty_routes = df_r[~df_r["Rota"].astype(str).str.upper().isin(["", "POR DISTRIBUIR", "PENDENTE", "NAN"])]
+                if not non_empty_routes.empty:
+                    return df_r.copy()
 
     # Load fleet vehicle names for smart vendor/tag fallback
     fleet_veh_names = {}
