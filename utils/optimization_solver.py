@@ -7,6 +7,7 @@ Enterprise-grade Vehicle Routing Problem with Time Windows (VRPTW):
 - Full Capacity Constraints (Weight in KG and Volume in m3)
 - Strict Time Windows & Driver Shift Bounds
 - Multi-Depot and Dynamic Fleet Support
+- Multi-Warehouse Disjunction Handling (Zero penalty for unused depots)
 - Business Rules & Multi-Tag Matrix Compatibility (VehicleVar Constraints)
 - Guided Local Search (GLS) Metaheuristic for Global Cost and Mileage Minimization
 """
@@ -48,7 +49,7 @@ class AdvancedRouteOptimizer:
         vehicle_max_stops: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         params = optimization_params or {}
-        time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 25.0)
+        time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 20.0)
         respect_tw = bool(params.get("respect_time_windows", True))
 
         return self._solve_ortools_vrptw(
@@ -88,7 +89,7 @@ class AdvancedRouteOptimizer:
         vehicle_end_times,
         client_time_windows,
         locations=None,
-        time_limit_seconds=25.0,
+        time_limit_seconds=20.0,
         client_rules=None,
         vehicle_rules=None,
         rules_matrix=None,
@@ -208,12 +209,17 @@ class AdvancedRouteOptimizer:
             time_dimension.CumulVar(routing.Start(v)).SetRange(v_start, v_end)
             time_dimension.CumulVar(routing.End(v)).SetRange(v_start, v_end)
 
-        # 7. Disjunctions (Allow dropping unassignable nodes with large penalty)
+        # 7. Disjunctions:
+        # Crucial: Unused warehouse nodes get 0 penalty to be omitted.
+        # Client nodes get high penalty (10,000,000) so solver assigns as many as physically feasible.
         DROP_PENALTY = 10000000
-        for node in range(num_warehouses, num_nodes):
+        for node in range(num_nodes):
+            if node in starts or node in ends:
+                continue
             index = manager.NodeToIndex(node)
             if index != -1:
-                routing.AddDisjunction([index], DROP_PENALTY)
+                penalty = 0 if node < num_warehouses else DROP_PENALTY
+                routing.AddDisjunction([index], penalty)
 
         # 8. Business Rules & Multi-Tag Matrix Compatibility (VehicleVar)
         for node in range(num_warehouses, num_nodes):
