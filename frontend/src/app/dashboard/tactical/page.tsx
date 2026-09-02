@@ -2204,6 +2204,36 @@ export default function TacticalPage() {
             setExpandedRoutes((prev) => ({ ...prev, [rName]: true }));
           }}
         />
+
+        {/* Re-optimize Selected Routes Modal */}
+        <ReoptimizeModal
+          isOpen={reoptimizeModalOpen}
+          onClose={() => setReoptimizeModalOpen(false)}
+          selectedRoutes={selectedRouteNames}
+          stopsCount={routes.filter(r => selectedRouteNames.includes(r.Rota)).length}
+          totalKg={routes.filter(r => selectedRouteNames.includes(r.Rota)).reduce((sum, r) => sum + (Number(r.Peso_KG) || 0), 0)}
+          onConfirm={handleReoptimizeSelected}
+        />
+
+        {/* Floating Status Toast Notification */}
+        {statusMsg && (
+          <div className="fixed top-5 right-5 z-[99999] bg-indigo-950/95 border-2 border-indigo-500/80 text-white px-5 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center space-x-3 animate-in fade-in slide-in-from-top-4">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="text-xs font-bold">{statusMsg}</span>
+            <button onClick={() => setStatusMsg("")} className="text-zinc-400 hover:text-white text-xs font-black ml-2 cursor-pointer">✕</button>
+          </div>
+        )}
+
+        {/* Reoptimizing Loading Overlay */}
+        {actionLoading === "reoptimizing_subset" && (
+          <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-center justify-center animate-in fade-in">
+            <div className="bg-zinc-900 border border-indigo-500/40 rounded-2xl p-6 shadow-2xl flex flex-col items-center space-y-3 max-w-sm text-center">
+              <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              <h4 className="font-bold text-sm text-white">A Re-Otimizar Rotas Selecionadas</h4>
+              <p className="text-xs text-zinc-400">O solver OR-Tools está a calcular o melhor trajeto conjunto e a re-equilibrar as entregas...</p>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

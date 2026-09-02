@@ -1014,6 +1014,20 @@ export default function MapComponent({
                 );
               })()}
 
+              {/* Re-optimize Selected Subset Button in Sidebar */}
+              {selectedRoutes.length >= 2 && onReoptimizeSubset && (
+                <button
+                  onClick={() => onReoptimizeSubset(selectedRoutes)}
+                  className="w-full px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-md shadow-indigo-500/20 flex items-center justify-center space-x-2 cursor-pointer transition-all animate-in fade-in"
+                  title="Re-planear e otimizar conjuntamente as rotas selecionadas"
+                >
+                  <svg className="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                  <span>✨ Re-otimizar Seleção ({selectedRoutes.length})</span>
+                </button>
+              )}
+
               {/* Por Distribuir Option */}
               {(() => {
                 const pendingStops = clients.filter(c => isPendingRoute(c.Rota));

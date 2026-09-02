@@ -491,6 +491,22 @@ export default function DetachedMapPage() {
           >
             <span>📊 {t.navigation.dashboard}</span>
           </a>
+          {filters.selectedRoutes && filters.selectedRoutes.length >= 2 && (
+            <button
+              onClick={() => {
+                setModalSelectedRoutes(filters.selectedRoutes || []);
+                setReoptimizeModalOpen(true);
+              }}
+              className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md shadow-indigo-500/25 transition-all flex items-center space-x-1.5 cursor-pointer animate-in fade-in"
+              title="Re-planear conjuntamente as rotas selecionadas"
+            >
+              <svg className="w-3.5 h-3.5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+              </svg>
+              <span>Re-otimizar Seleção ({filters.selectedRoutes.length})</span>
+            </button>
+          )}
+
           <button
             onClick={loadDataFromApiAndStorage}
             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center space-x-1.5 cursor-pointer"
