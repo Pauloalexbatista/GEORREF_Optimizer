@@ -342,9 +342,9 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             dist = float(g_legs[idx]["distance_km"])
             travel_min = float(g_legs[idx]["duration_min"])
         else:
-            dist = haversine_distance(p_lat, p_lon, c_lat, c_lon) * 1.28
+            dist = haversine_distance(p_lat, p_lon, c_lat, c_lon) * 1.30
             # Hybrid speed: 70 km/h for highway segments (>15km), else avg_speed (urban)
-            segment_speed = 70.0 if dist > 15.0 else avg_speed
+            segment_speed = avg_speed
             travel_min = (dist / segment_speed) * 60.0
         cumul_dist += dist
         arr_min = cur_time_min + travel_min
@@ -604,6 +604,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         vehicle_max_stops = [int(fleet_dict.get(v_name, {}).get("max_entregas", 30) or 30) for v_name in vehicle_names]
         rules_matrix = state_dict.get("rules_matrix", [])
         
+        client_service_times = [0 for _ in range(num_warehouses)] + [int(dr.get("tempo_descarga_min") or 10) for dr in delivery_rows]
         optimizer = AdvancedRouteOptimizer()
         result = optimizer.optimize_routes(
             distance_matrix,
@@ -623,7 +624,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             client_rules=client_rules,
             vehicle_rules=vehicle_rules,
             rules_matrix=rules_matrix,
-            vehicle_max_stops=vehicle_max_stops
+            vehicle_max_stops=vehicle_max_stops,
+            client_service_times=client_service_times
         )
         
         # 6. Convert solver output to routes list
