@@ -6,6 +6,61 @@ import pandas as pd
 from utils.agent_spatial_insights import detect_geographic_outliers, analyze_unassigned_clustering
 from utils.validation_auditor import audit_route_plan
 
+
+def extract_distribution_metrics(df_routes: pd.DataFrame) -> Dict[str, Any]:
+    manha = 0
+    tarde = 0
+    dia_todo = 0
+    sem_janela = 0
+    peso_total = 0.0
+    vol_total = 0.0
+
+    if df_routes.empty:
+        return {}
+
+    for _, row in df_routes.iterrows():
+        s_val = str(row.get("Janela_Inicio") or row.get("janela_inicio") or row.get("Slot1_Inicio") or "").strip()
+        e_val = str(row.get("Janela_Fim") or row.get("janela_fim") or row.get("Slot1_Fim") or "").strip()
+        win_str = str(row.get("Janela_Horaria") or row.get("janela_horaria") or "").strip()
+        
+        peso = float(row.get("Peso_KG") or row.get("peso_kg") or row.get("Peso") or 0.0)
+        vol = float(row.get("Volume_m3") or row.get("volume_m3") or row.get("Volume") or 0.0)
+        peso_total += peso
+        vol_total += vol
+
+        if (not s_val and not e_val) and (not win_str or win_str.lower() in ["qualquer", "nan", "none", ""]):
+            sem_janela += 1
+            continue
+
+        end_hour = 18
+        start_hour = 8
+        if e_val and ":" in e_val:
+            try: end_hour = int(e_val.split(":")[0])
+            except: pass
+        elif "-" in win_str:
+            try: end_hour = int(win_str.split("-")[1].split(":")[0])
+            except: pass
+
+        if s_val and ":" in s_val:
+            try: start_hour = int(s_val.split(":")[0])
+            except: pass
+
+        if end_hour <= 13:
+            manha += 1
+        elif start_hour >= 13:
+            tarde += 1
+        else:
+            dia_todo += 1
+
+    return {
+        "entregas_janela_manha_ate_13h": manha,
+        "entregas_janela_tarde_pos_13h": tarde,
+        "entregas_janela_alargada_dia_todo": dia_todo,
+        "entregas_sem_janela_horaria": sem_janela,
+        "peso_total_distribuicao_kg": round(peso_total, 1),
+        "volume_total_distribuicao_m3": round(vol_total, 2)
+    }
+
 def run_agent_chat_reasoning(
     user_message: str,
     routes_solution: Any,
@@ -39,12 +94,14 @@ def run_agent_chat_reasoning(
     assigned_count = total_stops - unassigned_count
 
     active_vehicles = list(fleet_config.keys()) if fleet_config else []
+    dist_metrics = extract_distribution_metrics(df_routes)
 
     context_summary = {
         "total_entregas": total_stops,
         "entregas_atribuidas": assigned_count,
         "entregas_por_distribuir": unassigned_count,
         "viaturas_ativas": len(active_vehicles),
+        "estatisticas_gerais_distribuicao": dist_metrics,
         "pontos_geograficamente_suspeitos_outliers": outliers,
         "por_distribuir_perto_armazem_menos_15km": clustering.get("near_depot_count", 0),
         "por_distribuir_longe_armazem": clustering.get("far_depot_count", 0),
