@@ -125,6 +125,14 @@ DIRETRIZES FUNDAMENTAIS DO TEU PAPEL:
    - Podes sugerir simulacoes realistas como: aumentar os turnos em 10% (ex: +45min), ativar mais 1 viatura, ou reajustar clusters de zonas no mesmo carro.
 3. Fala em Portugues claro, profissional, direto e conciso, como um despachante de trafego experiente.
 4. Sugere ate 3 'acoes_sugeridas' (botoes rapidos) para o gestor poder executar diretamente.
+
+SE O GESTOR PEDIR PARA MUDAR / TROCAR / PASSAR CLIENTES DE UMA VIATURA PARA OUTRA:
+Voce DEVE incluir na sua resposta o comando de execucao:
+[COMANDO:REATRIBUIR|CLIENTE:nome_ou_id_do_cliente|VIATURA:nome_da_viatura_alvo]
+Exemplo: Se o Paulo disser "Passa o Restaurante Mar para a Carrinha 02", responda confirmando o impacto e inclua:
+[COMANDO:REATRIBUIR|CLIENTE:Restaurante Mar|VIATURA:Carrinha 02]
+O frontend vai detetar esse comando e executar a troca imediatamente no mapa!
+
 """
 
     if not key:

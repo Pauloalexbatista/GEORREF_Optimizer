@@ -79,6 +79,26 @@ export default function AgentChatDrawer({
         }),
       });
 
+      // Detetar se o agente disparou um comando de reatribuicao
+      const cmdMatch = (res.reply || "").match(/\[COMANDO:REATRIBUIR\|CLIENTE:(.*?)\|VIATURA:(.*?)\]/);
+      if (cmdMatch) {
+        const clientCode = cmdMatch[1].trim();
+        const targetVehicle = cmdMatch[2].trim();
+        try {
+          await apiRequest("/api/solver/reassign", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              client_code: clientCode,
+              target_route: targetVehicle,
+            }),
+          });
+          if (onRefreshData) onRefreshData();
+        } catch (reErr) {
+          console.error("Erro ao aplicar reatribui??o autom?tica:", reErr);
+        }
+      }
+
       const agentMsg: ChatMessage = {
         id: String(Date.now() + 1),
         sender: "agent",
