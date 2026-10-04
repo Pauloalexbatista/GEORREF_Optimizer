@@ -1,6 +1,6 @@
 ﻿import os
 import json
-import httpx
+import requests
 from typing import List, Dict, Any, Optional
 
 def parse_business_rules_with_llm(
@@ -60,8 +60,7 @@ Responda EXCLUSIVAMENTE em formato JSON com esta estrutura:
     }
 
     try:
-        with httpx.Client(timeout=25.0) as client:
-            resp = client.post(url, json=payload)
+        resp = requests.post(url, json=payload, timeout=25.0)
             if resp.status_code == 200:
                 data = resp.json()
                 text_out = data["candidates"][0]["content"]["parts"][0]["text"]
