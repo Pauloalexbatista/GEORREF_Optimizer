@@ -286,13 +286,33 @@ def init_database():
         add_column_if_missing("entregas", "regras", "TEXT DEFAULT ''")
         
         # Garantir privilégios SuperAdmin ao Paulo Batista se existir
+                # Garantir empresa e conta SuperAdmin principal ativa
+        cursor.execute("SELECT id FROM empresas WHERE id = 1")
+        if not cursor.fetchone():
+            cursor.execute("INSERT OR IGNORE INTO empresas (id, nome, email, data_validade, programas, is_active) VALUES (1, 'Administracao', 'pauloalexbatista@gmail.com', '2099-12-31', 'site,app', 1)")
+
+        cursor.execute("SELECT id FROM utilizadores WHERE email = 'pauloalexbatista@gmail.com'")
+        u_p = cursor.fetchone()
+        if not u_p:
+            cursor.execute("""
+                INSERT INTO utilizadores (empresa_id, nome, email, password_hash, password_plain, is_admin, is_superadmin, is_active, data_validade, programas)
+                VALUES (1, 'Paulo Batista', 'pauloalexbatista@gmail.com', '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', 'admin123', 1, 1, 1, '2099-12-31', 'site,app')
+            """)
+        else:
+            cursor.execute("""
+                UPDATE utilizadores 
+                SET password_hash = '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', password_plain = 'admin123', is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
+                WHERE email = 'pauloalexbatista@gmail.com'
+            """)
+
         cursor.execute("""
             UPDATE utilizadores 
-            SET is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
-            WHERE email IN ('pauloalexbatista@gmail.com', 'paulo.batista@ttm.pt')
+            SET password_hash = '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', password_plain = 'admin123', is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
+            WHERE email = 'paulo.batista@ttm.pt'
         """)
+
         cursor.execute("UPDATE utilizadores SET is_superadmin = 0 WHERE email NOT IN ('pauloalexbatista@gmail.com', 'paulo.batista@ttm.pt')")
-        
+
         conn.commit()
         print("[DB] Base de dados inicializada e auto-migrada com sucesso!")
 
