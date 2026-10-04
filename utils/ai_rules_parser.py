@@ -61,17 +61,17 @@ Responda EXCLUSIVAMENTE em formato JSON com esta estrutura:
 
     try:
         resp = requests.post(url, json=payload, timeout=25.0)
-            if resp.status_code == 200:
-                data = resp.json()
-                text_out = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(text_out)
-                return {"status": "success", "rules": parsed.get("rules", [])}
-            else:
-                return {
-                    "status": "api_error",
-                    "code": resp.status_code,
-                    "detail": resp.text,
-                    "rules": []
-                }
+        if resp.status_code == 200:
+            data = resp.json()
+            text_out = data["candidates"][0]["content"]["parts"][0]["text"]
+            parsed = json.loads(text_out)
+            return {"status": "success", "rules": parsed.get("rules", [])}
+        else:
+            return {
+                "status": "api_error",
+                "code": resp.status_code,
+                "detail": resp.text,
+                "rules": []
+            }
     except Exception as e:
         return {"status": "exception", "detail": str(e), "rules": []}
