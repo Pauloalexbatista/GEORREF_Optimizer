@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Login - AppGeoRoutePlan</title>
+  <title>Login Motoristas - GeoRoute Pro</title>
   <link rel="stylesheet" href="/static/css/themes.css">
   <link rel="stylesheet" href="/static/css/styles.css">
   <link rel="manifest" href="/static/manifest.json">
@@ -12,7 +12,7 @@
   <!-- Header -->
   <header class="app-header">
     <div class="brand-wrapper">
-      <div class="brand-icon">📍</div>
+      <div class="brand-icon">🚚</div>
       <div class="brand-name" data-i18n="app_title">AppGeoRoutePlan</div>
     </div>
     <div class="header-controls">
@@ -27,53 +27,117 @@
   </header>
 
   <!-- Login Form Container -->
-  <main class="app-content" style="display:flex; align-items:center; justify-content:center; padding-top: 30px;">
-    <div class="card" style="width: 100%; max-width: 400px; padding: 24px;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <div style="font-size: 40px; margin-bottom: 8px;">🚚</div>
-        <h1 style="font-size: 20px; font-weight: 800;" data-i18n="login_title">Entrar na Aplicação</h1>
-        <p style="font-size: 13px; color: var(--text-secondary);" data-i18n="login_subtitle">Gestão e Distribuição Diária</p>
+  <main class="app-content" style="display:flex; align-items:center; justify-content:center; padding-top: 25px; padding-bottom: 25px;">
+    <div class="card" style="width: 100%; max-width: 420px; padding: 28px 24px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 42px; margin-bottom: 8px;">🚚</div>
+        <h1 style="font-size: 22px; font-weight: 800; margin-bottom: 4px;" data-i18n="login_title">Área do Motorista</h1>
+        <p style="font-size: 13px; color: var(--text-secondary);" data-i18n="login_subtitle">Distribuição e Acompanhamento em Tempo Real</p>
       </div>
 
       <form id="login-form">
-        <div class="form-group">
-          <label class="form-label" for="password" data-i18n="password_label">Senha de Acesso</label>
-          <input type="password" id="password" class="form-input" data-i18n-placeholder="password_placeholder" placeholder="Insira a sua senha ou PIN..." required autofocus>
+        <!-- Campo 1: Chave da Empresa -->
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" for="company_key" style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+            🏢 Chave da Empresa / Frota
+          </label>
+          <input 
+            type="text" 
+            id="company_key" 
+            class="form-input" 
+            placeholder="Ex: LOG4000 ou AUC2026" 
+            required 
+            autocomplete="organization"
+            style="text-transform: uppercase; font-weight: 700; letter-spacing: 1px;"
+          >
+          <span style="font-size: 10px; color: var(--text-secondary); margin-top: 4px; display: block;">
+            Fica guardada automaticamente no seu telemóvel.
+          </span>
         </div>
 
-        <div id="login-error-msg" style="display:none; margin-bottom: 12px; font-size: 13px; color: #dc2626; background: #fee2e2; padding: 8px; border-radius: var(--radius-sm); text-align:center;" data-i18n="login_error">
-          Senha incorreta. Tente novamente.
+        <!-- Campo 2: PIN do Motorista -->
+        <div class="form-group" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" for="pin" style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0;">
+              👤 PIN do Motorista
+            </label>
+            <button type="button" id="btn-toggle-pwd" style="background: none; border: none; font-size: 11px; color: var(--color-primary); cursor: pointer; padding: 0;">
+              Mostrar PIN
+            </button>
+          </div>
+          <input 
+            type="password" 
+            id="pin" 
+            class="form-input" 
+            placeholder="Insira o seu PIN (ex: 1001)..." 
+            inputmode="numeric" 
+            pattern="[0-9]*" 
+            required
+            style="font-size: 18px; letter-spacing: 2px; text-align: center;"
+          >
         </div>
 
-        <button type="submit" id="btn-submit" class="btn btn-primary btn-block" data-i18n="btn_enter">
-          Entrar
+        <!-- Mensagens de Erro Dinâmicas -->
+        <div id="login-error-msg" style="display:none; margin-bottom: 16px; font-size: 13px; color: #dc2626; background: #fee2e2; border: 1px solid #fca5a5; padding: 10px 12px; border-radius: var(--radius-sm); text-align:center; line-height: 1.4;">
+          Senha ou PIN incorreto. Tente novamente.
+        </div>
+
+        <!-- Botão Entrar -->
+        <button type="submit" id="btn-submit" class="btn btn-primary btn-block" style="min-height: 48px; font-size: 16px; font-weight: 700;">
+          🚀 Entrar na Minha Rota
         </button>
       </form>
-      
-      <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color); text-align: center;">
-        <a href="/api/template" class="btn btn-secondary btn-block" style="font-size:12px; min-height:36px; text-decoration:none;">
-          📄 <span data-i18n="btn_download_template">Descarregar Modelo Excel</span>
-        </a>
-      </div>
     </div>
   </main>
 
   <script src="/static/js/i18n.js"></script>
   <script>
+    // Recuperar Chave da Empresa guardada
+    const savedCompanyKey = localStorage.getItem("geo_company_key");
+    if (savedCompanyKey) {
+      document.getElementById("company_key").value = savedCompanyKey;
+      document.getElementById("pin").focus();
+    } else {
+      document.getElementById("company_key").focus();
+    }
+
+    // Toggle ver/ocultar PIN
+    const toggleBtn = document.getElementById("btn-toggle-pwd");
+    const pinInput = document.getElementById("pin");
+    toggleBtn.addEventListener("click", () => {
+      if (pinInput.type === "password") {
+        pinInput.type = "text";
+        toggleBtn.textContent = "Ocultar PIN";
+      } else {
+        pinInput.type = "password";
+        toggleBtn.textContent = "Mostrar PIN";
+      }
+    });
+
+    // Submissão do formulário
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const pwd = document.getElementById("password").value.trim();
+      const companyKey = document.getElementById("company_key").value.trim().toUpperCase();
+      const pin = document.getElementById("pin").value.trim();
       const errorMsg = document.getElementById("login-error-msg");
       const btn = document.getElementById("btn-submit");
       
       errorMsg.style.display = "none";
       btn.disabled = true;
+      btn.textContent = "A validar acesso...";
+      
+      // Guardar Chave da Empresa para visitas futuras
+      localStorage.setItem("geo_company_key", companyKey);
       
       try {
         const res = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password: pwd })
+          body: JSON.stringify({ 
+            company_key: companyKey,
+            pin: pin,
+            password: pin
+          })
         });
         
         const data = await res.json();
@@ -87,12 +151,15 @@
             window.location.href = "/driver";
           }
         } else {
+          errorMsg.textContent = data.detail || "Chave da Empresa ou PIN incorretos.";
           errorMsg.style.display = "block";
         }
       } catch (err) {
+        errorMsg.textContent = "Erro de ligação ao servidor. Verifique a sua ligação à internet.";
         errorMsg.style.display = "block";
       } finally {
         btn.disabled = false;
+        btn.textContent = "🚀 Entrar na Minha Rota";
       }
     });
   </script>

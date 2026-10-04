@@ -60,6 +60,7 @@ class UpdateUserPayload(BaseModel):
     password: Optional[str] = None
     data_validade: str = "2027-12-31"
     programas: str = "site,app"
+    driver_password: Optional[str] = ""
     is_active: bool = True
 
 def compute_days_left(valid_date_str: str) -> int:
@@ -90,6 +91,7 @@ def get_all_users(admin: UserResponse = Depends(require_admin)):
             programas=u.get("programas", "site,app"),
             dias_restantes=dias,
             password_plain=u.get("password_plain") if admin.is_superadmin else None,
+            driver_password=u.get("driver_password", ""),
             created_at=str(u.get("created_at", ""))
         ))
     return results
@@ -116,7 +118,8 @@ def create_user(payload: CreateUserPayload, admin: UserResponse = Depends(requir
         password_hash=pwd_hash,
         data_validade=payload.data_validade,
         programas=payload.programas,
-        is_admin=payload.is_admin
+        is_admin=payload.is_admin,
+        driver_password=payload.driver_password or ""
     )
     
     dias = compute_days_left(payload.data_validade)
@@ -132,7 +135,8 @@ def create_user(payload: CreateUserPayload, admin: UserResponse = Depends(requir
         data_validade=payload.data_validade,
         programas=payload.programas,
         dias_restantes=dias,
-        password_plain=payload.password
+        password_plain=payload.password,
+        driver_password=payload.driver_password or ""
     )
 
 @router.put("/users/{user_id}")
@@ -158,7 +162,8 @@ def update_user(user_id: int, payload: UpdateUserPayload, admin: UserResponse = 
             password_hash=pwd_hash,
             data_validade=payload.data_validade,
             programas=payload.programas,
-            is_active=1 if payload.is_active else 0
+            is_active=1 if payload.is_active else 0,
+            driver_password=payload.driver_password or ""
         )
         return {"status": "success", "message": "Utilizador atualizado com sucesso."}
     except Exception as e:
@@ -170,6 +175,8 @@ def update_user(user_id: int, payload: UpdateUserPayload, admin: UserResponse = 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: int, admin: UserResponse = Depends(require_admin)):
     try:
+        if admin.id == user_id:
+            raise HTTPException(status_code=400, detail="Não é permitido eliminar a sua própria conta de Administrador.")
         success = eliminar_utilizador_admin(user_id)
         if not success:
             raise HTTPException(status_code=404, detail="Utilizador não encontrado.")

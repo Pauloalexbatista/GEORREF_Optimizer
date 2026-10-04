@@ -26,7 +26,7 @@ export default function ReoptimizeModal({
 }: ReoptimizeModalProps) {
   const [objective, setObjective] = useState<"distance" | "group">("distance");
   const [balanceRoutes, setBalanceRoutes] = useState<boolean>(true);
-  const [respectTimeWindows, setRespectTimeWindows] = useState<boolean>(true);
+  const respectTimeWindows = true;
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -239,26 +239,30 @@ export default function ReoptimizeModal({
             </div>
           </div>
 
-          {/* Time Windows Toggle */}
-          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          {/* Strict Time Windows Guarantee */}
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
               <div>
-                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Respeitar Janelas Horárias</span>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Garante 0 atrasos nas entregas dos clientes</p>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Cumprimento de Janelas Horárias</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                    100% Obrigatório
+                  </span>
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Garante 0 atrasos nas entregas dos clientes e respeito pelos turnos</p>
               </div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={respectTimeWindows}
-                onChange={(e) => setRespectTimeWindows(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-9 h-5 bg-zinc-300 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-            </label>
+            <div className="flex items-center text-emerald-600 dark:text-emerald-400 text-xs font-bold gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Ativo</span>
+            </div>
           </div>
 
         </div>

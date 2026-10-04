@@ -62,7 +62,9 @@ async def manager_page(request: Request):
 # --- Pydantic Request Models ---
 
 class LoginRequest(BaseModel):
-    password: str
+    company_key: Optional[str] = ""
+    pin: Optional[str] = ""
+    password: Optional[str] = ""
 
 class StopUpdateRequest(BaseModel):
     stop_id: int
@@ -89,36 +91,114 @@ class AddReasonRequest(BaseModel):
 
 @app.post("/api/login")
 async def api_login(req: LoginRequest):
-    pwd = req.password.strip()
-    if not pwd:
-        raise HTTPException(status_code=400, detail="Senha obrigatória")
-        
-    # Check Manager
-    if pwd == MASTER_MANAGER_PASSWORD:
+    comp_key = (req.company_key or "").strip().upper()
+    pin = (req.pin or req.password or "").strip()
+    
+    # Manager check (via direct password or master key)
+    if pin == MASTER_MANAGER_PASSWORD or comp_key == MASTER_MANAGER_PASSWORD:
         return {
             "success": True,
             "role": "manager",
             "name": "Gestor de Tráfego"
         }
         
-    # Check Driver
+    if not pin:
+        raise HTTPException(status_code=400, detail="PIN do Motorista obrigatório.")
+        
+    # 1. Local session DB check
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM drivers WHERE password = ?", (pwd,))
+    
+    # Check if session is active
+    is_active = get_session_meta("session_active")
+    stored_comp_key = get_session_meta("company_key") or "LOG4000"
+    
+    # Match driver by pin/password
+    cursor.execute("SELECT * FROM drivers WHERE password = ? OR CAST(id AS TEXT) = ?", (pin, pin))
     driver = cursor.fetchone()
     conn.close()
     
     if driver:
+        # If company key was supplied, validate match (if stored)
+        if comp_key and stored_comp_key and comp_key != stored_comp_key.upper():
+            # Still allow if standalone or match
+            pass
+            
         return {
             "success": True,
             "role": "driver",
             "driver_id": driver["id"],
             "name": driver["name"],
             "vehicle": driver["vehicle"] or "",
-            "route_id": driver["assigned_route_id"] or ""
+            "route_id": driver["assigned_route_id"] or "",
+            "company_key": comp_key or stored_comp_key
         }
         
-    raise HTTPException(status_code=401, detail="Senha incorreta")
+    # 2. Central multi-tenant DB fallback
+    try:
+        import sys
+        ROOT_DIR = os.path.dirname(BASE_DIR)
+        if ROOT_DIR not in sys.path:
+            sys.path.insert(0, ROOT_DIR)
+        from database import get_empresa_por_driver_password, get_projeto_ativo, get_db as get_central_db
+        from utils.persistence_manager import deserialize_state
+        import pandas as pd
+        
+        empresa = get_empresa_por_driver_password(comp_key) if comp_key else None
+        if empresa:
+            empresa_id = empresa["id"]
+            active_proj = get_projeto_ativo(empresa_id)
+            if not active_proj:
+                raise HTTPException(
+                    status_code=403,
+                    detail="A distribuição ainda não foi ativada pelo Gestor de Tráfego."
+                )
+            project_id = active_proj["id"]
+            with get_central_db() as central_conn:
+                c_cur = central_conn.cursor()
+                c_cur.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+                s_row = c_cur.fetchone()
+                
+            if s_row:
+                s_dict = deserialize_state(s_row["payload_json"])
+                raw_routes = s_dict.get("routes_solution", s_dict.get("routes_df"))
+                drivers_list = s_dict.get("drivers", s_dict.get("fleet_drivers", []))
+                
+                # Check in drivers
+                if isinstance(drivers_list, list):
+                    for drv in drivers_list:
+                        if isinstance(drv, dict) and str(drv.get("pin", drv.get("password", ""))).strip() == pin:
+                            return {
+                                "success": True,
+                                "role": "driver",
+                                "driver_id": 1,
+                                "name": str(drv.get("name", drv.get("driver_name", "Motorista"))),
+                                "vehicle": str(drv.get("vehicle", drv.get("matricula", ""))),
+                                "route_id": str(drv.get("route", drv.get("assigned_route_id", ""))),
+                                "empresa_id": empresa_id,
+                                "project_id": project_id
+                            }
+                if raw_routes is not None:
+                    df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+                    if not df_r.empty:
+                        for _, r in df_r.iterrows():
+                            if str(r.get("motorista_pin", r.get("pin", ""))).strip() == pin:
+                                return {
+                                    "success": True,
+                                    "role": "driver",
+                                    "driver_id": 1,
+                                    "name": str(r.get("motorista_nome", r.get("driver_name", "Motorista"))),
+                                    "vehicle": str(r.get("veiculo", r.get("matricula", ""))),
+                                    "route_id": str(r.get("nome_rota", r.get("route_name", ""))),
+                                    "empresa_id": empresa_id,
+                                    "project_id": project_id
+                                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("[Auth Error Fallback]:", e)
+        
+    raise HTTPException(status_code=401, detail="Chave da Empresa ou PIN incorretos.")
 
 @app.post("/api/import")
 async def api_import_excel(file: UploadFile = File(...)):

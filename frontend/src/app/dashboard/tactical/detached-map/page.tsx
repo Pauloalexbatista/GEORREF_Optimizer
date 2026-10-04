@@ -28,6 +28,7 @@ export default function DetachedMapPage() {
   const [statusMsg, setStatusMsg] = useState("A aguardar sincronização...");
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
 
   const handleReoptimizeSubset = async (options: {
     selectedRoutes?: string[];
@@ -90,19 +91,11 @@ export default function DetachedMapPage() {
   };
 
   // Synchronized Filter State (Bidirectional with 1st Screen)
-  const [filters, setFilters] = useState<MapFilterState>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("georoute_active_filters");
-        if (stored) return JSON.parse(stored);
-      } catch (e) {}
-    }
-    return {
-      searchQuery: "",
-      selectedWarehouse: "all",
-      statusFilter: "all",
-      selectedRoutes: [],
-    };
+  const [filters, setFilters] = useState<MapFilterState>({
+    searchQuery: "",
+    selectedWarehouse: "all",
+    statusFilter: "all",
+    selectedRoutes: [],
   });
 
   const channelRef = useRef<BroadcastChannel | null>(null);
@@ -170,6 +163,7 @@ export default function DetachedMapPage() {
   };
 
   useEffect(() => {
+    setIsMounted(true);
     // 1. Initial load from API + localStorage
     loadDataFromApiAndStorage();
 
@@ -491,7 +485,7 @@ export default function DetachedMapPage() {
           >
             <span>📊 {t.navigation.dashboard}</span>
           </a>
-          {filters.selectedRoutes && filters.selectedRoutes.length >= 2 && (
+          {isMounted && filters.selectedRoutes && filters.selectedRoutes.length >= 2 && (
             <button
               onClick={() => {
                 setModalSelectedRoutes(filters.selectedRoutes || []);

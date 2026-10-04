@@ -256,6 +256,8 @@ def init_database():
         add_column_if_missing("empresas", "data_validade", "TEXT DEFAULT '2099-12-31'")
         add_column_if_missing("empresas", "programas", "TEXT DEFAULT 'site,app'")
         add_column_if_missing("empresas", "driver_password", "TEXT DEFAULT ''")
+        add_column_if_missing("projetos", "is_active", "BOOLEAN DEFAULT 0")
+        add_column_if_missing("projetos", "status", "TEXT DEFAULT 'draft'")
         add_column_if_missing("empresas", "api_key_google", "TEXT DEFAULT ''")
         
         add_column_if_missing("utilizadores", "is_superadmin", "BOOLEAN DEFAULT 0")
@@ -267,6 +269,9 @@ def init_database():
         add_column_if_missing("frota", "capacidade_volume", "REAL DEFAULT 10.0")
         add_column_if_missing("frota", "armazem", "TEXT DEFAULT ''")
         add_column_if_missing("frota", "regras", "TEXT DEFAULT ''")
+        add_column_if_missing("frota", "max_entregas", "INTEGER DEFAULT 30")
+        add_column_if_missing("frota", "motorista_nome", "TEXT DEFAULT ''")
+        add_column_if_missing("frota", "motorista_telemovel", "TEXT DEFAULT ''")
         add_column_if_missing("frota", "is_active", "BOOLEAN DEFAULT 1")
         
         add_column_if_missing("entregas", "armazem", "TEXT DEFAULT 'Armazém Principal'")
@@ -424,6 +429,55 @@ def eliminar_projeto(projeto_id):
         cursor.execute("DELETE FROM projetos WHERE id = ?", (projeto_id,))
         conn.commit()
 
+
+def ativar_projeto(projeto_id, empresa_id):
+    """Ativa o projeto como distribuicao ativa na rua e desativa outros da empresa."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE projetos SET is_active = 0, status = 'completed' WHERE empresa_id = ?", (empresa_id,))
+        cursor.execute("UPDATE projetos SET is_active = 1, status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (projeto_id,))
+        conn.commit()
+        return True
+
+def desativar_projeto(projeto_id):
+    """Desativa o projeto (concluido/fechado)."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE projetos SET is_active = 0, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (projeto_id,))
+        conn.commit()
+        return True
+
+def get_projeto_ativo(empresa_id):
+    """Retorna o projeto atualmente ativo na rua para a empresa."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM projetos WHERE empresa_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1", (empresa_id,))
+        return cursor.fetchone()
+
+def get_empresa_por_driver_password(driver_password: str):
+    """Localiza a empresa pela Chave da Empresa (driver_password)."""
+    cleaned = str(driver_password or '').strip().upper()
+    if not cleaned:
+        return None
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT e.* FROM empresas e 
+            WHERE UPPER(TRIM(COALESCE(e.driver_password, ''))) = ? AND e.is_active = 1
+            LIMIT 1
+        """, (cleaned,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        cursor.execute("""
+            SELECT e.* FROM empresas e
+            JOIN utilizadores u ON u.empresa_id = e.id
+            WHERE UPPER(TRIM(COALESCE(u.driver_password, ''))) = ? AND e.is_active = 1
+            LIMIT 1
+        """, (cleaned,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 def get_projeto(projeto_id):
     """Obter projeto por ID"""
     with get_db() as conn:
@@ -493,13 +547,18 @@ def save_frota_projeto(projeto_id, frota_data):
             cursor.execute("""
                 INSERT INTO frota (
                     projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
-                    velocidade_media, horario_inicio, horario_fim, armazem, regras, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    velocidade_media, horario_inicio, horario_fim, armazem, regras,
+                    max_entregas, motorista_nome, motorista_telemovel, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, f.get('veiculo'), float(f.get('capacidade_kg') or 1000.0),
                 float(f.get('capacidade_volume') or f.get('capacidade_vol') or 5.0), float(f.get('custo_km') or 0.5),
                 float(f.get('velocidade_media') or 40.0), str(f.get('horario_inicio') or '08:00'), str(f.get('horario_fim') or '18:00'),
-                str(f.get('armazem') or ''), str(f.get('regras') or f.get('Regras') or ''), int(f.get('is_active', 1) if f.get('is_active') is not None else 1)
+                str(f.get('armazem') or ''), str(f.get('regras') or f.get('Regras') or ''),
+                int(f.get('max_entregas') or f.get('Max_Entregas') or 30),
+                str(f.get('motorista_nome') or f.get('Motorista_Nome') or f.get('motorista') or ''),
+                str(f.get('motorista_telemovel') or f.get('Motorista_Telemovel') or ''),
+                int(f.get('is_active', 1) if f.get('is_active') is not None else 1)
             ))
         
         conn.commit()
@@ -886,21 +945,40 @@ def eliminar_utilizador_admin(user_id):
     """Elimina um utilizador e a respetiva empresa se não houver mais utilizadores."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT empresa_id, is_superadmin FROM utilizadores WHERE id = ?", (user_id,))
+        cursor.execute("SELECT id, empresa_id, email, is_superadmin FROM utilizadores WHERE id = ?", (user_id,))
         user_row = cursor.fetchone()
         if not user_row:
             return False
-        if user_row["email"] in ("pauloalexbatista@gmail.com", "paulo.batista@ttm.pt"):
+        user_email = (user_row["email"] or "").lower()
+        if user_email in ("pauloalexbatista@gmail.com", "paulo.batista@ttm.pt") or bool(user_row["is_superadmin"]):
             raise ValueError("Não é permitido eliminar a conta de Administrador Principal.")
             
         empresa_id = user_row["empresa_id"]
         cursor.execute("DELETE FROM utilizadores WHERE id = ?", (user_id,))
         
-        cursor.execute("SELECT COUNT(*) as count FROM utilizadores WHERE empresa_id = ?", (empresa_id,))
-        count_row = cursor.fetchone()
-        if count_row and count_row["count"] == 0:
-            cursor.execute("DELETE FROM empresas WHERE id = ?", (empresa_id,))
-            cursor.execute("DELETE FROM projetos WHERE empresa_id = ?", (empresa_id,))
+        if empresa_id:
+            cursor.execute("SELECT COUNT(*) as count FROM utilizadores WHERE empresa_id = ?", (empresa_id,))
+            count_row = cursor.fetchone()
+            if count_row and count_row["count"] == 0:
+                cursor.execute("SELECT id FROM projetos WHERE empresa_id = ?", (empresa_id,))
+                proj_rows = cursor.fetchall()
+                for pr in proj_rows:
+                    pid = pr["id"]
+                    cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (pid,))
+                    cursor.execute("DELETE FROM snapshots WHERE projeto_id = ?", (pid,))
+                    cursor.execute("DELETE FROM frota WHERE projeto_id = ?", (pid,))
+                    cursor.execute("DELETE FROM metricas_projeto WHERE projeto_id = ?", (pid,))
+                    try:
+                        cursor.execute("DELETE FROM mapeamentos_zonas WHERE projeto_id = ?", (pid,))
+                        cursor.execute("DELETE FROM mapas_guardados WHERE projeto_id = ?", (pid,))
+                    except Exception:
+                        pass
+                cursor.execute("DELETE FROM projetos WHERE empresa_id = ?", (empresa_id,))
+                cursor.execute("DELETE FROM empresas WHERE id = ?", (empresa_id,))
+                try:
+                    cursor.execute("DELETE FROM consumos_google WHERE empresa_id = ?", (empresa_id,))
+                except Exception:
+                    pass
             
         conn.commit()
         return True
@@ -909,11 +987,12 @@ def toggle_utilizador_status_admin(user_id):
     """Alterna o estado ativo/bloqueado de um utilizador."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT is_active, is_superadmin FROM utilizadores WHERE id = ?", (user_id,))
+        cursor.execute("SELECT is_active, is_superadmin, email FROM utilizadores WHERE id = ?", (user_id,))
         user_row = cursor.fetchone()
         if not user_row:
             return None
-        if user_row["is_superadmin"]:
+        user_email = (user_row["email"] or "").lower()
+        if user_email in ("pauloalexbatista@gmail.com", "paulo.batista@ttm.pt") or bool(user_row["is_superadmin"]):
             raise ValueError("Não é permitido desativar o Administrador Principal")
             
         new_status = 0 if user_row["is_active"] else 1
@@ -1045,6 +1124,9 @@ def ensure_entregas_columns():
                 ("horario_fim", "TEXT DEFAULT '18:00'"),
                 ("armazem", "TEXT DEFAULT ''"),
                 ("regras", "TEXT DEFAULT ''"),
+                ("max_entregas", "INTEGER DEFAULT 30"),
+                ("motorista_nome", "TEXT DEFAULT ''"),
+                ("motorista_telemovel", "TEXT DEFAULT ''"),
                 ("is_active", "BOOLEAN DEFAULT 1")
             ]:
                 if col not in cols_f:

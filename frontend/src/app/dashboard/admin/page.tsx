@@ -358,7 +358,7 @@ export default function AdminUsersPage() {
               <tbody className="divide-y divide-zinc-800/60 font-medium">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-zinc-400">
+                    <td colSpan={10} className="py-8 text-center text-zinc-400">
                       Nenhum utilizador encontrado com os filtros selecionados.
                     </td>
                   </tr>
@@ -567,7 +567,7 @@ export default function AdminUsersPage() {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase">
-                      {editingUser ? "Alterar Password (Opcional)" : "Password de Acesso *"}
+                      {editingUser ? "Alterar Password do Gestor (Opcional)" : "Password do Gestor (Site Web) *"}
                     </label>
                     <button
                       type="button"
@@ -584,6 +584,36 @@ export default function AdminUsersPage() {
                     onChange={(e) => setFormPassword(e.target.value)}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono"
                   />
+                </div>
+
+                {/* Chave da Empresa para Motoristas (PWA) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] font-bold text-zinc-400 uppercase">
+                      Chave da Empresa (App Motoristas) *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prefix = formEmpresa ? formEmpresa.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "LOG") : "LOG";
+                        setFormDriverPassword(prefix + Math.floor(1000 + Math.random() * 9000));
+                      }}
+                      className="text-[10px] text-purple-400 hover:text-purple-300 font-semibold cursor-pointer"
+                    >
+                      ⚡ Gerar Chave (ex: LOG4000)
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: LOG4000 ou AUC2026"
+                    value={formDriverPassword}
+                    onChange={(e) => setFormDriverPassword(e.target.value.toUpperCase())}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500 font-mono font-bold tracking-wider"
+                  />
+                  <p className="text-[10px] text-zinc-400 mt-1">
+                    Esta é a senha comum que todos os motoristas desta empresa usam na aplicação móvel antes do seu PIN individual.
+                  </p>
                 </div>
 
                 {/* Data Validade + Quick Shortcuts */}

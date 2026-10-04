@@ -1,5 +1,5 @@
 """
-Testes de Integração - Fluxos Completos
+Testes de Integração - Padrão Canónico de 9 Abas e Fluxos de Otimização
 """
 import sys
 import os
@@ -8,149 +8,130 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import pandas as pd
 from io import BytesIO
-import tempfile
-from utils.template_manager import create_deliveries_template, create_fleet_warehouses_template
-from utils.template_manager import validate_deliveries_file, validate_fleet_file
+import openpyxl
+
+from utils.template_manager import create_unified_project_template
+from utils.export_engine import generate_full_project_excel
+from utils.rules_engine import is_vehicle_compatible, extract_tags
+from utils.optimization_solver import AdvancedRouteOptimizer
 
 
-class TestTemplates:
-    """Testes para geração e validação de templates"""
+class TestCanonical9SheetsTemplate:
+    """Testes para a geração do template oficial de 9 abas"""
     
-    def test_create_deliveries_template(self):
-        """Testar criação de template de entregas"""
-        excel_data = create_deliveries_template()
-        
-        # Deve retornar bytes
-        assert isinstance(excel_data, bytes)
-        assert len(excel_data) > 0
-        
-        # Deve ser possível ler como Excel (usar BytesIO para evitar warning)
-        df = pd.read_excel(BytesIO(excel_data))
-        assert len(df) > 0
-        
-        # Verificar colunas obrigatórias
-        required_cols = ['Codigo_Cliente', 'Morada', 'Codigo_Postal', 'Concelho', 'Peso_KG']
-        for col in required_cols:
-            assert col in df.columns, f"Coluna {col} em falta"
-    
-    def test_create_fleet_template(self):
-        """Testar criação de template de frota"""
-        excel_data = create_fleet_warehouses_template()
+    def test_create_unified_project_template(self):
+        """Testar criação do template oficial de 9 abas"""
+        excel_data = create_unified_project_template()
         
         assert isinstance(excel_data, bytes)
         assert len(excel_data) > 0
         
-        df = pd.read_excel(BytesIO(excel_data))
-        assert len(df) > 0
+        wb = openpyxl.load_workbook(BytesIO(excel_data))
+        sheet_names = wb.sheetnames
         
-        # Verificar colunas (template de armazens)
-        required_cols = ['Nome_Armazem', 'Morada', 'CP', 'Localidade']
-        for col in required_cols:
-            assert col in df.columns
-
-
-class TestValidationFiles:
-    """Testes para validação de ficheiros"""
-    
-    def test_validate_deliveries_valid(self):
-        """Validar ficheiro de entregas válido"""
-        # Criar dados válidos (com todas as colunas obrigatórias)
-        df = pd.DataFrame({
-            'Codigo_Cliente': ['CL001', 'CL002'],
-            'Morada': ['Rua da Prata, 10, Lisboa', 'Av. da Boavista, 100, Porto'],
-            'Codigo_Postal': ['1100-001', '4100-001'],
-            'Concelho': ['Lisboa', 'Porto'],
-            'Peso_KG': [10.5, 25.0],
-            'Prioridade': [1, 2],
-            'Janela_Inicio': ['09:00', '09:00'],
-            'Janela_Fim': ['18:00', '18:00'],
-            'Observacoes': ['', '']
-        })
-        
-        is_valid, msg = validate_deliveries_file(df)
-        assert is_valid == True, f"Dados validos devem passar: {msg}"
-    
-    def test_validate_deliveries_invalid(self):
-        """Validar ficheiro com dados inválidos"""
-        # Dados em falta
-        df = pd.DataFrame({
-            'Codigo_Cliente': ['CL001'],
-            'Morada': [None],  # Morada em falta
-            'Codigo_Postal': ['0000-000'],  # CP inválido
-        })
-        
-        is_valid, msg = validate_deliveries_file(df)
-        assert is_valid == False, "Dados inválidos devem falhar"
-    
-    def test_validate_fleet_valid(self):
-        """Validar frota válida"""
-        df = pd.DataFrame({
-            'Veiculo': ['Van 1', 'Van 2'],
-            'Capacidade_KG': [500, 1000],
-            'Custo_KM': [0.50, 0.60],
-            'Velocidade_Media': [40, 50],
-            'Horario_Inicio': ['08:00', '08:00'],
-            'Horario_Fim': ['18:00', '18:00']
-        })
-        
-        is_valid, msg = validate_fleet_file(df)
-        assert is_valid == True
-
-
-class TestEndToEnd:
-    """Testes end-to-end simulando fluxos reais"""
-    
-    def test_full_pipeline_mock(self):
-        """Simular pipeline completo: Excel → Geocoding → Otimização"""
-        from utils.optimization_solver import RouteOptimizer
-        
-        # Usar matriz manual simples (evitar dependência de haversine para teste)
-        # 0=Depot, 1-9=Clientes
-        dist_matrix = [
-            [0, 10, 15, 20, 25, 30, 35, 40, 45, 50],
-            [10, 0, 8, 12, 18, 22, 28, 32, 38, 42],
-            [15, 8, 0, 10, 15, 20, 25, 30, 35, 40],
-            [20, 12, 10, 0, 8, 15, 20, 25, 30, 35],
-            [25, 18, 15, 8, 0, 10, 18, 22, 28, 32],
-            [30, 22, 20, 15, 10, 0, 12, 18, 22, 28],
-            [35, 28, 25, 20, 18, 12, 0, 10, 15, 20],
-            [40, 32, 30, 25, 22, 18, 10, 0, 8, 12],
-            [45, 38, 35, 30, 28, 22, 15, 8, 0, 10],
-            [50, 42, 40, 35, 32, 28, 20, 12, 10, 0]
+        expected_sheets = [
+            "Armazéns",
+            "Frota",
+            "Entregas",
+            "Regras",
+            "Rotas",
+            "Manifestos",
+            "Motoristas e Carros",
+            "Justificação entregas",
+            "Instruções"
         ]
         
-        # 2. Otimizar rotas (2 veículos)
-        optimizer = RouteOptimizer()
-        solution = optimizer.solve_vrp(dist_matrix, num_vehicles=2, depot_index=0)
-        
-        # 4. Verificar solução
-        assert solution['total_distance'] > 0, "Distancia deve ser maior que 0"
-        assert len(solution['routes']) >= 1, "Deve ter pelo menos 1 rota"
-        
-        # Cada rota deve começar e acabar no depot
-        for route in solution['routes']:
-            assert route[0] == 0, "Rota deve comecar no depot"
-            assert route[-1] == 0, "Rota deve acabar no depot"
+        for expected in expected_sheets:
+            assert any(expected.lower() in s.lower() for s in sheet_names), f"Aba '{expected}' em falta no template"
 
 
-class TestFailureHandling:
-    """Testes para gestão de falhas"""
+class TestRulesEngine:
+    """Testes para o motor de regras e compatibilidade multi-tag"""
     
-    def test_failure_handler_imports(self):
-        """Verificar que failure_handler pode ser importado"""
-        from utils.failure_handler import GeocodingFailureHandler
-        assert GeocodingFailureHandler is not None
-    
-    def test_export_engines(self):
-        """Verificar engines de exportação"""
-        from utils.export_engine import generate_route_excel
-        from utils.map_generator import generate_route_map_html
-        from utils.schedule_generator import generate_route_schedule_html
+    def test_extract_tags(self):
+        """Testar extração de tags em colchetes ou separadores"""
+        assert extract_tags("[PESADO][FRIO]") == {"PESADO", "FRIO"}
+        assert extract_tags("URBANO, NOTURNO") == {"URBANO", "NOTURNO"}
+        assert extract_tags(None) == set()
         
-        # Funções devem existir
-        assert callable(generate_route_excel)
-        assert callable(generate_route_map_html)
-        assert callable(generate_route_schedule_html)
+    def test_compatibility_simples(self):
+        """Testar compatibilidade direta veículo-entrega"""
+        assert is_vehicle_compatible("CARRINHA", "") is True
+        assert is_vehicle_compatible("FRIGORIFICO", "FRIGORIFICO") is True
+        assert is_vehicle_compatible("NORMAL", "FRIGORIFICO") is False
+
+    def test_prohibition_and_permission_rules(self):
+        """Testar regras explícitas de permissão e proibição"""
+        rules = [
+            {"Tag_Veiculo": "PESADO", "Permissao": "NAO", "Tag_Entrega": "CENTRO_HISTORICO"},
+            {"Tag_Veiculo": "LIGEIRO", "Permissao": "SIM", "Tag_Entrega": "CENTRO_HISTORICO"}
+        ]
+        # Pesado é proibido
+        assert is_vehicle_compatible("PESADO", "CENTRO_HISTORICO", rules) is False
+        # Ligeiro tem permissão SIM
+        assert is_vehicle_compatible("LIGEIRO", "CENTRO_HISTORICO", rules) is True
+        # Veículo que tem diretamente a tag CENTRO_HISTORICO
+        assert is_vehicle_compatible("[LIGEIRO][CENTRO_HISTORICO]", "CENTRO_HISTORICO", rules) is True
+
+
+class TestEndToEndPipeline:
+    """Testes de ponta a ponta do solver e exportação"""
+    
+    def test_full_pipeline_optimization_and_export(self):
+        """Simular pipeline: Matriz -> Solver VRPTW -> Exportação 9 Abas"""
+        optimizer = AdvancedRouteOptimizer()
+        
+        dist_matrix = [
+            [0, 10, 15, 20, 25],
+            [10, 0, 8, 12, 18],
+            [15, 8, 0, 10, 15],
+            [20, 12, 10, 0, 8],
+            [25, 18, 15, 8, 0]
+        ]
+        demands = [0, 5.0, 5.0, 5.0, 5.0]
+        caps = [20.0, 20.0]
+        depots = [0, 0]
+        
+        solution = optimizer.optimize_routes(
+            distance_matrix=dist_matrix,
+            demands=demands,
+            vehicle_capacities=caps,
+            depot_indices=depots,
+            optimization_params={"time_limit_seconds": 1.0}
+        )
+        
+        assert "routes" in solution
+        assert len(solution["routes"]) == 2
+        
+        # Testar exportação final com base no resultado
+        routes_rows = []
+        for v_idx, r_stops in enumerate(solution["routes"]):
+            r_name = f"Rota {v_idx + 1}"
+            for ord_idx, node_idx in enumerate(r_stops, start=1):
+                routes_rows.append({
+                    "Rota": r_name,
+                    "Ordem": ord_idx,
+                    "Cliente": f"Cliente {node_idx}",
+                    "Morada": "Rua Exemplo, 10",
+                    "CodPostal": "1000-001",
+                    "Localidade": "Lisboa",
+                    "Peso": 5.0,
+                    "Volumes": 1,
+                    "KM_Anterior": 10.0,
+                    "Estado": "Entregue" if ord_idx == 1 else "Pendente",
+                    "Hora_Picagem": "09:30" if ord_idx == 1 else "",
+                    "Motorista": f"Motorista {v_idx + 1}",
+                    "Viatura": f"Viatura {v_idx + 1}"
+                })
+        
+        df_routes = pd.DataFrame(routes_rows)
+        excel_bytes = generate_full_project_excel(routes_df=df_routes)
+        
+        assert isinstance(excel_bytes, bytes)
+        assert len(excel_bytes) > 0
+        
+        wb = openpyxl.load_workbook(BytesIO(excel_bytes))
+        assert len(wb.sheetnames) >= 7
 
 
 if __name__ == "__main__":

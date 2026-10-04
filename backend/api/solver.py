@@ -234,7 +234,8 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                 "start_time": str(row.get("Hora_Inicio_Turno", row.get("Horario_Inicio", "08:00:00"))),
                 "end_time": str(row.get("Hora_Fim_Turno", row.get("Horario_Fim", "18:00:00"))),
                 "warehouse": str(row.get("Armazem", default_wh)),
-                "regras": str(row.get("Regras", ""))
+                "regras": str(row.get("Regras", "")),
+                "max_entregas": int(row.get("Max_Entregas", row.get("max_entregas", 30)) or 30)
             }
     elif isinstance(fleet_config, dict):
         for v_k, v_v in fleet_config.items():
@@ -247,7 +248,8 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                     "start_time": str(v_v.get("start_time", v_v.get("horario_inicio", "08:00:00"))),
                     "end_time": str(v_v.get("end_time", v_v.get("horario_fim", "18:00:00"))),
                     "warehouse": str(v_v.get("warehouse", v_v.get("armazem", default_wh))),
-                    "regras": str(v_v.get("regras", v_v.get("Regras", "")))
+                    "regras": str(v_v.get("regras", v_v.get("Regras", ""))),
+                    "max_entregas": int(v_v.get("max_entregas", v_v.get("Max_Entregas", 30)) or 30)
                 }
             else:
                 fleet_dict[str(v_k)] = {
@@ -258,7 +260,8 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                     "start_time": str(getattr(v_v, "horario_inicio", "08:00:00")),
                     "end_time": str(getattr(v_v, "horario_fim", "18:00:00")),
                     "warehouse": str(getattr(v_v, "armazem", default_wh)),
-                    "regras": str(getattr(v_v, "regras", getattr(v_v, "Regras", "")))
+                    "regras": str(getattr(v_v, "regras", getattr(v_v, "Regras", ""))),
+                    "max_entregas": int(getattr(v_v, "max_entregas", getattr(v_v, "Max_Entregas", 30)) or 30)
                 }
     return fleet_dict
 
@@ -469,7 +472,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "start_time": str(dict_f.get("horario_inicio") or "08:00:00"),
                         "end_time": str(dict_f.get("horario_fim") or "18:00:00"),
                         "warehouse": str(dict_f.get("armazem") or ""),
-                        "regras": str(dict_f.get("regras") or "")
+                        "regras": str(dict_f.get("regras") or ""),
+                        "max_entregas": int(dict_f.get("max_entregas") or 30)
                     }
         
         # Fallback to snapshot if database table is empty
@@ -610,6 +614,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         rules_matrix = state_dict.get("rules_matrix", [])
         
         client_service_times = [0 for _ in range(num_warehouses)] + [int(dr.get("tempo_descarga_min") or 10) for dr in delivery_rows]
+        client_priorities = [2 for _ in range(num_warehouses)] + [int(dr.get("prioridade", 1) or 1) for dr in delivery_rows]
         optimizer = AdvancedRouteOptimizer()
         result = optimizer.optimize_routes(
             distance_matrix,
@@ -630,7 +635,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_rules=vehicle_rules,
             rules_matrix=rules_matrix,
             vehicle_max_stops=vehicle_max_stops,
-            client_service_times=client_service_times
+            client_service_times=client_service_times,
+            client_priorities=client_priorities
         )
         
         # 6. Convert solver output to routes list

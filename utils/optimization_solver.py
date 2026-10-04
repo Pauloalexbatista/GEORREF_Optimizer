@@ -60,6 +60,7 @@ class AdvancedRouteOptimizer:
         rules_matrix: Optional[List[Dict[str, Any]]] = None,
         vehicle_max_stops: Optional[List[int]] = None,
         client_service_times: Optional[List[int]] = None,
+        client_priorities: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         params = optimization_params or {}
         time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 25.0)
@@ -86,7 +87,8 @@ class AdvancedRouteOptimizer:
             rules_matrix=rules_matrix,
             respect_time_windows=respect_tw,
             vehicle_max_stops=vehicle_max_stops,
-            client_service_times=client_service_times
+            client_service_times=client_service_times,
+            client_priorities=client_priorities
         )
 
         if not initial_solution.get("routes"):
@@ -138,7 +140,8 @@ class AdvancedRouteOptimizer:
         rules_matrix=None,
         respect_time_windows=True,
         vehicle_max_stops=None,
-        client_service_times=None
+        client_service_times=None,
+        client_priorities=None
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_nodes = len(distance_matrix)
@@ -252,14 +255,20 @@ class AdvancedRouteOptimizer:
             time_dimension.CumulVar(routing.Start(v)).SetRange(v_start_sec, v_start_sec)
             time_dimension.CumulVar(routing.End(v)).SetRange(v_start_sec, v_end_sec)
 
-        # 7. Disjunctions: Unused warehouses (0 penalty) vs Deliveries (High penalty)
-        DROP_PENALTY = 10000000
+        # 7. Disjunctions: Unused warehouses (0 penalty) vs Deliveries (Differentiated penalty by priority)
+        BASE_DROP_PENALTY = 10000000
         for node in range(num_nodes):
             if node in starts or node in ends:
                 continue
             index = manager.NodeToIndex(node)
             if index != -1:
-                penalty = 0 if node < num_warehouses else DROP_PENALTY
+                if node < num_warehouses:
+                    penalty = 0
+                else:
+                    prio = client_priorities[node] if client_priorities and node < len(client_priorities) else 2
+                    # Priority multiplier: 1 (Alta/Urgente) = 3x, 2 (Normal) = 1.5x, 3+ (Baixa) = 1x
+                    multiplier = 3.0 if prio == 1 else (1.5 if prio == 2 else 1.0)
+                    penalty = int(BASE_DROP_PENALTY * multiplier)
                 routing.AddDisjunction([index], penalty)
 
         # 8. Business Rules & Multi-Tag Matrix Compatibility (VehicleVar)

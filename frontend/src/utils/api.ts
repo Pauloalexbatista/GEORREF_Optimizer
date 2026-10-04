@@ -71,3 +71,54 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
   }
   return response.text();
 }
+
+export const api = {
+  get: async (endpoint: string, options: RequestInit = {}) => {
+    const res = await apiRequest(endpoint, { ...options, method: "GET" });
+    return res;
+  },
+  post: async (endpoint: string, body?: any, options: RequestInit = {}) => {
+    const res = await apiRequest(endpoint, {
+      ...options,
+      method: "POST",
+      body: body instanceof FormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+    });
+    return res;
+  },
+  put: async (endpoint: string, body?: any, options: RequestInit = {}) => {
+    const res = await apiRequest(endpoint, {
+      ...options,
+      method: "PUT",
+      body: body instanceof FormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+    });
+    return res;
+  },
+  delete: async (endpoint: string, options: RequestInit = {}) => {
+    const res = await apiRequest(endpoint, { ...options, method: "DELETE" });
+    return res;
+  },
+  download: async (endpoint: string, filename: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("georoute_token") : null;
+    const headers = new Headers();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    const baseUrl = getApiBaseUrl();
+    const fullUrl = endpoint.startsWith("http") ? endpoint : `${baseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+    const response = await fetch(fullUrl, { headers });
+    if (!response.ok) {
+      throw new Error("Erro ao descarregar ficheiro.");
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+};
+
+export default api;

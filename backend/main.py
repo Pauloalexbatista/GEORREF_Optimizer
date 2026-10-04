@@ -4,6 +4,7 @@ import sys
 import os
 
 # Ensure root import works
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from backend.api import auth, projects, geocoding, fleet, solver, maps, admin_users, tracking, reports

@@ -336,14 +336,14 @@ export default function DeliveryMapPicker({
                 ? '&copy; Google Satellite'
                 : mapLayer === "google_hybrid"
                 ? '&copy; Google Hybrid'
-                : '&copy; OpenStreetMap contributors &copy; CARTO'
+                : '&copy; Google Maps'
             }
             url={
               mapLayer === "google_sat"
                 ? "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
                 : mapLayer === "google_hybrid"
                 ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-                : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
             }
           />
           <MapController center={currentCenter} zoom={hasCoords ? 15 : undefined} />

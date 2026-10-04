@@ -8,7 +8,7 @@ import os
 
 # Resolve imports from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from database import get_utilizador_por_id, criar_empresa, criar_utilizador, get_empresa_por_email, get_utilizador
+from database import get_utilizador_por_id, criar_empresa, criar_utilizador, get_empresa_por_email, get_utilizador, get_db
 from backend.auth_utils import verify_password, get_password_hash, create_access_token, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -142,3 +142,125 @@ def register():
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: UserResponse = Depends(get_current_user)):
     return current_user
+
+
+from database import get_projeto_ativo, get_empresa_por_driver_password
+import pandas as pd
+
+class DriverLoginRequest(BaseModel):
+    company_key: str
+    pin: str
+
+class DriverLoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    role: str = "driver"
+    empresa_id: int
+    empresa_nome: str
+    project_id: int
+    route_name: str
+    driver_name: str
+    vehicle: Optional[str] = ""
+
+@router.post("/driver-login", response_model=DriverLoginResponse)
+def driver_login(req: DriverLoginRequest):
+    comp_key = req.company_key.strip().upper()
+    pin = req.pin.strip()
+    
+    if not comp_key or not pin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chave da Empresa e PIN do Motorista sao obrigatorios."
+        )
+        
+    empresa = get_empresa_por_driver_password(comp_key)
+    if not empresa:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Chave da Empresa incorreta ou empresa inativa."
+        )
+        
+    empresa_id = empresa["id"]
+    empresa_nome = empresa["nome"]
+    
+    # Obter projeto ativo
+    active_proj = get_projeto_ativo(empresa_id)
+    if not active_proj:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A distribuicao ainda nao foi ativada pelo Gestor de Trafego. Aguarde ativacao."
+        )
+        
+    project_id = active_proj["id"]
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+        row = cursor.fetchone()
+        
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nenhuma rota encontrada para o projeto ativo."
+        )
+        
+    from utils.persistence_manager import deserialize_state
+    state_dict = deserialize_state(row["payload_json"])
+    raw_routes = state_dict.get("routes_solution", state_dict.get("routes_df"))
+    drivers_list = state_dict.get("drivers", state_dict.get("fleet_drivers", []))
+    
+    assigned_route = None
+    driver_name = None
+    vehicle_name = None
+    
+    # Check in drivers list first
+    if isinstance(drivers_list, list):
+        for drv in drivers_list:
+            if isinstance(drv, dict):
+                d_pin = str(drv.get("pin", drv.get("password", ""))).strip()
+                if d_pin == pin:
+                    driver_name = str(drv.get("name", drv.get("driver_name", "Motorista"))).strip()
+                    assigned_route = str(drv.get("route", drv.get("assigned_route_id", ""))).strip()
+                    vehicle_name = str(drv.get("vehicle", drv.get("matricula", ""))).strip()
+                    break
+                    
+    # Check in routes dataframe
+    if not assigned_route and raw_routes is not None:
+        df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+        if not df_routes.empty:
+            for _, r in df_routes.iterrows():
+                r_pin = str(r.get("motorista_pin", r.get("pin", ""))).strip()
+                if r_pin == pin:
+                    driver_name = str(r.get("motorista_nome", r.get("driver_name", "Motorista"))).strip()
+                    assigned_route = str(r.get("nome_rota", r.get("route_name", r.get("Rota", "")))).strip()
+                    vehicle_name = str(r.get("veiculo", r.get("matricula", ""))).strip()
+                    break
+                    
+    if not assigned_route or not driver_name:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"PIN '{pin}' nao encontrado ou sem rota atribuida no projeto ativo de hoje."
+        )
+        
+    token = create_access_token(data={
+        "sub": f"driver_{empresa_id}_{pin}",
+        "role": "driver",
+        "empresa_id": empresa_id,
+        "empresa_nome": empresa_nome,
+        "project_id": project_id,
+        "route_name": assigned_route,
+        "driver_name": driver_name,
+        "driver_pin": pin
+    })
+    
+    return DriverLoginResponse(
+        access_token=token,
+        token_type="bearer",
+        role="driver",
+        empresa_id=empresa_id,
+        empresa_nome=empresa_nome,
+        project_id=project_id,
+        route_name=assigned_route,
+        driver_name=driver_name,
+        vehicle=vehicle_name or ""
+    )
