@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import AuditModal, { ViolationItem } from "@/components/AuditModal";
-import AgentCopilotModal from "@/components/AgentCopilotModal";
+import AgentChatDrawer from "@/components/AgentChatDrawer";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 
 import { useProjects } from "@/context/ProjectContext";
@@ -2214,13 +2214,10 @@ export default function TacticalPage() {
           )}
         </div>
         {/* Quality Audit Modal */}
-        <AgentCopilotModal
+        <AgentChatDrawer
           isOpen={agentModalOpen}
           onClose={() => setAgentModalOpen(false)}
           projectId={Number(selectedProject?.id || 0)}
-          onApplyAction={async (delivId, targetVeh, clientCode) => {
-            await handleReassign(clientCode || String(delivId), targetVeh, delivId);
-          }}
           onRefreshData={loadTacticalData}
         />
 
