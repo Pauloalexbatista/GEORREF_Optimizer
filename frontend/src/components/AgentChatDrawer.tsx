@@ -16,6 +16,7 @@ interface OutlierItem {
   localidade: string;
   dist_km_armazem: number;
   motivo_suspeita: string;
+  rota_atual?: string;
 }
 
 interface ChatMessage {
@@ -25,6 +26,7 @@ interface ChatMessage {
   outliers?: OutlierItem[];
   actions?: ActionItem[];
   timestamp: string;
+  isError?: boolean;
 }
 
 interface AgentChatDrawerProps {
@@ -47,7 +49,7 @@ export default function AgentChatDrawer({
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      // Mensagem inicial de acolhimento do Co-Piloto
+      // Diagnóstico inicial operacional ao abrir
       sendMessage("Olá, analisa o plano de rotas atual e diz-me o que encontras.");
     }
   }, [isOpen]);
@@ -79,7 +81,7 @@ export default function AgentChatDrawer({
         }),
       });
 
-      // Detetar se o agente disparou um comando de reatribuicao
+      // Detetar se o agente disparou um comando de reatribuição de viatura
       const cmdMatch = (res.reply || "").match(/\[COMANDO:REATRIBUIR\|CLIENTE:(.*?)\|VIATURA:(.*?)\]/);
       if (cmdMatch) {
         const clientCode = cmdMatch[1].trim();
@@ -95,7 +97,7 @@ export default function AgentChatDrawer({
           });
           if (onRefreshData) onRefreshData();
         } catch (reErr) {
-          console.error("Erro ao aplicar reatribui??o autom?tica:", reErr);
+          console.error("Erro ao aplicar reatribuição automática:", reErr);
         }
       }
 
@@ -113,7 +115,11 @@ export default function AgentChatDrawer({
       const errorMsg: ChatMessage = {
         id: String(Date.now() + 1),
         sender: "agent",
-        text: `⚠️ Erro na ligação ao assistente: ${err.message || "Falha de rede"}`,
+        text: `⚠️ Não foi possível obter resposta do servidor: ${err.message || "Erro de ligação"}. Clique no botão abaixo para tentar novamente.`,
+        isError: true,
+        actions: [
+          { label: "🔄 Tentar Novamente", action: "retry_last" }
+        ],
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -123,12 +129,21 @@ export default function AgentChatDrawer({
   };
 
   const handleActionClick = (act: ActionItem) => {
-    if (act.action === "inspect_outliers") {
+    if (act.action === "retry_last") {
+      const lastUserMsg = [...messages].reverse().find((m) => m.sender === "user");
+      if (lastUserMsg) {
+        sendMessage(lastUserMsg.text);
+      } else {
+        sendMessage("Olá, faz um diagnóstico geral às rotas.");
+      }
+    } else if (act.action === "inspect_outliers") {
       sendMessage("Mostra-me os detalhes das entregas com coordenadas ou distâncias suspeitas.");
     } else if (act.action === "simulate_plus_10_percent") {
-      sendMessage("Se aumentarmos o horário dos carros em 10%, quantas destas entregas pendentes conseguimos encaixar?");
+      sendMessage("Se aumentarmos o horário dos carros em 10%, quantas entregas pendentes conseguimos encaixar?");
     } else if (act.action === "filter_near_depot") {
       sendMessage("Quais são as entregas por distribuir que estão mais perto do armazém para resolvermos amanhã?");
+    } else if (act.action === "slots_distribution") {
+      sendMessage("Quantas entregas com slots horárias da manhã e da tarde existem?");
     } else {
       sendMessage(act.label);
     }
@@ -148,7 +163,7 @@ export default function AgentChatDrawer({
             <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
               Co-Piloto de Tráfego
               <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                Gemini 3.8
+                IA Ativa
               </span>
             </h3>
             <p className="text-[11px] text-slate-400">Diálogo operacional & auditoria inteligente</p>
@@ -171,16 +186,16 @@ export default function AgentChatDrawer({
           🔍 Pontos Suspeitos
         </button>
         <button
-          onClick={() => sendMessage("E se dermos mais 10% de horário nos carros, resolvemos os pendentes?")}
+          onClick={() => sendMessage("Quantas entregas com slots horárias da manhã e da tarde existem?")}
           className="text-[11px] whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-800 hover:bg-indigo-900/40 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-indigo-200 transition-all cursor-pointer"
         >
-          ⏱️ Simular +10% Turno
+          📊 Janelas Manhã/Tarde
         </button>
         <button
           onClick={() => sendMessage("Quais entregas de fora estão mais perto do armazém para amanhã?")}
           className="text-[11px] whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-800 hover:bg-indigo-900/40 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-indigo-200 transition-all cursor-pointer"
         >
-          🏠 Perto do Armazém
+          📦 Perto do Armazém
         </button>
       </div>
 
@@ -195,6 +210,8 @@ export default function AgentChatDrawer({
               className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
                 msg.sender === "user"
                   ? "bg-indigo-600 text-white rounded-br-xs"
+                  : msg.isError
+                  ? "bg-red-950/40 border border-red-500/40 text-red-200 rounded-bl-xs"
                   : "bg-slate-800 border border-slate-700/70 text-slate-200 rounded-bl-xs"
               }`}
             >
@@ -206,17 +223,17 @@ export default function AgentChatDrawer({
                   <p className="font-semibold text-amber-300 text-[11px] flex items-center gap-1">
                     <span>⚠️ {msg.outliers.length} Ponto(s) Isolado(s) Detetado(s):</span>
                   </p>
-                  {msg.outliers.map((o) => (
+                  {msg.outliers.slice(0, 4).map((o, idx) => (
                     <div
-                      key={o.id}
+                      key={idx}
                       className="p-2 rounded-lg bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200/90 space-y-0.5"
                     >
                       <div className="font-bold text-white flex justify-between">
                         <span>{o.cliente}</span>
                         <span className="text-amber-400 font-mono">~{o.dist_km_armazem} km</span>
                       </div>
-                      <p className="text-slate-300">{o.morada} {o.cp ? `(${o.cp})` : ""}</p>
-                      <p className="text-amber-300 text-[10px] italic">💡 {o.motivo_suspeita}</p>
+                      <p className="text-slate-300">{o.morada} {o.cp ? `(${o.cp})` : ""} {o.localidade ? `- ${o.localidade}` : ""}</p>
+                      <p className="text-amber-300 text-[10px] italic">⚠️ {o.motivo_suspeita}</p>
                     </div>
                   ))}
                 </div>
@@ -263,7 +280,7 @@ export default function AgentChatDrawer({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Pergunte ao Co-Piloto (ex: 'Porque ficou a entrega X de fora?')..."
+            placeholder="Pergunte ao Co-Piloto (ex: 'Passa a entrega X para a viatura Y')..."
             className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition-colors"
           />
           <button

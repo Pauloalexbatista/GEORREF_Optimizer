@@ -1,3 +1,4 @@
+﻿import os
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -7,6 +8,12 @@ from backend.database import get_db, get_projeto, registar_consumo_google
 from utils.persistence_manager import serialize_state, deserialize_state
 from utils.agent_chat_engine import run_agent_chat_reasoning
 from utils.ai_rules_parser import parse_business_rules_with_llm
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 router = APIRouter(prefix="/agent", tags=["AI Copilot Agent"])
 
@@ -26,7 +33,7 @@ def chat_with_agent(req: ChatMessageRequest, current_user: UserResponse = Depend
     try:
         proj = get_projeto(req.project_id)
         if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
-            raise HTTPException(status_code=403, detail="Sem permissao para aceder a este projeto.")
+            raise HTTPException(status_code=403, detail="Sem permissão para aceder a este projeto.")
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -34,7 +41,7 @@ def chat_with_agent(req: ChatMessageRequest, current_user: UserResponse = Depend
             row = cursor.fetchone()
             if not row or not row["payload_json"]:
                 return {
-                    "reply": "N?o encontrei um plano calculado neste projeto. Calcule ou importe as rotas primeiro.",
+                    "reply": "Não encontrei um plano calculado neste projeto. Calcule ou importe as rotas primeiro.",
                     "outliers": [],
                     "suggested_actions": []
                 }
@@ -43,12 +50,46 @@ def chat_with_agent(req: ChatMessageRequest, current_user: UserResponse = Depend
             raw_routes = state_dict.get("routes_solution")
             if raw_routes is None:
                 return {
-                    "reply": "O plano ainda n?o tem rotas geradas. Execute o planeamento primeiro.",
+                    "reply": "O plano ainda não tem rotas geradas. Execute o planeamento primeiro.",
                     "outliers": [],
                     "suggested_actions": []
                 }
 
-            df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+            df_routes = raw_routes.copy() if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
+
+            # Converter e garantir tipo float para Latitude e Longitude
+            if "Latitude" in df_routes.columns:
+                df_routes["Latitude"] = pd.to_numeric(df_routes["Latitude"], errors="coerce").fillna(0.0).astype(float)
+            else:
+                df_routes["Latitude"] = 0.0
+
+            if "Longitude" in df_routes.columns:
+                df_routes["Longitude"] = pd.to_numeric(df_routes["Longitude"], errors="coerce").fillna(0.0).astype(float)
+            else:
+                df_routes["Longitude"] = 0.0
+
+            # Enriquecer com coordenadas georreferenciadas da tabela 'entregas' de forma vetorizada
+            try:
+                cursor.execute(
+                    "SELECT id, codigo_cliente, latitude, longitude FROM entregas WHERE projeto_id = ? AND latitude != 0 AND latitude IS NOT NULL",
+                    (req.project_id,)
+                )
+                e_rows = cursor.fetchall()
+                if e_rows:
+                    lat_map = {str(er[1]): float(er[2]) for er in e_rows if er[2]}
+                    lon_map = {str(er[1]): float(er[3]) for er in e_rows if er[3]}
+                    id_lat_map = {er[0]: float(er[2]) for er in e_rows if er[2]}
+                    id_lon_map = {er[0]: float(er[3]) for er in e_rows if er[3]}
+
+                    cod_series = df_routes.get("Codigo_Cliente", pd.Series(dtype=str)).astype(str)
+                    id_series = df_routes.get("id", df_routes.get("ID_Original", pd.Series(dtype=int)))
+
+                    missing_mask = (df_routes["Latitude"] == 0.0)
+                    if missing_mask.any():
+                        df_routes.loc[missing_mask, "Latitude"] = cod_series[missing_mask].map(lat_map).fillna(id_series[missing_mask].map(id_lat_map)).fillna(0.0).astype(float)
+                        df_routes.loc[missing_mask, "Longitude"] = cod_series[missing_mask].map(lon_map).fillna(id_series[missing_mask].map(id_lon_map)).fillna(0.0).astype(float)
+            except Exception as e_enrich:
+                print(f"[Aviso] Erro no enriquecimento de coordenadas: {e_enrich}")
 
             fleet_cfg = {}
             cursor.execute("SELECT * FROM frota WHERE projeto_id = ? AND is_active = 1", (req.project_id,))
@@ -107,7 +148,7 @@ def chat_with_agent(req: ChatMessageRequest, current_user: UserResponse = Depend
     except Exception as e_unhandled:
         print(f"[Erro chat_with_agent]: {e_unhandled}")
         return {
-            "reply": f"?? N?o foi poss?vel analisar os dados deste projeto: {str(e_unhandled)}",
+            "reply": f"⚠️ Não foi possível analisar os dados deste projeto: {str(e_unhandled)}",
             "outliers": [],
             "suggested_actions": []
         }
