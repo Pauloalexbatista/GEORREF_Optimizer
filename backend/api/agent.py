@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import pandas as pd
 from backend.api.auth import get_current_user, UserResponse
-from backend.database import get_db, get_projeto
+from backend.database import get_db, get_projeto, registar_consumo_google
 from utils.persistence_manager import serialize_state, deserialize_state
 from utils.agent_chat_engine import run_agent_chat_reasoning
 from utils.ai_rules_parser import parse_business_rules_with_llm
@@ -74,11 +74,27 @@ def chat_with_agent(req: ChatMessageRequest, current_user: UserResponse = Depend
         if not fleet_cfg:
             fleet_cfg = state_dict.get("fleet_config_used") or state_dict.get("fleet_config", {})
 
-        wh_raw = state_dict.get("warehouses_used") or state_dict.get("warehouses_geocoded") or []
+        wh_raw = state_dict.get("warehouses_used")
+        if wh_raw is None or (isinstance(wh_raw, pd.DataFrame) and wh_raw.empty):
+            wh_raw = state_dict.get("warehouses_geocoded")
+        if wh_raw is None:
+            wh_raw = []
         wh_list = wh_raw.to_dict(orient="records") if isinstance(wh_raw, pd.DataFrame) else (wh_raw if isinstance(wh_raw, list) else [])
         rules_mat = state_dict.get("rules_matrix", [])
 
         # Executar raciocinio conversacional com Gemini 3.8 Flash
+        # Registar consumo de IA auditavel
+        try:
+            registar_consumo_google(
+                empresa_id=current_user.empresa_id,
+                projeto_id=req.project_id,
+                servico="gemini_ai_copilot",
+                num_pedidos=1,
+                custo_estimado=0.0005 # Cerca de meio centesimo por interacao com Gemini Flash
+            )
+        except Exception as e_log:
+            print(f"[Aviso] Falha ao registar consumo Gemini: {e_log}")
+
         response = run_agent_chat_reasoning(
             user_message=req.message,
             routes_solution=df_routes,
