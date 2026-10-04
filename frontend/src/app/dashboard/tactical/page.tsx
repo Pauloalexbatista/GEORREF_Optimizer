@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import AuditModal, { ViolationItem } from "@/components/AuditModal";
+import AgentCopilotModal from "@/components/AgentCopilotModal";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 
 import { useProjects } from "@/context/ProjectContext";
@@ -206,6 +207,7 @@ export default function TacticalPage() {
     all_violations: [],
   });
   const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [agentModalOpen, setAgentModalOpen] = useState(false);
   const [selectedRouteNames, setSelectedRouteNames] = useState<string[]>([]);
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
 
@@ -1243,6 +1245,22 @@ export default function TacticalPage() {
               )}
             </button>
 
+            {/* AI Copilot Agent Button */}
+            {routes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAgentModalOpen(true)}
+                className="cursor-pointer bg-gradient-to-r from-indigo-900/90 to-purple-900/90 hover:from-indigo-800 hover:to-purple-800 text-indigo-200 border border-indigo-500/40 rounded-xl px-3.5 py-2 text-xs font-bold shadow-lg shadow-indigo-950/40 transition-all flex items-center space-x-2"
+                title="Agente Co-Piloto de Tr?fego: Analisar e Resolver 'Por Distribuir'"
+              >
+                <span className="text-sm">??</span>
+                <span>Agente Co-Piloto</span>
+                {routes.some(r => String(r.Rota || "").trim().toLowerCase() === "por distribuir") && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+                )}
+              </button>
+            )}
+
             {/* Quality & Audit Status Button */}
             {routes.length > 0 && (
               <button
@@ -2196,6 +2214,16 @@ export default function TacticalPage() {
           )}
         </div>
         {/* Quality Audit Modal */}
+        <AgentCopilotModal
+          isOpen={agentModalOpen}
+          onClose={() => setAgentModalOpen(false)}
+          projectId={Number(selectedProject?.id || 0)}
+          onApplyAction={async (delivId, targetVeh, clientCode) => {
+            await handleReassign(clientCode || String(delivId), targetVeh, delivId);
+          }}
+          onRefreshData={loadTacticalData}
+        />
+
         <AuditModal
           isOpen={auditModalOpen}
           onClose={() => setAuditModalOpen(false)}

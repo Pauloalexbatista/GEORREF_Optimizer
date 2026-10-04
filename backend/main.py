@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from backend.api import auth, projects, geocoding, fleet, solver, maps, admin_users, tracking, reports
+from backend.api import auth, projects, geocoding, fleet, solver, maps, admin_users, tracking, reports, agent
 from database import init_database, ensure_entregas_columns
 
 # Initialize database
@@ -42,6 +42,7 @@ app.include_router(solver.router, prefix='/api')
 app.include_router(maps.router)
 app.include_router(tracking.router, prefix='/api')
 app.include_router(reports.router, prefix='/api')
+app.include_router(agent.router, prefix='/api')
 
 @app.get('/')
 def read_root():
