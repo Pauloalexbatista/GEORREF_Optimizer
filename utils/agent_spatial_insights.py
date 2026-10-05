@@ -111,7 +111,11 @@ def analyze_unassigned_clustering(
             pass
 
     col_map = {c.lower(): c for c in df.columns}
-    rota_col = col_map.get("rota", "Rota")
+    rota_col = col_map.get("rota") or col_map.get("veiculo") or col_map.get("assigned_vehicle") or "Rota"
+    if rota_col not in df.columns:
+        df = df.copy()
+        df["Rota"] = "Por Distribuir"
+        rota_col = "Rota"
     
     unassigned_tokens = [
         "por distribuir", "por_distribuir", "por identificar", "por_identificar",
