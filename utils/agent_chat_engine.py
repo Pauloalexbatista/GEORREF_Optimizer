@@ -212,15 +212,15 @@ def run_agent_chat_reasoning(
             user_message.lower(), total_stops, assigned_count, unassigned_count,
             active_vehicles, dist_metrics, outliers, clustering
         )
-    for cmd in action_commands:
-        if cmd not in local_reply:
-            local_reply += f"\n\n{cmd}"
-        return {
-            "reply": local_reply,
-            "outliers": outliers,
-            "clustering": clustering,
-            "suggested_actions": actions
-        }
+        for cmd in action_commands:
+            if cmd not in local_reply:
+                local_reply += f"\n\n{cmd}"
+            return {
+                "reply": local_reply,
+                "outliers": outliers,
+                "clustering": clustering,
+                "suggested_actions": actions
+            }
 
     # Prompt para a IA
     context_summary = {
