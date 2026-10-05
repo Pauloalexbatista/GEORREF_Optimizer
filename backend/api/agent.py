@@ -15,6 +15,19 @@ try:
 except Exception:
     pass
 
+
+def sanitize_for_json(obj):
+    import math
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return 0.0
+        return obj
+    return obj
+
 router = APIRouter(prefix="/agent", tags=["AI Copilot Agent"])
 
 class ChatMessageRequest(BaseModel):
@@ -142,7 +155,7 @@ def chat_with_agent(req: ChatMessageRequest, current_user: UserResponse = Depend
                 warehouses_list=wh_list,
                 rules_matrix=rules_mat
             )
-            return response
+            return sanitize_for_json(response)
     except HTTPException as he:
         raise he
     except Exception as e_unhandled:
