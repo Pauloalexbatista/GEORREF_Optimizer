@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   backend:
@@ -8,6 +8,7 @@ services:
     environment:
       - DB_MULTI_PATH=/app/data/geocoding_multi.db
       - DB_GEO_PATH=/app/data/geocoding.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     expose:
       - "8000"
     volumes:
@@ -40,3 +41,4 @@ services:
 
 volumes:
   sqlite_data:
+
