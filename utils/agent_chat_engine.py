@@ -181,14 +181,23 @@ def run_agent_chat_reasoning(
 
     # Detetar se o utilizador pediu diretamente uma reatribuição via texto
     # Exemplo: "Passa o cliente X para a carrinha Y"
-    reassign_command = ""
-    reassign_match = re.search(r'(?:passa|muda|move|atribui|troca)\s+(?:o\s+)?(?:cliente\s+)?([^\s,]+(?: [^\s,]+)?)\s+(?:para|p\/)\s+(?:a\s+)?(?:carrinha|viatura|carro|rota)?\s*([^\s,\.]+)', user_message, re.IGNORECASE)
+    # Detetar se o utilizador pediu diretamente uma reatribui??o ou a??o operacional via texto
+    action_commands = []
+    reassign_match = re.search(r'(?:passa|muda|move|atribui|troca|retira|tira|coloca)\s+(?:o\s+)?(?:cliente\s+)?([^\s,]+(?: [^\s,]+)?)\s+(?:para|p\/)\s+(?:a\s+)?(?:carrinha|viatura|carro|rota|pendente|por distribuir)?\s*([^\s,\.]+)', user_message, re.IGNORECASE)
     if reassign_match:
         client_target = reassign_match.group(1).strip()
         vehicle_target = reassign_match.group(2).strip()
-        reassign_command = f"[COMANDO:REATRIBUIR|CLIENTE:{client_target}|VIATURA:{vehicle_target}]"
+        if vehicle_target.lower() in ["pendente", "pendentes", "por distribuir", "fora"]:
+            vehicle_target = "Por Distribuir"
+        action_commands.append(f"[COMANDO:REATRIBUIR|CLIENTE:{client_target}|VIATURA:{vehicle_target}]")
 
-    # Preparar ações contextuais
+    if any(k in user_message.lower() for k in ["ordenar todos", "ordenar as rotas", "ordenar carros", "otimizar sequencia", "otimizar sequ?ncias", "reordenar tudo", "sequenciar rotas", "reotimizar", "ordenar"]):
+        action_commands.append("[COMANDO:OTIMIZAR_TODAS_SEQUENCIAS]")
+
+    geo_match = re.search(r'(?:georreferenci(?:ar|a)?|corrige coordenadas)\s+(?:do\s+cliente\s+|o\s+)?([^\s,\.]+)', user_message, re.IGNORECASE)
+    if geo_match:
+        target_c = geo_match.group(1).strip()
+        action_commands.append(f"[COMANDO:REGEORREFERENCIAR|CLIENTE:{target_c}]")
     actions = []
     if outliers:
         actions.append({"label": f"🔍 Ver {len(outliers)} Pontos Suspeitos", "action": "inspect_outliers"})
@@ -203,8 +212,9 @@ def run_agent_chat_reasoning(
             user_message.lower(), total_stops, assigned_count, unassigned_count,
             active_vehicles, dist_metrics, outliers, clustering
         )
-        if reassign_command:
-            local_reply += f"\n\n⚙️ A reatribuir cliente...\n{reassign_command}"
+    for cmd in action_commands:
+        if cmd not in local_reply:
+            local_reply += f"\n\n{cmd}"
         return {
             "reply": local_reply,
             "outliers": outliers,
@@ -236,8 +246,13 @@ DIRETRIZES:
 1. Responda em Português direto, técnico e conciso (máximo 3-4 parágrafos claros).
 2. Se houver pontos suspeitos a centenas de km (outliers), aponte os clientes e distâncias e explique que pode ser erro de código postal ou cliente que deve ser retirado desta rota.
 3. Se perguntar sobre janelas ou slots, use as estatísticas fornecidas de manhã vs tarde.
-4. Se o gestor quiser trocar um cliente de carro, confirme e inclua a tag:
-[COMANDO:REATRIBUIR|CLIENTE:nome_do_cliente|VIATURA:nome_da_viatura]
+4. Voc? TEM AUTONOMIA operacional no sistema! NUNCA diga 'como sistema n?o tenho permiss?o' ou 'n?o posso alterar'. Se o gestor solicitar a??es operacionais, confirme que as est? a executar e emita SEMPRE as tags de comando para o sistema executar na base de dados:
+   - Trocar cliente de carro ou colocar em pendente/por distribuir:
+     [COMANDO:REATRIBUIR|CLIENTE:id_ou_nome|VIATURA:nome_da_viatura_ou_Por Distribuir]
+   - Reotimizar / ordenar a sequ?ncia de entregas de todas as viaturas:
+     [COMANDO:OTIMIZAR_TODAS_SEQUENCIAS]
+   - Corrigir georreferencia??o de cliente:
+     [COMANDO:REGEORREFERENCIAR|CLIENTE:id_ou_nome]
 """
 
     payload = {
@@ -258,8 +273,9 @@ DIRETRIZES:
             if resp.status_code == 200:
                 data = resp.json()
                 reply_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if reassign_command and "[COMANDO:REATRIBUIR" not in reply_text:
-                    reply_text += f"\n\n{reassign_command}"
+                for cmd in action_commands:
+                    if cmd not in reply_text:
+                        reply_text += f"\n\n{cmd}"
                 return {
                     "reply": reply_text,
                     "outliers": outliers,
@@ -276,8 +292,9 @@ DIRETRIZES:
         user_message.lower(), total_stops, assigned_count, unassigned_count,
         active_vehicles, dist_metrics, outliers, clustering
     )
-    if reassign_command:
-        local_reply += f"\n\n{reassign_command}"
+    for cmd in action_commands:
+        if cmd not in local_reply:
+            local_reply += f"\n\n{cmd}"
 
     return {
         "reply": local_reply,

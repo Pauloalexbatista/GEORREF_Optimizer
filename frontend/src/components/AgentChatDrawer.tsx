@@ -82,10 +82,14 @@ export default function AgentChatDrawer({
       });
 
       // Detetar se o agente disparou um comando de reatribuição de viatura
-      const cmdMatch = (res.reply || "").match(/\[COMANDO:REATRIBUIR\|CLIENTE:(.*?)\|VIATURA:(.*?)\]/);
-      if (cmdMatch) {
-        const clientCode = cmdMatch[1].trim();
-        const targetVehicle = cmdMatch[2].trim();
+      // Execu??o de comandos operacionais disparados pela IA
+      let actionFeedback = "";
+
+      // 1. Reatribuir paragem (ou colocar em 'Por Distribuir')
+      const cmdReassign = (res.reply || "").match(/\[COMANDO:REATRIBUIR\|CLIENTE:(.*?)\|VIATURA:(.*?)\]/);
+      if (cmdReassign) {
+        const clientCode = cmdReassign[1].trim();
+        const targetVehicle = cmdReassign[2].trim();
         try {
           await apiRequest("/api/solver/reassign", {
             method: "POST",
@@ -95,16 +99,66 @@ export default function AgentChatDrawer({
               target_route: targetVehicle,
             }),
           });
+          actionFeedback += `\n\n? *[A??o Executada]* Cliente ${clientCode} movido para ${targetVehicle}.`;
           if (onRefreshData) onRefreshData();
-        } catch (reErr) {
-          console.error("Erro ao aplicar reatribuição automática:", reErr);
+        } catch (reErr: any) {
+          console.error("Erro ao aplicar reatribui??o:", reErr);
+          actionFeedback += `\n\n?? *[Aviso]* N?o foi poss?vel mover ${clientCode}: ${reErr?.message || "Erro"}`;
         }
       }
 
+      // 2. Ordenar e sequenciar todos os carros automaticamente
+      if ((res.reply || "").includes("[COMANDO:OTIMIZAR_TODAS_SEQUENCIAS]")) {
+        try {
+          await apiRequest("/api/solver/optimize-all-sequences", {
+            method: "POST",
+            body: JSON.stringify({ project_id: projectId }),
+          });
+          actionFeedback += "\n\n? *[A??o Executada]* Sequ?ncia de todas as rotas otimizada com sucesso!";
+          if (onRefreshData) onRefreshData();
+        } catch (optErr: any) {
+          console.error("Erro ao otimizar sequ?ncias:", optErr);
+          actionFeedback += `\n\n?? *[Aviso]* Falha ao ordenar rotas: ${optErr?.message || "Erro"}`;
+        }
+      }
+
+      // 3. Re-georreferenciar cliente
+      const cmdGeo = (res.reply || "").match(/\[COMANDO:REGEORREFERENCIAR\|CLIENTE:(.*?)\]/);
+      if (cmdGeo) {
+        const clientTarget = cmdGeo[1].trim();
+        try {
+          // Procurar nos outliers ou nos dados do plano a morada para resolver
+          const targetOutlier = (res.outliers || []).find((o: any) => 
+            String(o.cliente).toLowerCase().includes(clientTarget.toLowerCase()) || 
+            String(o.id).toLowerCase() === clientTarget.toLowerCase()
+          );
+          if (targetOutlier) {
+            await apiRequest("/api/geocoding/resolve", {
+              method: "POST",
+              body: JSON.stringify({
+                morada: targetOutlier.morada,
+                cp: targetOutlier.cp,
+                concelho: targetOutlier.localidade
+              })
+            });
+            actionFeedback += `\n\n? *[A??o Executada]* Cascata de georreferencia??o recalculada para ${targetOutlier.cliente}.`;
+            if (onRefreshData) onRefreshData();
+          }
+        } catch (geoErr: any) {
+          console.error("Erro ao re-georreferenciar:", geoErr);
+        }
+      }
+      // Remover tags internas brutas do texto vis?vel e anexar o status da a??o
+      let displayReply = (res.reply || "N?o consegui processar a resposta neste momento.")
+        .replace(/\[COMANDO:.*?\]/g, "")
+        .trim();
+      if (actionFeedback) {
+        displayReply += actionFeedback;
+      }
       const agentMsg: ChatMessage = {
         id: String(Date.now() + 1),
         sender: "agent",
-        text: res.reply || "Não consegui processar a resposta neste momento.",
+        text: displayReply,
         outliers: res.outliers || [],
         actions: res.suggested_actions || [],
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
