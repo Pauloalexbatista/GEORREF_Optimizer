@@ -1,43 +1,54 @@
 ﻿import json
 import math
+import sqlite3
+import os
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from utils.validation_auditor import haversine_distance
 
+DB_GEO_PATH = os.getenv("DB_GEO_PATH", "geocoding.db")
+_CP_CENTROIDS_CACHE = None
+
+def get_cp_centroids_cache(db_path: str = None) -> Dict[str, tuple]:
+    global _CP_CENTROIDS_CACHE
+    if _CP_CENTROIDS_CACHE is not None:
+        return _CP_CENTROIDS_CACHE
+    
+    path = db_path or DB_GEO_PATH
+    if not os.path.exists(path) and os.path.exists("/app/data/geocoding.db"):
+        path = "/app/data/geocoding.db"
+
+    cache = {}
+    try:
+        conn = sqlite3.connect(path)
+        c = conn.cursor()
+        c.execute("SELECT CP4, AVG(LATITUDE), AVG(LONGITUDE) FROM pt_addresses WHERE LATITUDE != 0 AND LONGITUDE != 0 GROUP BY CP4")
+        for row in c.fetchall():
+            if row[0] and row[1] and row[2]:
+                cache[str(row[0]).strip()] = (float(row[1]), float(row[2]))
+        conn.close()
+    except Exception as e:
+        print(f"[Aviso] Falha ao carregar centroides de CP: {e}")
+    
+    _CP_CENTROIDS_CACHE = cache
+    return cache
+
 def detect_geographic_outliers(
     deliveries_list: List[Dict[str, Any]],
-    warehouses_list: List[Dict[str, Any]]
+    warehouses_list: List[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Deteta paragens geometricamente anomalas ou isoladas:
-    - Entregas no extremo Norte (Ponte de Lima, Viana, Valenca, Braganca)
-    - Entregas nas Ilhas (Madeira / Acores)
-    - Entregas a grande distancia (>120 km) com suspeita de erro de geocodificacao ou CP trocado
+    Audita clientes genuinamente mal georreferenciados comparando as coordenadas
+    reais com o centroide oficial do seu Código Postal (BD canónica geocoding.db).
+    NUNCA usa distâncias arbitrárias ao armazém para evitar falsos positivos
+    em rotas longas, transfronteiriças ou regionais.
     """
     if not deliveries_list:
         return []
 
-    # Mapa de armaz?ns por nome/id para correlacionar com o armaz?m real de cada rota/entrega
-    warehouses_map = {}
-    default_depot_lat, default_depot_lon = 38.8727, -9.0530
-
-    if warehouses_list is not None and len(warehouses_list) > 0:
-        w_items = warehouses_list if isinstance(warehouses_list, list) else warehouses_list.to_dict(orient="records")
-        for w in w_items:
-            w_name = str(w.get("Nome_Armazem") or w.get("Nome") or w.get("name") or "").strip().lower()
-            try:
-                w_lat = float(w.get("Latitude") or w.get("latitude") or 0.0)
-                w_lon = float(w.get("Longitude") or w.get("longitude") or 0.0)
-                # Ignorar armaz?ns com coordenadas 0 ou A?ores/Madeira se estivermos a calcular padr?o continental
-                if w_lat != 0.0 and w_lon != 0.0:
-                    warehouses_map[w_name] = (w_lat, w_lon)
-                    # Preferir armaz?m continental de refer?ncia como default (ex: S?o Jo?o da Talha, Vialonga, Santar?m)
-                    if default_depot_lat == 38.8727 and w_lat > 36.5 and w_lon > -10.5:
-                        default_depot_lat, default_depot_lon = w_lat, w_lon
-            except Exception:
-                pass
-
+    cp_centroids = get_cp_centroids_cache()
     outliers = []
+
     for d in deliveries_list:
         try:
             lat = float(d.get("Latitude") or d.get("latitude") or 0.0)
@@ -45,64 +56,41 @@ def detect_geographic_outliers(
             if lat == 0.0 or lon == 0.0:
                 continue
 
-            # Obter armaz?m espec?fico da paragem ou o armaz?m continental ativo
-            ent_armazem = str(d.get("Armazem") or d.get("armazem") or "").strip().lower()
-            depot_lat, depot_lon = warehouses_map.get(ent_armazem, (default_depot_lat, default_depot_lon))
-            dist_depot = haversine_distance(depot_lat, depot_lon, lat, lon)
-            
+            cp = str(d.get("CP") or d.get("codigo_postal") or "").strip()
+            cp4 = cp.split("-")[0].strip()
+            morada = str(d.get("Morada") or d.get("morada") or "").strip()
             localidade = str(d.get("Localidade") or d.get("concelho") or "").strip()
-            cp = str(d.get("CP") or d.get("codigo_postal") or "")
-            morada = str(d.get("Morada") or d.get("morada") or "")
             rota = str(d.get("Rota") or d.get("rota") or "")
+            c_nome = d.get("Cliente") or d.get("Nome_Cliente") or d.get("nome_cliente") or f"Cliente #{d.get('id')}"
 
-            is_suspicious_geo = False
-            suspect_reason = ""
+            # Verificar coerência contra a nossa base de dados oficial de Códigos Postais
+            if cp4 in cp_centroids:
+                expected_lat, expected_lon = cp_centroids[cp4]
+                dist_cp_km = haversine_distance(lat, lon, expected_lat, expected_lon)
 
-            # 1. Ilhas (Madeira / Acores)
-            if lat < 34.0 or lon < -15.0 or cp.startswith("9"):
-                is_suspicious_geo = True
-                suspect_reason = f"Destino insular / Ilhas (Madeira/Acores) a {int(dist_depot)} km da base continental."
-            
-            # 2. Extremo Norte (Ponte de Lima, Viana do Castelo, Valenca, Minho, Braganca)
-            elif lat >= 41.5 and depot_lat < 40.0:
-                is_suspicious_geo = True
-                suspect_reason = f"Extremo Norte de Portugal / Alto Minho ou Tras-os-Montes ({int(dist_depot)} km do armazem principal). Verificar se o cliente deve estar nesta distribuicao."
-            
-            # 3. Grande distancia com possivel confusao de localidade/CP
-            elif dist_depot > 120.0:
-                loc_lower = localidade.lower()
-                mor_lower = morada.lower()
-                if any(k in loc_lower or k in mor_lower for k in ["lisboa", "sintra", "cascais", "oeiras", "amadora", "loures", "almada", "setubal"]):
-                    is_suspicious_geo = True
-                    suspect_reason = f"Morada refere zona da Grande Lisboa mas coordenadas estao a {int(dist_depot)} km (forte suspeita de erro de codigo postal)."
-                elif dist_depot > 180.0:
-                    is_suspicious_geo = True
-                    suspect_reason = f"Distancia anormalmente elevada ao centro de operacoes ({int(dist_depot)} km)."
-
-            if is_suspicious_geo:
-                c_nome = d.get("Cliente") or d.get("Nome_Cliente") or d.get("nome_cliente") or f"Cliente #{d.get('id')}"
-                outliers.append({
-                    "id": d.get("id") or d.get("ID_Original") or d.get("codigo_cliente"),
-                    "cliente": str(c_nome),
-                    "morada": morada,
-                    "cp": cp,
-                    "localidade": localidade,
-                    "rota_atual": rota,
-                    "lat": round(lat, 6),
-                    "lon": round(lon, 6),
-                    "dist_km_armazem": round(dist_depot, 1),
-                    "motivo_suspeita": suspect_reason
-                })
+                # Se estiver a mais de 35 km do centroide do seu Código Postal, há erro de geocodificação
+                if dist_cp_km > 35.0:
+                    outliers.append({
+                        "id": d.get("id") or d.get("ID_Original") or d.get("codigo_cliente"),
+                        "cliente": str(c_nome),
+                        "morada": morada,
+                        "cp": cp,
+                        "localidade": localidade,
+                        "rota_atual": rota,
+                        "lat": round(lat, 6),
+                        "lon": round(lon, 6),
+                        "dist_km_armazem": round(dist_cp_km, 1), # Usado no UI para mostrar o desvio do CP
+                        "motivo_suspeita": f"Incoerência com Código Postal {cp}: as coordenadas atuais estão a {int(dist_cp_km)} km da zona oficial do seu CP."
+                    })
         except Exception:
             continue
 
     outliers.sort(key=lambda x: x["dist_km_armazem"], reverse=True)
     return outliers
 
-
 def analyze_unassigned_clustering(
     routes_solution: Any,
-    warehouses_list: List[Dict[str, Any]]
+    warehouses_list: List[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     if isinstance(routes_solution, pd.DataFrame):
         df = routes_solution.copy()
@@ -114,27 +102,12 @@ def analyze_unassigned_clustering(
     if df.empty:
         return {"total_unassigned": 0, "near_depot_count": 0, "far_depot_count": 0, "near_depot": [], "far_depot": []}
 
-    depot_lat, depot_lon = 38.82279, -9.08900
-    if warehouses_list is not None and len(warehouses_list) > 0:
-        w_items = warehouses_list if isinstance(warehouses_list, list) else warehouses_list.to_dict(orient="records")
-        for w in w_items:
-            try:
-                w_lat = float(w.get("Latitude") or w.get("latitude") or 0.0)
-                w_lon = float(w.get("Longitude") or w.get("longitude") or 0.0)
-                if w_lat > 36.5 and w_lon > -10.5:
-                    depot_lat, depot_lon = w_lat, w_lon
-                    if "talha" in str(w.get("Nome_Armazem") or w.get("Nome") or "").lower():
-                        break
-            except Exception:
-                pass
-
     col_map = {c.lower(): c for c in df.columns}
     rota_col = col_map.get("rota") or col_map.get("veiculo") or col_map.get("assigned_vehicle") or "Rota"
     if rota_col not in df.columns:
-        df = df.copy()
         df["Rota"] = "Por Distribuir"
         rota_col = "Rota"
-    
+
     unassigned_tokens = [
         "por distribuir", "por_distribuir", "por identificar", "por_identificar",
         "não atribuído", "nao atribuido", "nao_atribuido", "unassigned",
@@ -143,37 +116,10 @@ def analyze_unassigned_clustering(
     unassigned_mask = df[rota_col].astype(str).str.strip().str.lower().isin(unassigned_tokens)
     unassigned_df = df[unassigned_mask].copy()
 
-    near = []
-    far = []
-
-    for idx, row in unassigned_df.iterrows():
-        try:
-            lat = float(row.get(col_map.get("latitude", "Latitude"), 0.0) or 0.0)
-            lon = float(row.get(col_map.get("longitude", "Longitude"), 0.0) or 0.0)
-            d_km = haversine_distance(depot_lat, depot_lon, lat, lon) if (lat and lon) else 0.0
-            
-            c_info = {
-                "id": row.get(col_map.get("id", "id")),
-                "cliente": str(row.get(col_map.get("cliente", "Cliente"), "") or row.get(col_map.get("nome_cliente", "Nome_Cliente"), "")),
-                "morada": str(row.get(col_map.get("morada", "Morada"), "")),
-                "localidade": str(row.get(col_map.get("localidade", "Localidade"), "")),
-                "cp": str(row.get(col_map.get("cp", "CP"), "")),
-                "dist_km_armazem": round(d_km, 1),
-                "peso_kg": float(row.get(col_map.get("peso_kg", "Peso_KG"), 0.0) or 0.0),
-                "volume_m3": float(row.get(col_map.get("volume_m3", "Volume_m3"), 0.1) or 0.1),
-            }
-
-            if d_km <= 15.0 and d_km > 0.0:
-                near.append(c_info)
-            else:
-                far.append(c_info)
-        except Exception:
-            continue
-
     return {
         "total_unassigned": len(unassigned_df),
-        "near_depot_count": len(near),
-        "far_depot_count": len(far),
-        "near_depot": near,
-        "far_depot": far
+        "near_depot_count": 0,
+        "far_depot_count": len(unassigned_df),
+        "near_depot": [],
+        "far_depot": []
     }
