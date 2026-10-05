@@ -50,7 +50,7 @@ export default function AgentChatDrawer({
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       // Diagnóstico inicial operacional ao abrir
-      sendMessage("Olá, analisa o plano de rotas atual e diz-me o que encontras.");
+      // Removida pergunta autom?tica ao abrir a pedido do gestor
     }
   }, [isOpen]);
 

@@ -254,7 +254,7 @@ DIRETRIZES:
     for model_name in CANDIDATE_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
         try:
-            resp = requests.post(url, json=payload, timeout=7.0)
+            resp = requests.post(url, json=payload, timeout=12.0)
             if resp.status_code == 200:
                 data = resp.json()
                 reply_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -266,6 +266,8 @@ DIRETRIZES:
                     "clustering": clustering,
                     "suggested_actions": actions
                 }
+            else:
+                print(f"[Aviso LLM] Modelo {model_name} retornou status {resp.status_code}: {resp.text[:150]}")
         except Exception:
             continue
 

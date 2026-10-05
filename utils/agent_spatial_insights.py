@@ -17,15 +17,25 @@ def detect_geographic_outliers(
     if not deliveries_list:
         return []
 
-    # Coordenadas do armazem principal
-    depot_lat, depot_lon = 38.8727, -9.0530 # Default Vialonga / Lisboa
+    # Mapa de armaz?ns por nome/id para correlacionar com o armaz?m real de cada rota/entrega
+    warehouses_map = {}
+    default_depot_lat, default_depot_lon = 38.8727, -9.0530
+
     if warehouses_list is not None and len(warehouses_list) > 0:
-        w0 = warehouses_list[0] if isinstance(warehouses_list, list) else warehouses_list.iloc[0]
-        try:
-            depot_lat = float(w0.get("Latitude") or w0.get("latitude") or depot_lat)
-            depot_lon = float(w0.get("Longitude") or w0.get("longitude") or depot_lon)
-        except Exception:
-            pass
+        w_items = warehouses_list if isinstance(warehouses_list, list) else warehouses_list.to_dict(orient="records")
+        for w in w_items:
+            w_name = str(w.get("Nome_Armazem") or w.get("Nome") or w.get("name") or "").strip().lower()
+            try:
+                w_lat = float(w.get("Latitude") or w.get("latitude") or 0.0)
+                w_lon = float(w.get("Longitude") or w.get("longitude") or 0.0)
+                # Ignorar armaz?ns com coordenadas 0 ou A?ores/Madeira se estivermos a calcular padr?o continental
+                if w_lat != 0.0 and w_lon != 0.0:
+                    warehouses_map[w_name] = (w_lat, w_lon)
+                    # Preferir armaz?m continental de refer?ncia como default (ex: S?o Jo?o da Talha, Vialonga, Santar?m)
+                    if default_depot_lat == 38.8727 and w_lat > 36.5 and w_lon > -10.5:
+                        default_depot_lat, default_depot_lon = w_lat, w_lon
+            except Exception:
+                pass
 
     outliers = []
     for d in deliveries_list:
@@ -35,6 +45,9 @@ def detect_geographic_outliers(
             if lat == 0.0 or lon == 0.0:
                 continue
 
+            # Obter armaz?m espec?fico da paragem ou o armaz?m continental ativo
+            ent_armazem = str(d.get("Armazem") or d.get("armazem") or "").strip().lower()
+            depot_lat, depot_lon = warehouses_map.get(ent_armazem, (default_depot_lat, default_depot_lon))
             dist_depot = haversine_distance(depot_lat, depot_lon, lat, lon)
             
             localidade = str(d.get("Localidade") or d.get("concelho") or "").strip()
@@ -101,14 +114,19 @@ def analyze_unassigned_clustering(
     if df.empty:
         return {"total_unassigned": 0, "near_depot_count": 0, "far_depot_count": 0, "near_depot": [], "far_depot": []}
 
-    depot_lat, depot_lon = 38.8727, -9.0530
+    depot_lat, depot_lon = 38.82279, -9.08900
     if warehouses_list is not None and len(warehouses_list) > 0:
-        w0 = warehouses_list[0] if isinstance(warehouses_list, list) else warehouses_list.iloc[0]
-        try:
-            depot_lat = float(w0.get("Latitude") or w0.get("latitude") or depot_lat)
-            depot_lon = float(w0.get("Longitude") or w0.get("longitude") or depot_lon)
-        except Exception:
-            pass
+        w_items = warehouses_list if isinstance(warehouses_list, list) else warehouses_list.to_dict(orient="records")
+        for w in w_items:
+            try:
+                w_lat = float(w.get("Latitude") or w.get("latitude") or 0.0)
+                w_lon = float(w.get("Longitude") or w.get("longitude") or 0.0)
+                if w_lat > 36.5 and w_lon > -10.5:
+                    depot_lat, depot_lon = w_lat, w_lon
+                    if "talha" in str(w.get("Nome_Armazem") or w.get("Nome") or "").lower():
+                        break
+            except Exception:
+                pass
 
     col_map = {c.lower(): c for c in df.columns}
     rota_col = col_map.get("rota") or col_map.get("veiculo") or col_map.get("assigned_vehicle") or "Rota"
