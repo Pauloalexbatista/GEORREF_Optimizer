@@ -23,6 +23,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [createProjError, setCreateProjError] = useState<string | null>(null);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("georoute_sidebar_collapsed") === "true";
+      } catch (e) {}
+    }
+    return false;
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("georoute_sidebar_collapsed", String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   const handleBackupProject = async () => {
     if (!selectedProject) {
@@ -181,92 +199,114 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-xl flex flex-col justify-between z-30 shrink-0 no-print">
+      <aside className={`${isSidebarCollapsed ? "w-16" : "w-64"} border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-xl flex flex-col justify-between z-30 shrink-0 no-print transition-all duration-200`}>
         <div>
           {/* Logo / Header */}
-          <div className="h-16 flex items-center px-6 border-b border-zinc-800">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <div className={`h-16 flex items-center ${isSidebarCollapsed ? "justify-center px-2 flex-col py-2" : "justify-between px-4"} border-b border-zinc-800`}>
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <div>
-                <span className="font-bold text-sm tracking-wide bg-gradient-to-r from-zinc-100 to-zinc-400 bg-clip-text text-transparent">
-                  {t.common.appName}
-                </span>
-                <span className="block text-[9px] text-zinc-300 font-mono tracking-wider">
-                  v2.0 PRO
-                </span>
-              </div>
+              {!isSidebarCollapsed && (
+                <div className="truncate">
+                  <span className="font-bold text-sm tracking-wide bg-gradient-to-r from-zinc-100 to-zinc-400 bg-clip-text text-transparent">
+                    {t.common.appName}
+                  </span>
+                  <span className="block text-[9px] text-zinc-300 font-mono tracking-wider">
+                    v2.0 PRO
+                  </span>
+                </div>
+              )}
             </div>
+
+            {/* Botão de Encolher/Expandir Barra Lateral junto ao nome GeoRoutePlan */}
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className={`rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-700/60 transition-colors cursor-pointer text-xs font-mono font-bold flex items-center justify-center ${
+                isSidebarCollapsed ? "mt-1 w-6 h-5 text-[10px]" : "w-6 h-6 ml-2"
+              }`}
+              title={isSidebarCollapsed ? "Expandir menu lateral (+)" : "Encolher menu lateral (-)"}
+            >
+              {isSidebarCollapsed ? "+" : "−"}
+            </button>
           </div>
 
           {/* Project Selector Bar */}
-          <div className="p-4 border-b border-zinc-800 bg-zinc-950/40">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
-                {t.navigation.projects}
-              </label>
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                projects.length >= 10
-                  ? "bg-rose-950/60 border-rose-800/80 text-rose-300 font-bold"
-                  : projects.length >= 8
-                  ? "bg-amber-950/60 border-amber-800/80 text-amber-300 font-semibold"
-                  : "bg-zinc-850 border-zinc-800 text-zinc-400"
-              }`}>
-                {projects.length}/10 Max
-              </span>
-            </div>
-            <div className="flex items-center space-x-1.5">
-              <select
-                value={selectedProject ? selectedProject.id : ""}
-                onChange={(e) => {
-                  selectProject(parseInt(e.target.value, 10));
-                }}
-                className="w-full bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-200 outline-none transition-all cursor-pointer truncate"
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-                {projects.length === 0 && <option value="">{t.navigation.noProjects}</option>}
-              </select>
+          {!isSidebarCollapsed ? (
+            <div className="p-4 border-b border-zinc-800 bg-zinc-950/40">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                  {t.navigation.projects}
+                </label>
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                  projects.length >= 10
+                    ? "bg-rose-950/60 border-rose-800/80 text-rose-300 font-bold"
+                    : projects.length >= 8
+                    ? "bg-amber-950/60 border-amber-800/80 text-amber-300 font-semibold"
+                    : "bg-zinc-850 border-zinc-800 text-zinc-400"
+                }`}>
+                  {projects.length}/10 Max
+                </span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <select
+                  value={selectedProject ? selectedProject.id : ""}
+                  onChange={(e) => {
+                    selectProject(parseInt(e.target.value, 10));
+                  }}
+                  className="w-full bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-200 outline-none transition-all cursor-pointer truncate"
+                >
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                  {projects.length === 0 && <option value="">{t.navigation.noProjects}</option>}
+                </select>
 
-              {/* Add Project Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCreateProjError(null);
-                  setShowCreateProj(true);
-                }}
-                className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 p-1.5 rounded-lg text-zinc-300 hover:text-white transition-all cursor-pointer shrink-0"
-                title={projects.length >= 10 ? "Limite de 10 projetos atingido" : t.navigation.newProject}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-
-              {/* Delete Current Project Button */}
-              {selectedProject && (
+                {/* Add Project Button */}
                 <button
                   type="button"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="bg-zinc-850 hover:bg-rose-950/60 border border-zinc-800 hover:border-rose-700/80 p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 transition-all cursor-pointer shrink-0"
-                  title={`Eliminar projeto "${selectedProject.nome}"`}
+                  onClick={() => {
+                    setCreateProjError(null);
+                    setShowCreateProj(true);
+                  }}
+                  className="bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 p-1.5 rounded-lg text-zinc-300 hover:text-white transition-all cursor-pointer shrink-0"
+                  title={projects.length >= 10 ? "Limite de 10 projetos atingido" : t.navigation.newProject}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                 </button>
-              )}
+
+                {/* Delete Current Project Button */}
+                {selectedProject && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="bg-zinc-850 hover:bg-rose-950/60 border border-zinc-800 hover:border-rose-700/80 p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 transition-all cursor-pointer shrink-0"
+                    title={`Eliminar projeto "${selectedProject.nome}"`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="py-2 px-1 border-b border-zinc-800 bg-zinc-950/40 flex justify-center" title={`Projeto Ativo: ${selectedProject?.nome || 'Nenhum'}`}>
+              <span className="text-[10px] font-mono font-bold text-zinc-300 bg-zinc-800 px-1 py-0.5 rounded border border-zinc-700/60 truncate max-w-[48px]">
+                {selectedProject?.nome ? selectedProject.nome.slice(0, 3).toUpperCase() : "PRJ"}
+              </span>
+            </div>
+          )}
 
           {/* Navigation Menu */}
-          <nav className="p-4 space-y-1.5">
+          <nav className={`p-2 space-y-1.5 ${isSidebarCollapsed ? "flex flex-col items-center" : ""}`}>
             {menuItems.map((item: any) => {
               if (item.isExternal) {
                 return (
@@ -275,15 +315,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     href={item.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-emerald-400 hover:bg-emerald-950/40 hover:text-emerald-300 border border-emerald-500/30 bg-emerald-950/20 shadow-sm transition-all cursor-pointer"
+                    title={item.name}
+                    className={`flex items-center ${isSidebarCollapsed ? "justify-center w-10 h-10 p-0" : "justify-between px-3.5 py-2.5"} rounded-xl text-xs font-bold text-emerald-400 hover:bg-emerald-950/40 hover:text-emerald-300 border border-emerald-500/30 bg-emerald-950/20 shadow-sm transition-all cursor-pointer`}
                   >
                     <div className="flex items-center space-x-3">
                       {item.icon}
-                      <span>{item.name}</span>
+                      {!isSidebarCollapsed && <span>{item.name}</span>}
                     </div>
-                    <svg className="w-3.5 h-3.5 text-emerald-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
+                    {!isSidebarCollapsed && (
+                      <svg className="w-3.5 h-3.5 text-emerald-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    )}
                   </a>
                 );
               }
@@ -292,14 +335,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                  title={item.name}
+                  className={`flex items-center ${isSidebarCollapsed ? "justify-center w-10 h-10 p-0" : "space-x-3 px-3.5 py-2.5"} rounded-xl text-xs font-semibold transition-all ${
                     isActive
                       ? "bg-indigo-600/15 border border-indigo-500/30 text-indigo-300 shadow-sm"
                       : "text-zinc-400 hover:bg-zinc-850/60 hover:text-zinc-200 border border-transparent"
                   }`}
                 >
                   {item.icon}
-                  <span>{item.name}</span>
+                  {!isSidebarCollapsed && <span>{item.name}</span>}
                 </Link>
               );
             })}
@@ -307,45 +351,68 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* User Info & License Status & Logout */}
-        <div className="p-4 border-t border-zinc-800 bg-zinc-950/20 flex flex-col space-y-3">
-          <div className="flex items-center space-x-3 px-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0">
-              {user.nome ? user.nome.charAt(0).toUpperCase() : "U"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center space-x-1.5">
-                <p className="text-xs font-bold text-zinc-100 truncate">{user.nome}</p>
-                {((user as any).is_superadmin || (user as any).is_admin) && (
-                  <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-400 border border-amber-400/30">
-                    {(user as any).is_superadmin ? "ADMIN" : "ADMIN"}
-                  </span>
-                )}
+        <div className={`p-3 border-t border-zinc-800 bg-zinc-950/20 flex flex-col ${isSidebarCollapsed ? "items-center space-y-2" : "space-y-3"}`}>
+          {!isSidebarCollapsed ? (
+            <>
+              <div className="flex items-center space-x-3 px-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0">
+                  {user.nome ? user.nome.charAt(0).toUpperCase() : "U"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center space-x-1.5">
+                    <p className="text-xs font-bold text-zinc-100 truncate">{user.nome}</p>
+                    {((user as any).is_superadmin || (user as any).is_admin) && (
+                      <span className="px-1 py-0.2 rounded text-[8px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-400 border border-amber-400/30">
+                        ADMIN
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-zinc-400 truncate">{user.email}</p>
+                </div>
               </div>
-              <p className="text-[10px] text-zinc-400 truncate">{user.email}</p>
-            </div>
-          </div>
 
-          <div className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-[10px] text-zinc-300">
-            <span className="text-zinc-400 uppercase font-mono">Subscrição</span>
-            <span className="font-bold text-amber-400">
-              {Boolean((user as any)?.is_superadmin)
-                ? "Vitalícia"
-                : (user as any)?.data_validade
-                ? `Até ${(user as any).data_validade}`
-                : "Ativa"}
-            </span>
-          </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-[10px] text-zinc-300">
+                <span className="text-zinc-400 uppercase font-mono">Subscrição</span>
+                <span className="font-bold text-amber-400">
+                  {Boolean((user as any)?.is_superadmin)
+                    ? "Vitalícia"
+                    : (user as any)?.data_validade
+                    ? `Até ${(user as any).data_validade}`
+                    : "Ativa"}
+                </span>
+              </div>
 
-          <button
-            type="button"
-            onClick={logout}
-            className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850/80 border border-zinc-800/80 transition-all cursor-pointer"
-          >
-            <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <span>{t.auth.logout}</span>
-          </button>
+              <button
+                type="button"
+                onClick={logout}
+                className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850/80 border border-zinc-800/80 transition-all cursor-pointer"
+              >
+                <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span>{t.auth.logout}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <div
+                className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0 cursor-pointer"
+                title={`${user.nome} (${user.email})`}
+              >
+                {user.nome ? user.nome.charAt(0).toUpperCase() : "U"}
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                className="p-2 rounded-xl text-zinc-400 hover:text-rose-400 hover:bg-zinc-850/80 transition-all cursor-pointer"
+                title={t.auth.logout}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </aside>
 

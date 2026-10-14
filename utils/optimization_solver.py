@@ -65,6 +65,8 @@ class AdvancedRouteOptimizer:
         params = optimization_params or {}
         time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 25.0)
         respect_tw = bool(params.get("respect_time_windows", True))
+        balance_load = bool(params.get("balance_load", False))
+        strategy = str(params.get("strategy", "clusters")).lower()
 
         # Phase 1: Global OR-Tools VRPTW Solve
         initial_solution = self._solve_ortools_vrptw(
@@ -88,7 +90,9 @@ class AdvancedRouteOptimizer:
             respect_time_windows=respect_tw,
             vehicle_max_stops=vehicle_max_stops,
             client_service_times=client_service_times,
-            client_priorities=client_priorities
+            client_priorities=client_priorities,
+            balance_load=balance_load,
+            strategy=strategy
         )
 
         if not initial_solution.get("routes"):
@@ -114,7 +118,8 @@ class AdvancedRouteOptimizer:
             rules_matrix=rules_matrix,
             vehicle_max_stops=vehicle_max_stops,
             client_service_times=client_service_times,
-            respect_time_windows=respect_tw
+            respect_time_windows=respect_tw,
+            balance_load=balance_load
         )
 
         return squeezed_solution
@@ -141,7 +146,9 @@ class AdvancedRouteOptimizer:
         respect_time_windows=True,
         vehicle_max_stops=None,
         client_service_times=None,
-        client_priorities=None
+        client_priorities=None,
+        balance_load: bool = False,
+        strategy: str = "clusters"
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_nodes = len(distance_matrix)
@@ -158,18 +165,35 @@ class AdvancedRouteOptimizer:
         manager = pywrapcp.RoutingIndexManager(num_nodes, num_vehicles, starts, ends)
         routing = pywrapcp.RoutingModel(manager)
 
-        # 1. Distance & Arc Cost (in meters)
+        # 1. Distance & Arc Cost (in meters) com suporte a agrupamento por zonas (centro de gravidade por distancia)
         def distance_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             dist_km = distance_matrix[from_node][to_node] * ROAD_FACTOR
+
+            # Em modo 'clusters' (rotas agrupadas por zonas):
+            # Penalizar conexões entre clientes em direções/ângulos opostos do armazém base
+            if strategy == "clusters" and from_node >= num_warehouses and to_node >= num_warehouses and locations:
+                d_idx = starts[0] if starts else 0
+                depot_lat, depot_lon = locations[d_idx]
+                lat1, lon1 = locations[from_node]
+                lat2, lon2 = locations[to_node]
+                d1_lat, d1_lon = lat1 - depot_lat, lon1 - depot_lon
+                d2_lat, d2_lon = lat2 - depot_lat, lon2 - depot_lon
+                dot = (d1_lat * d2_lat) + (d1_lon * d2_lon)
+                norm1 = math.sqrt(d1_lat * d1_lat + d1_lon * d1_lon) or 1.0
+                norm2 = math.sqrt(d2_lat * d2_lat + d2_lon * d2_lon) or 1.0
+                cos_theta = max(-1.0, min(1.0, dot / (norm1 * norm2)))
+                if cos_theta < 0.65:
+                    dist_km *= (1.0 + (0.65 - cos_theta) * 0.45)
+
             return int(round(dist_km * 1000))
 
         transit_callback_index = routing.RegisterTransitCallback(distance_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-        # 2. Fixed Vehicle Cost for Fleet Minimization
-        FIXED_VEHICLE_COST = 500000
+        # 2. Fixed Vehicle Cost: Se balance_load for True, não penalizamos o uso de mais viaturas para permitir balanceamento
+        FIXED_VEHICLE_COST = 0 if balance_load else 500000
         for v in range(num_vehicles):
             routing.SetFixedCostOfVehicle(FIXED_VEHICLE_COST, v)
 
@@ -187,6 +211,11 @@ class AdvancedRouteOptimizer:
             True,
             "Capacity_KG"
         )
+        if balance_load:
+            try:
+                routing.GetDimensionOrDie("Capacity_KG").SetGlobalSpanCostTracker(80)
+            except Exception:
+                pass
 
         # 4. Volume Capacity Dimension (m3)
         if volume_demands and vehicle_volume_capacities:
@@ -204,8 +233,16 @@ class AdvancedRouteOptimizer:
                 "Capacity_Volume"
             )
 
-        # 5. Max Stops Dimension
-        if vehicle_max_stops:
+        # 5. Max Stops Dimension com balanceamento dinâmico
+        effective_max_stops = vehicle_max_stops
+        if balance_load and num_vehicles > 1 and num_clients > num_vehicles:
+            target_stops = int(math.ceil((num_clients / num_vehicles) * 1.35)) + 1
+            if vehicle_max_stops:
+                effective_max_stops = [min(m, max(4, target_stops)) for m in vehicle_max_stops]
+            else:
+                effective_max_stops = [max(4, target_stops) for _ in range(num_vehicles)]
+
+        if effective_max_stops:
             def stop_callback(from_index):
                 from_node = manager.IndexToNode(from_index)
                 return 1 if from_node >= num_warehouses else 0
@@ -214,10 +251,15 @@ class AdvancedRouteOptimizer:
             routing.AddDimensionWithVehicleCapacity(
                 stop_callback_index,
                 0,
-                vehicle_max_stops,
+                effective_max_stops,
                 True,
                 "Max_Stops"
             )
+            if balance_load:
+                try:
+                    routing.GetDimensionOrDie("Max_Stops").SetGlobalSpanCostTracker(1500)
+                except Exception:
+                    pass
 
         # 6. Time Dimension in SECONDS with Highway Speed Model
         HORIZON_SEC = 24 * 3600
@@ -255,8 +297,10 @@ class AdvancedRouteOptimizer:
             time_dimension.CumulVar(routing.Start(v)).SetRange(v_start_sec, v_start_sec)
             time_dimension.CumulVar(routing.End(v)).SetRange(v_start_sec, v_end_sec)
 
-        # 7. Disjunctions: Unused warehouses (0 penalty) vs Deliveries (Differentiated penalty by priority)
-        BASE_DROP_PENALTY = 10000000
+        # 7. Disjunctions: REGRA DE OURO DA DISTRIBUIÇÃO
+        # Clientes distantes são PRIORITÁRIOS. Se faltar tempo ou capacidade,
+        # os clientes que ficam de fora são SEMPRE os mais perto da loja/armazém.
+        BASE_DROP_PENALTY = 5000000
         for node in range(num_nodes):
             if node in starts or node in ends:
                 continue
@@ -265,10 +309,17 @@ class AdvancedRouteOptimizer:
                 if node < num_warehouses:
                     penalty = 0
                 else:
+                    # Distância ao armazém de partida mais próximo
+                    min_depot_dist = min(distance_matrix[d_idx][node] for d_idx in starts) if starts else distance_matrix[0][node]
+                    
+                    # Penalização fortemente proporcional à distância do armazém:
+                    # Um cliente a 80 km tem prioridade esmagadora face a um cliente a 3 km.
+                    # Quanto mais longe, mais penalizante é deixá-lo cair!
+                    dist_priority_factor = 1.0 + ((min_depot_dist / 10.0) ** 1.65)
+                    
                     prio = client_priorities[node] if client_priorities and node < len(client_priorities) else 2
-                    # Priority multiplier: 1 (Alta/Urgente) = 3x, 2 (Normal) = 1.5x, 3+ (Baixa) = 1x
-                    multiplier = 3.0 if prio == 1 else (1.5 if prio == 2 else 1.0)
-                    penalty = int(BASE_DROP_PENALTY * multiplier)
+                    prio_multiplier = 2.0 if prio == 1 else (1.2 if prio == 2 else 1.0)
+                    penalty = int(BASE_DROP_PENALTY * dist_priority_factor * prio_multiplier)
                 routing.AddDisjunction([index], penalty)
 
         # 8. Business Rules & Multi-Tag Matrix Compatibility (VehicleVar)
@@ -298,9 +349,17 @@ class AdvancedRouteOptimizer:
 
         # 9. Search Metaheuristic Parameters
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
-        )
+        if strategy == "clusters":
+            # Clarke & Wright SAVINGS: agrupa paragens que geram maior poupança radial a partir do mais distante
+            search_parameters.first_solution_strategy = (
+                routing_enums_pb2.FirstSolutionStrategy.SAVINGS
+            )
+        else:
+            # Mínimos KM: inserção mais barata direta
+            search_parameters.first_solution_strategy = (
+                routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
+            )
+
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
@@ -353,12 +412,13 @@ class AdvancedRouteOptimizer:
         rules_matrix: Optional[List[Dict[str, Any]]],
         vehicle_max_stops: Optional[List[int]],
         client_service_times: Optional[List[int]],
-        respect_time_windows: bool = True
+        respect_time_windows: bool = True,
+        balance_load: bool = False
     ) -> Dict[str, Any]:
         """
         Multi-Pass Route Squeeze & Pairwise Fusion Engine:
-        1. Absorbs small donor routes into larger compliant routes.
-        2. Fuses pairs of small regional routes into unified trucks.
+        1. Absorbs small donor routes into larger compliant routes (se balance_load for False).
+        2. Fuses pairs of small regional routes into unified trucks (se balance_load for False).
         3. Applies exact 2-opt TSP sequence polishing.
         """
         routes = [list(r) for r in initial_solution.get("routes", [])]
@@ -449,8 +509,8 @@ class AdvancedRouteOptimizer:
                         break
             return best_stops
 
-        # Compression & Fusion Loop
-        changed = True
+        # Compression & Fusion Loop (Apenas ativo quando NÃO se pede balanceamento de frota)
+        changed = not balance_load
         while changed:
             changed = False
             active_indices = [v for v, r in enumerate(routes) if len(r) > 0]

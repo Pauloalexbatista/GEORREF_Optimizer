@@ -91,11 +91,19 @@ export default function DetachedMapPage() {
   };
 
   // Synchronized Filter State (Bidirectional with 1st Screen)
-  const [filters, setFilters] = useState<MapFilterState>({
-    searchQuery: "",
-    selectedWarehouse: "all",
-    statusFilter: "all",
-    selectedRoutes: [],
+  const [filters, setFilters] = useState<MapFilterState>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_active_filters");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+    }
+    return {
+      searchQuery: "",
+      selectedWarehouse: "all",
+      statusFilter: "active",
+      selectedRoutes: [],
+    };
   });
 
   const channelRef = useRef<BroadcastChannel | null>(null);

@@ -288,6 +288,15 @@ export default function TacticalPage() {
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-dismiss do statusMsg após 3.5 segundos para não ficar permanentemente no ecrã
+  useEffect(() => {
+    if (!statusMsg) return;
+    const timer = setTimeout(() => {
+      setStatusMsg("");
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [statusMsg]);
+
   // Accordion state
   const [expandedRoutes, setExpandedRoutes] = useState<Record<string, boolean>>({
     "Por Distribuir": true,
@@ -321,11 +330,11 @@ export default function TacticalPage() {
         if (stored) {
           const st = JSON.parse(stored).statusFilter;
           if (st === "with_cargo") return "active";
-          return st || "all";
+          return st || "active";
         }
       } catch (e) {}
     }
-    return "all";
+    return "active";
   });
 
   const broadcastFilterSync = (q: string, wh: string, st: string) => {
@@ -502,9 +511,9 @@ export default function TacticalPage() {
       setRoutes(loadedRoutes);
       if (solveRes.audit) setAuditData(solveRes.audit);
 
-      const initialExp: Record<string, boolean> = { "Por Distribuir": true };
+      const initialExp: Record<string, boolean> = { "Por Distribuir": false };
       vList.forEach((v: string) => {
-        initialExp[v] = true;
+        initialExp[v] = false;
       });
       setExpandedRoutes(initialExp);
 
@@ -521,7 +530,7 @@ export default function TacticalPage() {
 
   useEffect(() => {
     setSelectedWarehouseFilter("all");
-    setSelectedStatusFilter("all");
+    setSelectedStatusFilter("active");
     setSearchQuery("");
     try {
       localStorage.removeItem("georoute_active_filters");
@@ -587,9 +596,9 @@ export default function TacticalPage() {
       setVehicles(vList2);
       setWarehouses(rawWh2);
 
-      // Expand all routes in the accordion
-      const expState2: Record<string, boolean> = { "Por Distribuir": true };
-      vList2.forEach((v: string) => { expState2[v] = true; });
+      // Default routes to collapsed in the accordion
+      const expState2: Record<string, boolean> = { "Por Distribuir": false };
+      vList2.forEach((v: string) => { expState2[v] = false; });
       setExpandedRoutes(expState2);
 
       // Broadcast to map with fresh data
@@ -949,15 +958,29 @@ export default function TacticalPage() {
     return (groupedRoutes["Por Distribuir"] || []).length > 0;
   }, [groupedRoutes]);
 
-  // Available unique warehouses
+  // Available unique warehouses (Apenas os armazéns que têm carga/rotas atribuídas por defeito)
   const uniqueWarehouseNames = useMemo(() => {
     const names = new Set<string>();
-    warehouses.forEach((w) => names.add(w.name));
-    fleetList.forEach((v) => {
-      if (v.armazem) names.add(v.armazem);
+    routes.forEach((r) => {
+      if (r.Armazem && !isPendingRoute(r.Rota)) {
+        names.add(r.Armazem.trim());
+      }
     });
+    Object.entries(groupedRoutes).forEach(([vName, stops]) => {
+      if (stops.length > 0 && !isPendingRoute(vName)) {
+        const vCfg = vehicleMap[vName];
+        if (vCfg?.armazem) names.add(vCfg.armazem.trim());
+      }
+    });
+    // Fallback se ainda não existirem rotas atribuídas
+    if (names.size === 0) {
+      warehouses.forEach((w) => names.add(w.name));
+      fleetList.forEach((v) => {
+        if (v.armazem) names.add(v.armazem);
+      });
+    }
     return Array.from(names);
-  }, [warehouses, fleetList]);
+  }, [routes, groupedRoutes, vehicleMap, warehouses, fleetList]);
 
   // Hierarchical sort & filter of route keys
   const displayRouteKeys = useMemo(() => {
@@ -1145,257 +1168,300 @@ export default function TacticalPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-5 pb-12">
+      <div className="space-y-2 pb-6">
         {/* TOP HEADER & ACTION CONTROLS */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-zinc-950/60 p-4 rounded-2xl border border-zinc-800 shadow-xl backdrop-blur-md">
-          <div>
-            <div className="flex items-center space-x-3">
-              <span className="w-3 h-3 rounded-full bg-indigo-500 shadow-md shadow-indigo-500/50" />
-              <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
-                Planeamento
+        {/* HEADER COMPACTO & TOOLBAR INTEGRADA (COLADO EM CIMA E À ESQUERDA) */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 shadow-sm">
+          {/* Linha 1: Título Colado à Esquerda + Ações à Direita */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50" />
+              <h1 className="text-base font-bold tracking-tight text-zinc-100 font-sans">
+                Planeamento de Rotas
               </h1>
+              <span className="text-[11px] font-mono bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded border border-zinc-700/60">
+                {globalKpis.totalDeliveries} paragens · {globalKpis.activeVehiclesCount}/{globalKpis.totalVehiclesCount} viaturas ativas
+              </span>
             </div>
-            <p className="text-zinc-600 dark:text-zinc-400 text-xs mt-1">
-              Gestão a toda a largura das paragens, capacidades de carga, janelas horárias e transferências entre viaturas.
-            </p>
-          </div>
 
-          <div className="flex items-center flex-wrap gap-2.5">
-            {/* 2nd Monitor Fullscreen Map Launcher */}
-            <button
-              onClick={handleOpenDetachedMap}
-              className="cursor-pointer bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl px-4 py-2.5 text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center space-x-2 border border-emerald-400/40"
-              title="Abrir o Mapa Dedicado numa janela independente para o 2.º Monitor"
-            >
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-              <span>🖥️ 2.º Monitor — Abrir Mapa Dedicado</span>
-            </button>
-
-
-
-            {/* Config Strategy */}
-            <button
-              onClick={() => setShowConfig(!showConfig)}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-semibold transition-all flex items-center space-x-1.5"
-            >
-              <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span>{t.tactical.settingsBtn}</span>
-            </button>
-
-            {/* Recarregar Frota/Dados */}
-            <button
-              onClick={() => loadTacticalData()}
-              disabled={loading}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-800 text-sky-400 border border-sky-500/40 rounded-xl px-3 py-2 text-xs font-bold transition-all flex items-center space-x-1.5 disabled:opacity-50"
-              title="Recarregar frota, armazens e dados do planeamento a partir da base de dados"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span>{loading ? "A carregar..." : "Recarregar"}</span>
-            </button>
-
-            {/* Re-optimize Selected Routes Subset */}
-            {selectedRouteNames.length >= 2 && (
+            {/* Ações da Toolbar */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {/* Botão Primário: Otimizar Rotas */}
               <button
-                type="button"
-                onClick={() => setReoptimizeModalOpen(true)}
-                disabled={actionLoading === "reoptimizing_subset" || solving}
-                className="cursor-pointer bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-lg shadow-indigo-500/25 transition-all flex items-center space-x-2 animate-in fade-in"
-                title="Re-planear e otimizar conjuntamente apenas as viaturas selecionadas"
+                onClick={handleSolveRoutes}
+                disabled={solving || vehicles.length === 0}
+                className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-md px-3 py-1.5 transition-all flex items-center space-x-1.5 disabled:opacity-50 shadow-sm"
+                title="Executar otimização global OR-Tools VRPTW"
               >
-                <svg className="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
-                <span>Re-otimizar Seleção ({selectedRouteNames.length})</span>
-              </button>
-            )}
-
-            {/* Optimize Sequences TSP */}
-            <button
-              onClick={handleOptimizeAllSequences}
-              disabled={reorderingAll || solving || routes.length === 0}
-              className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-amber-400 border border-amber-500/40 rounded-xl px-3.5 py-2 text-xs font-bold transition-all flex items-center space-x-1.5 disabled:opacity-50"
-              title="Ordena o trajeto mais curto de cada viatura sem alterar as encomendas atribuídas"
-            >
-              <span>{reorderingAll ? "A ordenar..." : `⚡ ${t.tactical.optimizeSequencesBtn}`}</span>
-            </button>
-
-            {/* Global Solve VRP */}
-            <button
-              onClick={handleSolveRoutes}
-              disabled={solving || vehicles.length === 0}
-              className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-indigo-500/20 transition-all flex items-center space-x-2 disabled:opacity-50"
-            >
-              {solving ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  <span>A Otimizar... ({solvingSeconds}s)</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  <span>{t.tactical.optimizeRoutesBtn}</span>
-                </>
-              )}
-            </button>
-
-            {/* AI Copilot Agent Button */}
-            {routes.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setAgentModalOpen(true)}
-                className="cursor-pointer bg-gradient-to-r from-indigo-900/90 to-purple-900/90 hover:from-indigo-800 hover:to-purple-800 text-indigo-200 border border-indigo-500/40 rounded-xl px-3.5 py-2 text-xs font-bold shadow-lg shadow-indigo-950/40 transition-all flex items-center space-x-2"
-                title="Agente Co-Piloto de Tr?fego: Analisar e Resolver 'Por Distribuir'"
-              >
-                <span className="text-sm">??</span>
-                <span>Agente Co-Piloto</span>
-                {routes.some(r => String(r.Rota || "").trim().toLowerCase() === "por distribuir") && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+                {solving ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>A Calcular ({solvingSeconds}s)...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>Otimizar Rotas</span>
+                  </>
                 )}
               </button>
-            )}
 
-            {/* Quality & Audit Status Button */}
-            {routes.length > 0 && (
+              {/* Botão Parâmetros */}
               <button
-                type="button"
-                onClick={() => setAuditModalOpen(true)}
-                className={`cursor-pointer px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 shadow-md border ${
-                  auditData.total_violations === 0
-                    ? "bg-emerald-950/80 hover:bg-emerald-900 border-emerald-600/60 text-emerald-300 shadow-emerald-900/20"
-                    : "bg-rose-950/90 hover:bg-rose-900 border-rose-500 text-rose-200 shadow-rose-900/40 animate-pulse ring-1 ring-rose-500"
+                onClick={() => setShowConfig(!showConfig)}
+                className={`cursor-pointer px-2.5 py-1.5 rounded-md border font-medium transition-colors flex items-center space-x-1.5 ${
+                  showConfig
+                    ? "bg-zinc-800 border-zinc-600 text-zinc-100"
+                    : "bg-zinc-950 hover:bg-zinc-850 border-zinc-800 text-zinc-300"
                 }`}
-                title="Relatório de Auditoria de Qualidade & Inconformidades"
+                title="Ajustar estratégia de agrupamento por zonas e distribuição da frota"
               >
-                <span className={`w-2 h-2 rounded-full ${auditData.total_violations === 0 ? "bg-emerald-400" : "bg-rose-500 animate-ping"}`} />
-                <span>
-                  {auditData.total_violations === 0
-                    ? "✅ 0 Erros (Conforme)"
-                    : `🚨 ${auditData.total_violations} ${auditData.total_violations === 1 ? "Erro" : "Erros"}`}
+                <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Parâmetros</span>
+                <span className="text-[10px] text-zinc-400 font-mono">
+                  ({strategy === "clusters" ? "Zonas" : "Min KM"})
                 </span>
               </button>
-            )}
 
-            {/* Export Excel */}
-            {routes.length > 0 && (
+              {/* Botão 2-Opt */}
               <button
-                type="button"
-                onClick={handleExportExcel}
-                className="cursor-pointer bg-zinc-900 hover:bg-zinc-850 text-emerald-400 border border-emerald-600/40 rounded-xl px-3 py-2 text-xs font-bold transition-all flex items-center space-x-1.5"
-                title="Exportar Folha Excel Completa"
+                onClick={handleOptimizeAllSequences}
+                disabled={reorderingAll || solving || routes.length === 0}
+                className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-md px-2.5 py-1.5 font-medium transition-colors flex items-center space-x-1 disabled:opacity-50"
+                title="Polimento sequencial 2-Opt do trajeto mais curto de cada viatura"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                <span>Exportar Excel</span>
+                <span>{reorderingAll ? "A ordenar..." : "⇅ 2-Opt"}</span>
               </button>
-            )}
+
+              {/* Re-otimizar Seleção */}
+              {selectedRouteNames.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => setReoptimizeModalOpen(true)}
+                  disabled={actionLoading === "reoptimizing_subset" || solving}
+                  className="cursor-pointer bg-zinc-800 hover:bg-zinc-750 text-indigo-300 border border-indigo-500/50 rounded-md px-2.5 py-1.5 font-semibold transition-colors flex items-center space-x-1"
+                  title="Re-planear em conjunto apenas as viaturas selecionadas"
+                >
+                  <span>🎯 Re-otimizar ({selectedRouteNames.length})</span>
+                </button>
+              )}
+
+              <div className="h-4 w-px bg-zinc-800 mx-0.5 hidden sm:block" />
+
+              {/* Status Auditoria */}
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAuditModalOpen(true)}
+                  className={`cursor-pointer px-2.5 py-1.5 rounded-md font-medium transition-colors flex items-center space-x-1.5 border text-xs ${
+                    auditData.total_violations === 0
+                      ? "bg-zinc-950 hover:bg-zinc-850 border-emerald-900 text-emerald-400"
+                      : "bg-rose-950/60 hover:bg-rose-900/60 border-rose-800 text-rose-300"
+                  }`}
+                  title="Relatório de Auditoria e Validação Operacional"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${auditData.total_violations === 0 ? "bg-emerald-400" : "bg-rose-500"}`} />
+                  <span>{auditData.total_violations === 0 ? "Conforme (0 Erros)" : `${auditData.total_violations} Alertas`}</span>
+                </button>
+              )}
+
+              {/* Botão MAPA */}
+              <button
+                onClick={handleOpenDetachedMap}
+                className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-md px-2.5 py-1.5 font-medium transition-colors flex items-center space-x-1"
+                title="Abrir Mapa Dedicado em janela independente"
+              >
+                <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                <span>MAPA</span>
+              </button>
+
+              {/* Exportar Excel */}
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-emerald-400 border border-zinc-800 hover:border-emerald-800/80 rounded-md px-2.5 py-1.5 font-medium transition-colors flex items-center space-x-1"
+                  title="Exportar Folha Excel Canónica Completa (9 Abas)"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>Exportar</span>
+                </button>
+              )}
+
+              {/* Recarregar */}
+              <button
+                onClick={() => loadTacticalData()}
+                disabled={loading}
+                className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-md px-2 py-1.5 transition-colors disabled:opacity-50"
+                title="Recarregar dados"
+              >
+                <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-400" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+
+              {/* Co-Piloto */}
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAgentModalOpen(true)}
+                  className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-md px-2 py-1.5 transition-colors"
+                  title="Assistente Co-Piloto"
+                >
+                  <span className="text-xs">🤖</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* SETTINGS DRAWER / DRAWER OVERLAY */}
+        {/* PAINEL DE PARÂMETROS SÓBRIO & COMPACTO */}
         {showConfig && (
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 shadow-2xl space-y-4 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h3 className="text-sm font-bold text-zinc-100 flex items-center space-x-2">
-                <span>⚙️ Configuração dos Algoritmos de Otimização</span>
-              </h3>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 shadow-xl text-xs space-y-2.5 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
+              <span className="font-semibold text-zinc-100 text-xs flex items-center gap-1.5">
+                <span>⚙️</span> Parâmetros de Otimização das Rotas
+              </span>
               <button
                 onClick={() => setShowConfig(false)}
-                className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1 bg-zinc-900 rounded-lg"
+                className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-0.5 rounded hover:bg-zinc-800 transition-colors"
               >
                 ✕ Fechar
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-
-              {/* Card 1: Agrupadas por Centro de Gravidade */}
-              <div
-                onClick={() => { setStrategy("clusters"); setLoadMode("full"); }}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  strategy !== "min_km"
-                    ? "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
-                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
-                }`}
-              >
-                <p className="font-bold text-zinc-100 mb-1">ðµ Agrupadas por Centro de Gravidade</p>
-                <p className="text-[11px] text-zinc-400">
-                  Começa na entrega mais distante e preenche cada viatura com as entregas da mesma zona geográfica (menor dispersão territorial). Ideal para rotas compactas por bairros ou concelhos.
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+              {/* Estratégia de Trajeto */}
+              <div className="space-y-1 bg-zinc-950/60 p-2 rounded-md border border-zinc-800/80">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                  1. Estratégia de Agrupamento
+                </span>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setStrategy("clusters")}
+                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
+                      strategy === "clusters"
+                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    }`}
+                  >
+                    <div className="font-semibold text-xs text-zinc-100">Rotas Agrupadas por Zonas</div>
+                    <div className="text-[10px] text-zinc-400">Agrupa em torno dos clientes distantes (centro de gravidade). Enche as viaturas na mesma zona geográfica.</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStrategy("min_km")}
+                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
+                      strategy === "min_km"
+                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    }`}
+                  >
+                    <div className="font-semibold text-xs text-zinc-100">Mínimos KM (Menor Distância)</div>
+                    <div className="text-[10px] text-zinc-400">Minimiza estritamente os quilómetros percorridos e consumo total.</div>
+                  </button>
+                </div>
               </div>
 
-              {/* Card 2: Mínimos KM */}
-              <div
-                onClick={() => { setStrategy("min_km"); setLoadMode("full"); }}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  strategy === "min_km"
-                    ? "bg-emerald-950/40 border-emerald-500 shadow-md ring-1 ring-emerald-500"
-                    : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
-                }`}
-              >
-                <p className="font-bold text-zinc-100 mb-1">ð¢ Mínimos KM (Menor Distância Total)</p>
-                <p className="text-[11px] text-zinc-400">
-                  Começa na entrega mais distante e insere as seguintes com o menor acréscimo de quilómetros à rota. Ideal para reduzir combustível e tempo de condução total.
-                </p>
+              {/* Distribuição da Frota */}
+              <div className="space-y-1 bg-zinc-950/60 p-2 rounded-md border border-zinc-800/80">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                  2. Distribuição da Frota
+                </span>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setLoadMode("full")}
+                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
+                      loadMode === "full"
+                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    }`}
+                  >
+                    <div className="font-semibold text-xs text-zinc-100">Minimizar Viaturas (Carga Máxima)</div>
+                    <div className="text-[10px] text-zinc-400">Enche os carros ao máximo da capacidade, sem viaturas subutilizadas na rua.</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoadMode("balanced")}
+                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
+                      loadMode === "balanced"
+                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    }`}
+                  >
+                    <div className="font-semibold text-xs text-zinc-100">Equilibrar Frota (Distribuição Homogénea)</div>
+                    <div className="text-[10px] text-zinc-400">Distribui paragens e carga homogeneamente entre as viaturas disponíveis.</div>
+                  </button>
+                </div>
               </div>
 
-            </div>
-
-            {/* Depth / Computation Time Selector */}
-            <div className="border-t border-zinc-800 pt-3">
-              <label className="text-[11px] font-bold text-zinc-300 block mb-2 uppercase tracking-wider">
-                🧠 Profundidade do Cálculo e Metaheurística (LNS - Large Neighborhood Search):
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div
-                  onClick={() => setSolvingDepth("fast")}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center space-x-2.5 ${
-                    solvingDepth === "fast"
-                      ? "bg-amber-950/40 border-amber-500 text-amber-200 ring-1 ring-amber-500"
-                      : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                  }`}
-                >
-                  <span className="text-base">⚡</span>
-                  <div>
-                    <p className="font-bold text-xs">Modo Rápido (~30 seg)</p>
-                    <p className="text-[10px] opacity-80">Heurística rápida para validação e rascunho.</p>
+              {/* Tempo & Profundidade */}
+              <div className="space-y-1 bg-zinc-950/60 p-2 rounded-md border border-zinc-800/80">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                  3. Tempo & Profundidade
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="grid grid-cols-3 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSolvingDepth("fast")}
+                      className={`px-2 py-1.5 rounded border text-center transition-colors ${
+                        solvingDepth === "fast"
+                          ? "bg-zinc-800 border-indigo-500 text-indigo-100 font-bold"
+                          : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">Rápido</div>
+                      <div className="text-[9px] text-zinc-400">~30 seg</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSolvingDepth("balanced")}
+                      className={`px-2 py-1.5 rounded border text-center transition-colors ${
+                        solvingDepth === "balanced"
+                          ? "bg-zinc-800 border-indigo-500 text-indigo-100 font-bold"
+                          : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">Equilibrado</div>
+                      <div className="text-[9px] text-zinc-400">1 a 2 min</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSolvingDepth("deep")}
+                      className={`px-2 py-1.5 rounded border text-center transition-colors ${
+                        solvingDepth === "deep"
+                          ? "bg-zinc-800 border-indigo-500 text-indigo-100 font-bold"
+                          : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">Profundo</div>
+                      <div className="text-[9px] text-zinc-400">3 a 5 min</div>
+                    </button>
                   </div>
-                </div>
 
-                <div
-                  onClick={() => setSolvingDepth("balanced")}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center space-x-2.5 ${
-                    solvingDepth === "balanced"
-                      ? "bg-indigo-950/40 border-indigo-500 text-indigo-200 ring-1 ring-indigo-500"
-                      : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                  }`}
-                >
-                  <span className="text-base">⚖️</span>
-                  <div>
-                    <p className="font-bold text-xs">Modo Equilibrado (1 a 2 min)</p>
-                    <p className="text-[10px] opacity-80">Decomposição Polar + 600 iterações LNS.</p>
-                  </div>
-                </div>
-
-                <div
-                  onClick={() => setSolvingDepth("deep")}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center space-x-2.5 ${
-                    solvingDepth === "deep"
-                      ? "bg-emerald-950/40 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500"
-                      : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                  }`}
-                >
-                  <span className="text-base">🧠</span>
-                  <div>
-                    <p className="font-bold text-xs">Produção Profunda (3 a 5 min)</p>
-                    <p className="text-[10px] opacity-80">2.500+ iterações LNS para 200+ clientes sem sobreposições.</p>
+                  <div className="pt-1 flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="respectWindowsCheck"
+                      checked={respectWindows}
+                      onChange={(e) => setRespectWindows(e.target.checked)}
+                      className="rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-0 cursor-pointer"
+                    />
+                    <label htmlFor="respectWindowsCheck" className="text-[11px] text-zinc-200 cursor-pointer select-none font-medium">
+                      Respeitar janelas horárias estritas
+                    </label>
                   </div>
                 </div>
               </div>
@@ -1403,184 +1469,162 @@ export default function TacticalPage() {
           </div>
         )}
 
-        {/* GLOBAL KPI DASHBOARD CARDS */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Total de Paragens
-            </span>
-            <div className="flex items-baseline space-x-2 mt-1">
-              <span className="text-xl font-black text-zinc-100">{globalKpis.totalDeliveries}</span>
-              <span className="text-[11px] text-emerald-400 font-semibold">
-                ({globalKpis.assignedCount} atribuídas)
-              </span>
+        {/* BLOCO TOTALMENTE INTEGRADO: MÉTRICAS + FILTROS + MATRIZ DE ROTAS (COLADOS SEM FOLGA) */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl overflow-hidden">
+          {/* Linha 1: Barra de Métricas Contínua */}
+          <div className="px-3 py-1.5 flex flex-wrap items-center justify-between gap-y-1 text-xs font-mono tabular-nums border-b border-zinc-800/80 bg-zinc-900/95">
+            {/* Paragens */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">Paragens:</span>
+              <span className="text-zinc-100 font-bold">{globalKpis.totalDeliveries}</span>
+              <span className="text-emerald-400 text-[11px]">({globalKpis.assignedCount} atrib.)</span>
+              {globalKpis.pendingCount > 0 && (
+                <span className="text-amber-400 font-bold text-[11px]">| {globalKpis.pendingCount} pendentes</span>
+              )}
             </div>
-            {globalKpis.pendingCount > 0 && (
-              <span className="text-[10px] text-amber-400 font-bold block mt-0.5">
-                ⚠️ {globalKpis.pendingCount} por distribuir
-              </span>
-            )}
-          </div>
 
-          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Distância Total Prevista
-            </span>
-            <div className="flex items-baseline space-x-1.5 mt-1">
-              <span className="text-xl font-black text-indigo-400">{globalKpis.totalKm}</span>
-              <span className="text-xs text-zinc-400 font-bold">km</span>
+            <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
+
+            {/* Distância */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">Distância:</span>
+              <span className="text-indigo-300 font-bold">{globalKpis.totalKm}</span>
+              <span className="text-zinc-400 text-[11px]">km</span>
             </div>
-            <span className="text-[10px] text-zinc-400 mt-0.5 block">
-              Inclui regresso à base
-            </span>
-          </div>
 
-          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Utilização da Frota
-            </span>
-            <div className="flex items-baseline space-x-1.5 mt-1">
-              <span className="text-xl font-black text-emerald-400">{globalKpis.activeVehiclesCount}</span>
-              <span className="text-xs text-zinc-400">/ {globalKpis.totalVehiclesCount} viaturas</span>
+            <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
+
+            {/* Frota */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">Frota:</span>
+              <span className="text-emerald-400 font-bold">{globalKpis.activeVehiclesCount}</span>
+              <span className="text-zinc-400 text-[11px]">/ {globalKpis.totalVehiclesCount} viaturas</span>
+              <span className="text-zinc-500 text-[10px]">({globalKpis.totalVehiclesCount - globalKpis.activeVehiclesCount} livres)</span>
             </div>
-            <span className="text-[10px] text-zinc-400 mt-0.5 block">
-              {globalKpis.totalVehiclesCount - globalKpis.activeVehiclesCount} viaturas livres
-            </span>
-          </div>
 
-          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Carga Global
-            </span>
-            <div className="flex items-baseline space-x-1.5 mt-1">
-              <span className="text-xl font-black text-violet-400">{globalKpis.totalKg}</span>
-              <span className="text-xs text-zinc-400 font-bold">kg</span>
+            <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
+
+            {/* Carga Total */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">Carga Total:</span>
+              <span className="text-zinc-100 font-bold">{Number(globalKpis.totalKg).toLocaleString("pt-PT")}</span>
+              <span className="text-zinc-400 text-[11px]">kg</span>
             </div>
-            <span className="text-[10px] text-zinc-400 mt-0.5 block">
-              Distribuída pelas rotas ativas
-            </span>
-          </div>
 
-          <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3.5 shadow-md">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Pontualidade / Janelas
-            </span>
-            <div className="flex items-baseline space-x-1.5 mt-1">
-              <span className={`text-xl font-black ${globalKpis.onTimeRate >= 95 ? "text-emerald-400" : "text-amber-400"}`}>
+            <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
+
+            {/* Pontualidade */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">Pontualidade:</span>
+              <span className={`font-bold ${globalKpis.onTimeRate >= 95 ? "text-emerald-400" : "text-amber-400"}`}>
                 {globalKpis.onTimeRate}%
               </span>
-              <span className="text-xs text-zinc-400">no horário</span>
-            </div>
-            {globalKpis.totalLate > 0 ? (
-              <span className="text-[10px] text-rose-400 font-bold block mt-0.5">
-                🚨 {globalKpis.totalLate} paragens em atraso
-              </span>
-            ) : (
-              <span className="text-[10px] text-emerald-400 block mt-0.5">
-                ✓ Sem atrasos previstos
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* ADVANCED FILTER & SEARCH TOOLBAR */}
-        <div className="bg-zinc-900/80 border border-zinc-800 p-3.5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg">
-          <div className="flex items-center flex-wrap gap-2.5 flex-1">
-            {/* Text Search */}
-            <div className="relative min-w-[240px] max-w-sm flex-1">
-              <input
-                type="text"
-                placeholder="Pesquisar cliente, código, morada, CP..."
-                value={searchQuery}
-                onChange={(e) => { const v = e.target.value; setSearchQuery(v); broadcastFilterSync(v, selectedWarehouseFilter, selectedStatusFilter); }}
-                className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-zinc-200 outline-none placeholder-zinc-500 transition-all pl-9"
-              />
-              <svg className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              {searchQuery && (
-                <button
-                  onClick={() => { setSearchQuery(""); broadcastFilterSync("", selectedWarehouseFilter, selectedStatusFilter); }}
-                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-200 text-xs"
-                >
-                  ✕
-                </button>
+              {globalKpis.totalLate > 0 ? (
+                <span className="text-rose-400 text-[11px]">({globalKpis.totalLate} atrasos)</span>
+              ) : (
+                <span className="text-emerald-500 text-[11px] font-sans">✓</span>
               )}
             </div>
+          </div>
 
-            {/* Warehouse Filter */}
-            {uniqueWarehouseNames.length > 0 && (
-              <select
-                value={selectedWarehouseFilter}
-                onChange={(e) => { const v = e.target.value; setSelectedWarehouseFilter(v); broadcastFilterSync(searchQuery, v, selectedStatusFilter); }}
-                className="bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500 cursor-pointer"
-              >
-                <option value="all">🏠 Todos os Armazéns ({uniqueWarehouseNames.length})</option>
-                {uniqueWarehouseNames.map((w) => (
-                  <option key={w} value={w}>
-                    🏠 {w}
-                  </option>
-                ))}
-              </select>
-            )}
+          {/* Linha 2: Barra de Pesquisa e Filtros (Colada às Métricas e à Tabela) */}
+          <div className="p-2 flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs bg-zinc-950/70">
+            <div className="flex items-center flex-wrap gap-2 flex-1">
+              {/* Text Search */}
+              <div className="relative min-w-[200px] max-w-sm flex-1">
+                <input
+                  type="text"
+                  placeholder="Pesquisar cliente, código, morada, CP..."
+                  value={searchQuery}
+                  onChange={(e) => { const v = e.target.value; setSearchQuery(v); broadcastFilterSync(v, selectedWarehouseFilter, selectedStatusFilter); }}
+                  className="w-full bg-zinc-900 border border-zinc-800 focus:border-indigo-500 rounded px-2.5 py-1 text-xs text-zinc-200 outline-none placeholder-zinc-500 transition-all pl-7"
+                />
+                <svg className="w-3.5 h-3.5 text-zinc-500 absolute left-2 top-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {searchQuery && (
+                  <button
+                    onClick={() => { setSearchQuery(""); broadcastFilterSync("", selectedWarehouseFilter, selectedStatusFilter); }}
+                    className="absolute right-1.5 top-1 text-zinc-400 hover:text-zinc-200 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
 
-            {/* Vehicle Status Filter */}
-            <div className="flex items-center space-x-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[11px] font-semibold">
-              <button
-                onClick={() => { setSelectedStatusFilter("all"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "all"); }}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                  selectedStatusFilter === "all" ? "bg-indigo-600 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                Todos ({vehicles.length})
-              </button>
-              <button
-                onClick={() => { setSelectedStatusFilter("active"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "active"); }}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                  selectedStatusFilter === "active" ? "bg-emerald-600 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                🚚 Com Carga ({globalKpis.activeVehiclesCount})
-              </button>
-              <button
-                onClick={() => { setSelectedStatusFilter("empty"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "empty"); }}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                  selectedStatusFilter === "empty" ? "bg-zinc-800 text-zinc-200 shadow-sm" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                ⚪ Vazias ({globalKpis.totalVehiclesCount - globalKpis.activeVehiclesCount})
-              </button>
-              {hasPending && (
+              {/* Warehouse Filter */}
+              {uniqueWarehouseNames.length > 0 && (
+                <select
+                  value={selectedWarehouseFilter}
+                  onChange={(e) => { const v = e.target.value; setSelectedWarehouseFilter(v); broadcastFilterSync(searchQuery, v, selectedStatusFilter); }}
+                  className="bg-zinc-900 border border-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all">🏠 Todos os Armazéns ({uniqueWarehouseNames.length})</option>
+                  {uniqueWarehouseNames.map((w) => (
+                    <option key={w} value={w}>
+                      🏠 {w}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Status Filter */}
+              <div className="flex items-center space-x-1 bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px] font-medium">
                 <button
-                  onClick={() => { setSelectedStatusFilter("pending"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "pending"); }}
-                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                    selectedStatusFilter === "pending" ? "bg-amber-600 text-white shadow-sm" : "text-amber-400 hover:text-amber-300"
+                  onClick={() => { setSelectedStatusFilter("all"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "all"); }}
+                  className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                    selectedStatusFilter === "all" ? "bg-zinc-800 text-zinc-100 font-semibold" : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
-                  ⚠️ Por Distribuir ({globalKpis.pendingCount})
+                  Todos ({vehicles.length})
                 </button>
-              )}
+                <button
+                  onClick={() => { setSelectedStatusFilter("active"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "active"); }}
+                  className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                    selectedStatusFilter === "active" ? "bg-emerald-950 border border-emerald-800 text-emerald-300 font-semibold" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Com Carga ({globalKpis.activeVehiclesCount})
+                </button>
+                <button
+                  onClick={() => { setSelectedStatusFilter("empty"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "empty"); }}
+                  className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                    selectedStatusFilter === "empty" ? "bg-zinc-800 text-zinc-300 font-semibold" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Vazias ({globalKpis.totalVehiclesCount - globalKpis.activeVehiclesCount})
+                </button>
+                {hasPending && (
+                  <button
+                    onClick={() => { setSelectedStatusFilter("pending"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "pending"); }}
+                    className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                      selectedStatusFilter === "pending" ? "bg-amber-950 border border-amber-800 text-amber-300 font-semibold" : "text-amber-400 hover:text-amber-300"
+                    }`}
+                  >
+                    Por Distribuir ({globalKpis.pendingCount})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-1.5">
+              <button
+                onClick={() => toggleAllRoutes(true)}
+                className="px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded text-xs transition-colors cursor-pointer"
+              >
+                ▼ Expandir
+              </button>
+              <button
+                onClick={() => toggleAllRoutes(false)}
+                className="px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded text-xs transition-colors cursor-pointer"
+              >
+                ▲ Colapsar
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => toggleAllRoutes(true)}
-              className="px-2.5 py-1.5 bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-            >
-              ▼ Expandir Todos
-            </button>
-            <button
-              onClick={() => toggleAllRoutes(false)}
-              className="px-2.5 py-1.5 bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-            >
-              ▲ Colapsar Todos
-            </button>
-          </div>
-        </div>
-
-        {/* MAIN FULL-WIDTH ROUTES MATRIX: EXCEL DATA GRID TABLE */}
-        <div className="border border-zinc-800 rounded-2xl overflow-hidden bg-zinc-950/90 shadow-2xl">
+          {/* MAIN FULL-WIDTH ROUTES MATRIX: EXCEL DATA GRID TABLE (COLADA DIRETAMENTE ACIMA SEM QUALQUER INTERVALO) */}
+          <div className="overflow-hidden bg-zinc-950/90 border-t border-zinc-800">
           {displayRouteKeys.length === 0 ? (
             <div className="p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-xl bg-zinc-800/80 flex items-center justify-center mx-auto text-zinc-500">
@@ -1886,7 +1930,7 @@ export default function TacticalPage() {
                                     e.stopPropagation();
                                     setAuditModalOpen(true);
                                   }}
-                                  className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-600 hover:bg-rose-500 text-white shadow flex items-center justify-center gap-1 cursor-pointer mx-auto animate-pulse"
+                                  className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-600 hover:bg-rose-500 text-white shadow flex items-center justify-center gap-1 cursor-pointer mx-auto"
                                   title="Clique para ver relatório detalhado de erros"
                                 >
                                   🚨 {routeAudit.violations_count} {routeAudit.violations_count === 1 ? "Erro" : "Erros"}
@@ -2213,6 +2257,7 @@ export default function TacticalPage() {
             </div>
           )}
         </div>
+      </div>
         {/* Quality Audit Modal */}
         <AgentChatDrawer
           isOpen={agentModalOpen}
@@ -2240,12 +2285,18 @@ export default function TacticalPage() {
           onConfirm={handleReoptimizeSelected}
         />
 
-        {/* Floating Status Toast Notification */}
+        {/* Floating Status Toast Notification (Sóbrio, alto contraste, sem piscar) */}
         {statusMsg && (
-          <div className="fixed top-5 right-5 z-[99999] bg-indigo-950/95 border-2 border-indigo-500/80 text-white px-5 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center space-x-3 animate-in fade-in slide-in-from-top-4">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-xs font-bold">{statusMsg}</span>
-            <button onClick={() => setStatusMsg("")} className="text-zinc-400 hover:text-white text-xs font-black ml-2 cursor-pointer">✕</button>
+          <div className="fixed top-4 right-4 z-[99999] bg-zinc-900 border border-zinc-700 text-zinc-100 px-3.5 py-2 rounded-lg shadow-2xl flex items-center space-x-2.5 text-xs font-medium animate-in fade-in duration-150">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span className="text-zinc-200">{statusMsg}</span>
+            <button
+              onClick={() => setStatusMsg("")}
+              className="text-zinc-400 hover:text-white text-xs ml-2 cursor-pointer p-0.5 rounded hover:bg-zinc-800 transition-colors"
+              title="Fechar"
+            >
+              ✕
+            </button>
           </div>
         )}
 

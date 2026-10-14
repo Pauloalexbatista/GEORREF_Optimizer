@@ -28,6 +28,8 @@ interface MapClient {
   Chegada?: string;
   Saida?: string;
   Peso_KG?: number;
+  KM_Anterior?: number;
+  Dist_Acum?: number;
   Volume_m3?: number;
   Volume_M3?: number;
   Carga_Acum?: number;
@@ -86,6 +88,30 @@ function formatTimeWindow(winStr?: string): string {
     if (parts[0]) return `${parts[0]} - 23:59`;
   }
   return cleaned.slice(0, 13) || "Qualquer";
+}
+
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371.0;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
+  const parts = (timeStr || "08:00").split(":");
+  const h = parseInt(parts[0], 10) || 8;
+  const m = parseInt(parts[1], 10) || 0;
+  const totalMins = h * 60 + m + Math.round(minutesToAdd);
+  const newH = Math.floor(totalMins / 60) % 24;
+  const newM = totalMins % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
 }
 
 function normRouteName(name: string): string {
@@ -362,8 +388,8 @@ export default function MapComponent({
   const [searchQuery, setSearchQuery] = useState(filterState?.searchQuery || "");
   const [selectedWarehouse, setSelectedWarehouse] = useState(filterState?.selectedWarehouse || "all");
   const [statusFilter, setStatusFilter] = useState<"all" | "with_cargo" | "empty" | "pending" | "late">(() => {
-    if (filterState?.statusFilter === "active") return "with_cargo";
-    return (filterState?.statusFilter as any) || "all";
+    if (filterState?.statusFilter === "active" || filterState?.statusFilter === "with_cargo") return "with_cargo";
+    return (filterState?.statusFilter as any) || "with_cargo";
   });
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>(filterState?.selectedRoutes || []);
   const [isRoutesPanelOpen, setIsRoutesPanelOpen] = useState<boolean>(true);
@@ -607,8 +633,27 @@ export default function MapComponent({
     return true;
   };
 
-  // Extract unique warehouses
+  // Set of warehouses that currently have cargo / assigned routes
+  const warehousesWithCargo = useMemo(() => {
+    const set = new Set<string>();
+    clients.forEach(c => {
+      if (!isPendingRoute(c.Rota) && c.Armazem && c.Armazem !== "N/A") {
+        set.add(c.Armazem.trim());
+      }
+    });
+    fleet.forEach(f => {
+      if (f.armazem && f.armazem !== "N/A" && clients.some(c => routesMatch(c.Rota, f.veiculo))) {
+        set.add(f.armazem.trim());
+      }
+    });
+    return set;
+  }, [clients, fleet]);
+
+  // Extract unique warehouses (Apenas os armazéns que têm carga por defeito)
   const warehouseOptions = useMemo(() => {
+    if (statusFilter === "with_cargo" && warehousesWithCargo.size > 0) {
+      return Array.from(warehousesWithCargo);
+    }
     const set = new Set<string>();
     warehouses.forEach(w => {
       if (w.name) set.add(w.name);
@@ -620,7 +665,7 @@ export default function MapComponent({
       if (f.armazem && f.armazem !== "N/A") set.add(f.armazem);
     });
     return Array.from(set);
-  }, [warehouses, clients, fleet]);
+  }, [warehouses, clients, fleet, statusFilter, warehousesWithCargo]);
 
   // List of vehicles scoped to the currently selected warehouse, dynamically including all routes present in clients
   const warehouseVehicles = useMemo(() => {
@@ -1076,12 +1121,32 @@ export default function MapComponent({
                 const count = vClients.length;
                 const totalKg = Math.round(vClients.reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0));
 
+                const sortedStops = [...vClients].sort((a, b) => (Number(a.Ordem) || 0) - (Number(b.Ordem) || 0));
+                const vConfig = fleet.find(f => routesMatch(f.veiculo, v));
+                const startTimeStr = vConfig?.horario_inicio || "08:00";
+                const speed = Number(vConfig?.velocidade_media) || 50.0;
+
+                let totalRouteKm = 0.0;
+                let returnArrivalTimeStr = startTimeStr;
+                if (sortedStops.length > 0) {
+                  const lastStop = sortedStops[sortedStops.length - 1];
+                  const whName = lastStop.Armazem || vConfig?.armazem;
+                  const whObj = warehouses.find(w => w.name === whName) || warehouses[0];
+                  let returnDist = 0.0;
+                  if (whObj && lastStop.Latitude && lastStop.Longitude && whObj.lat && whObj.lon) {
+                    returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whObj.lat, whObj.lon);
+                  }
+                  totalRouteKm = (Number(lastStop.Dist_Acum) || 0) + returnDist;
+                  const returnTravelMin = (returnDist / speed) * 60.0;
+                  returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || lastStop.Chegada || "12:00", returnTravelMin);
+                }
+
                 return (
                   <button
                     key={v}
                     onClick={(e) => toggleRouteFilter(v, e)}
                     title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
-                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-between cursor-pointer border ${
+                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex flex-col gap-1 cursor-pointer border ${
                       isExclusive
                         ? "bg-indigo-600 text-white border-indigo-500 shadow-md ring-2 ring-indigo-400/80"
                         : isSelected
@@ -1089,34 +1154,58 @@ export default function MapComponent({
                         : "bg-transparent text-zinc-400 dark:text-zinc-500 border-transparent opacity-40 hover:opacity-100 hover:bg-zinc-100 dark:hover:bg-zinc-900/50"
                     }`}
                   >
-                    {/* Color dot + Vehicle name */}
-                    <div className="flex items-center space-x-2 flex-1 min-w-0 pr-1 text-left">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ring-1 ring-black/20"
-                        style={{ backgroundColor: routeColor }}
-                      />
-                      <span className="truncate font-bold text-[11px]">{v}</span>
+                    {/* Linha 1: Viatura + Badge de Paragens + Carga */}
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center space-x-2 flex-1 min-w-0 pr-1 text-left">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ring-1 ring-black/20"
+                          style={{ backgroundColor: routeColor }}
+                        />
+                        <span className={`truncate font-bold text-[11px] ${isExclusive ? "text-white" : ""}`}>
+                          {v}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        {/* Delivery count pill - Sempre legível com alto contraste */}
+                        <span
+                          className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                            count > 0
+                              ? isExclusive
+                                ? "bg-zinc-950 text-white border-zinc-700 shadow-xs"
+                                : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
+                              : "bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-600 dark:border-zinc-800"
+                          }`}
+                        >
+                          {count}
+                        </span>
+
+                        {/* Cargo kg */}
+                        <span className={`w-14 text-right font-mono text-[10px] ${
+                          isExclusive ? "text-indigo-100 font-bold" : "text-zinc-500 dark:text-zinc-400"
+                        }`}>
+                          {count > 0 ? `${totalKg.toLocaleString()}k` : "—"}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Delivery count pill */}
-                    <div className="w-12 flex justify-center">
-                      <span
-                        className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
-                          count > 0
-                            ? isExclusive
-                              ? "bg-white text-indigo-950 border-white/80"
-                              : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
-                            : "bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-600 dark:border-zinc-800"
-                        }`}
-                      >
-                        {count}
-                      </span>
-                    </div>
-
-                    {/* Cargo kg */}
-                    <div className="w-14 text-right font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
-                      {count > 0 ? `${totalKg.toLocaleString()}k` : "—"}
-                    </div>
+                    {/* Linha 2: KM da rota e Horário de saída e chegada ao armazém */}
+                    {count > 0 && (
+                      <div className={`flex items-center justify-between text-[10px] font-mono px-1.5 py-0.5 rounded w-full ${
+                        isExclusive
+                          ? "bg-indigo-700/80 text-indigo-100 border border-indigo-500/40"
+                          : "bg-zinc-100/70 dark:bg-zinc-850/70 text-zinc-500 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50"
+                      }`}>
+                        <span className="flex items-center space-x-1">
+                          <span>🏁</span>
+                          <span className="font-bold">{totalRouteKm > 0 ? `${totalRouteKm.toFixed(1)} km` : "—"}</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span>🕒</span>
+                          <span>{startTimeStr} → {returnArrivalTimeStr}</span>
+                        </span>
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -1151,8 +1240,15 @@ export default function MapComponent({
         )}
       </div>
 
+      <style jsx global>{`
+        .pale-map-tile {
+          filter: saturate(30%) brightness(105%) contrast(92%) !important;
+        }
+      `}</style>
+
       <MapContainer key={mapLayer} center={center} zoom={11} className="w-full h-full">
         <TileLayer
+          className={mapLayer === "standard" || !mapLayer ? "pale-map-tile" : ""}
           attribution={
             mapLayer === "google_sat"
               ? '&copy; Google Satellite'
@@ -1172,20 +1268,30 @@ export default function MapComponent({
         <MapBoundsFitter triggerKey={fitTrigger} points={visiblePoints} />
         <MapTracker setZoom={setZoomLevel} />
 
-        {/* Warehouses */}
-        {warehouses.map(wh => (
-          <Marker key={wh.name} position={[wh.lat, wh.lon]} icon={getWarehouseIcon(zoomLevel)}>
-            <Popup>
-              <div className="text-zinc-900 p-1 font-sans">
-                <p className="font-bold text-xs flex items-center space-x-1">
-                  <span>🏠</span> <span>{wh.name}</span>
-                </p>
-                <p className="text-[10px] text-zinc-600 mt-0.5 font-medium">Armazém / Centro de Distribuição</p>
-                <p className="text-[9px] text-zinc-600 mt-1 font-mono">{wh.address}</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {/* Warehouses (Apenas armazéns com carga por defeito) */}
+        {warehouses
+          .filter(wh => {
+            if (statusFilter === "with_cargo" && warehousesWithCargo.size > 0) {
+              return warehousesWithCargo.has(wh.name);
+            }
+            if (selectedWarehouse && selectedWarehouse !== "all") {
+              return wh.name === selectedWarehouse;
+            }
+            return true;
+          })
+          .map(wh => (
+            <Marker key={wh.name} position={[wh.lat, wh.lon]} icon={getWarehouseIcon(zoomLevel)}>
+              <Popup>
+                <div className="text-zinc-900 p-1 font-sans">
+                  <p className="font-bold text-xs flex items-center space-x-1">
+                    <span>🏠</span> <span>{wh.name}</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-600 mt-0.5 font-medium">Armazém / Centro de Distribuição</p>
+                  <p className="text-[9px] text-zinc-600 mt-1 font-mono">{wh.address}</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
 
         {/* Visible Clients */}
         {visibleClients.map((c, idx) => {

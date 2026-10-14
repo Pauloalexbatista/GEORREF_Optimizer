@@ -1322,6 +1322,9 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                         if raw_routes is not None:
                             df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
                             if not df_routes.empty:
+                                for col in ["Latitude", "Longitude", "latitude", "longitude"]:
+                                    if col in df_routes.columns:
+                                        df_routes[col] = pd.to_numeric(df_routes[col], errors="coerce").fillna(0.0).astype(float)
                                 c_idx = []
                                 if "id" in df_routes.columns:
                                     c_idx = df_routes[df_routes["id"] == delivery_id].index
@@ -1370,6 +1373,9 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                                 if raw_clients is not None:
                                     df_c = raw_clients if isinstance(raw_clients, pd.DataFrame) else pd.DataFrame(raw_clients)
                                     if not df_c.empty:
+                                        for ccol in ["Latitude", "Longitude", "latitude", "longitude"]:
+                                            if ccol in df_c.columns:
+                                                df_c[ccol] = pd.to_numeric(df_c[ccol], errors="coerce").fillna(0.0).astype(float)
                                         c_c_idx = []
                                         if "id" in df_c.columns:
                                             c_c_idx = df_c[df_c["id"] == delivery_id].index
@@ -1788,6 +1794,9 @@ def delete_delivery(delivery_id: int, current_user: UserResponse = Depends(get_c
                                 if raw_clients is not None:
                                     df_c = raw_clients if isinstance(raw_clients, pd.DataFrame) else pd.DataFrame(raw_clients)
                                     if not df_c.empty:
+                                        for ccol in ["Latitude", "Longitude", "latitude", "longitude"]:
+                                            if ccol in df_c.columns:
+                                                df_c[ccol] = pd.to_numeric(df_c[ccol], errors="coerce").fillna(0.0).astype(float)
                                         c_c_idx = []
                                         if "id" in df_c.columns:
                                             c_c_idx = df_c[df_c["id"] == delivery_id].index

@@ -960,6 +960,19 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
     if raw_routes is not None:
         df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
         if not df_r.empty:
+            df_r = df_r.copy()
+            # Assegurar que as colunas de coordenadas e pesos são float para evitar 'Invalid value for dtype int64'
+            for col in ["Latitude", "Longitude", "latitude", "longitude", "Peso_KG", "Volume_m3", "KM_Anterior", "Dist_Acum"]:
+                if col not in df_r.columns:
+                    df_r[col] = 0.0
+                else:
+                    df_r[col] = pd.to_numeric(df_r[col], errors="coerce").fillna(0.0).astype(float)
+            for str_col in ["Morada", "CP", "Localidade", "Nome_Cliente", "Rota", "Cliente", "Doc_ID", "Codigo_Cliente"]:
+                if str_col not in df_r.columns:
+                    df_r[str_col] = ""
+                else:
+                    df_r[str_col] = df_r[str_col].fillna("").astype(str)
+
             # Sync fresh live coordinates and delivery data from database into df_r
             for idx, r in df_r.iterrows():
                 d_id = str(r.get("id") or r.get("ID_Original") or "").strip().upper()
