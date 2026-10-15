@@ -384,11 +384,16 @@ def criar_utilizador(empresa_id, nome, email, password, is_admin=False):
 
 
 def get_utilizador(email):
-    """Obter utilizador por email"""
+    """Obter utilizador por email ou alias de login"""
+    clean_val = str(email or '').strip().lower()
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM utilizadores WHERE LOWER(email) = LOWER(?)", (email.strip(),))
-        return cursor.fetchone()
+        cursor.execute("SELECT * FROM utilizadores WHERE LOWER(email) = ?", (clean_val,))
+        row = cursor.fetchone()
+        if not row and clean_val in ['admin', 'administrador', 'admin@georoute.com', 'admin@georoute.pt', 'paulo', 'paulo batista']:
+            cursor.execute("SELECT * FROM utilizadores WHERE email = 'pauloalexbatista@gmail.com'")
+            row = cursor.fetchone()
+        return row
 
 
 def get_utilizador_por_id(utilizador_id):
