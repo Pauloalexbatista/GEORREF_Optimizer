@@ -175,6 +175,71 @@ function calculateDurationString(startStr: string, endStr: string): string {
   return `${hours}h ${mins > 0 ? `${mins}m` : ""}`;
 }
 
+function extractTags(raw: string): string[] {
+  if (!raw) return [];
+  const bracketed = raw.match(/\[([^\]]+)\]/g);
+  if (bracketed && bracketed.length > 0) {
+    const res: string[] = [];
+    bracketed.forEach((b) => {
+      const inner = b.slice(1, -1).trim();
+      inner.split(/[,;|\s]+/).forEach((t) => {
+        if (t.trim()) res.push(t.trim().toUpperCase());
+      });
+    });
+    return res;
+  }
+  return raw.split(/[,;|]+/).map((t) => t.trim().toUpperCase()).filter(Boolean);
+}
+
+function isVehicleCompatibleFrontend(vRulesStr: string, cRulesStr: string, rulesMatrix: any[]): boolean {
+  if (!rulesMatrix || rulesMatrix.length === 0) return true;
+  const cTags = extractTags(cRulesStr);
+  if (cTags.length === 0) return true;
+  const vTags = extractTags(vRulesStr);
+
+  const prohibitions = new Set<string>();
+  const permissions = new Set<string>();
+  const configuredDeliveryTags = new Set<string>();
+
+  rulesMatrix.forEach((r) => {
+    const tv = String(r.Tag_Veiculo || r.tag_veiculo || "").trim().toUpperCase();
+    const perm = String(r.Permissao || r.permissao || "SIM").trim().toUpperCase();
+    const td = String(r.Tag_Entrega || r.tag_entrega || "").trim().toUpperCase();
+    if (!tv || !td) return;
+
+    configuredDeliveryTags.add(td);
+    if (["NAO", "NÃO", "NO", "PROIBIR", "FALSE", "0"].includes(perm)) {
+      prohibitions.add(`${tv}|${td}`);
+    } else {
+      permissions.add(`${tv}|${td}`);
+    }
+  });
+
+  // 1. Proibições Rígidas (NAO)
+  for (const vt of vTags) {
+    for (const dt of cTags) {
+      if (prohibitions.has(`${vt}|${dt}`)) return false;
+    }
+  }
+
+  // 2. Obrigatoriedades para tags configuradas na matriz de regras
+  for (const dt of cTags) {
+    if (!configuredDeliveryTags.has(dt)) continue;
+    let matched = vTags.includes(dt);
+    if (!matched) {
+      for (const vt of vTags) {
+        if (permissions.has(`${vt}|${dt}`)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) return false;
+  }
+
+  return true;
+}
+
 export default function TacticalPage() {
   const { t } = useI18n();
   const { selectedProject } = useProjects();
@@ -183,6 +248,7 @@ export default function TacticalPage() {
   const [fleetList, setFleetList] = useState<VehicleData[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [rulesMatrix, setRulesMatrix] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [sortField, setSortField] = useState<"name" | "warehouse" | "stops" | "km" | "weight_pct" | "vol_pct" | "time">("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -499,6 +565,7 @@ export default function TacticalPage() {
       setFleetList(rawFleet);
       setVehicles(vList);
       setWarehouses(rawWh);
+      setRulesMatrix(fleetRes.rules_matrix || []);
 
       const delivRes = await apiRequest(`/api/geocoding/${selectedProject.id}`);
       setDeliveries(delivRes || []);
@@ -595,6 +662,7 @@ export default function TacticalPage() {
       setFleetList(rawFleet2);
       setVehicles(vList2);
       setWarehouses(rawWh2);
+      setRulesMatrix(fleetRes2.rules_matrix || []);
 
       // Default routes to collapsed in the accordion
       const expState2: Record<string, boolean> = { "Por Distribuir": false };
@@ -861,21 +929,18 @@ export default function TacticalPage() {
           allViolations.push(vItem);
         }
 
-        // 2. Tag / Rule check
-        const cRules = (s.Observacoes || (s as any).Regras || "").trim();
-        if (cRules && vRules) {
-          const vTags = vRules.split(/[;,]/).map((x: string) => x.trim().toLowerCase());
-          const cTags = cRules.split(/[;,]/).map((x: string) => x.trim().toLowerCase());
-          const hasCommon = cTags.some((ct: string) => vTags.includes(ct));
-          if (!hasCommon) {
+        // 2. Tag / Rule check (Apenas se existirem regras configuradas na Matriz de Regras)
+        if (rulesMatrix && rulesMatrix.length > 0) {
+          const cRules = ((s as any).Regras || "").trim();
+          if (cRules && !isVehicleCompatibleFrontend(vRules, cRules, rulesMatrix)) {
             const vItem: ViolationItem = {
               type: "tag_rule",
               severity: "error",
               route: rName,
               client: s.Cliente,
               order: s.Ordem,
-              title: `Incompatibilidade de Tag (${s.Cliente})`,
-              message: `A viatura '${rName}' (Tag: '${vRules}') não possui a Tag '${cRules}' exigida pelo cliente.`,
+              title: `Incompatibilidade de Regra/Tag (${s.Cliente})`,
+              message: `A viatura '${rName}' (Tag: '${vRules || "Geral"}') não possui autorização para a Tag '${cRules}' exigida pela entrega.`,
             };
             rViolations.push(vItem);
             allViolations.push(vItem);
@@ -952,7 +1017,7 @@ export default function TacticalPage() {
       routes_status: routesStatus,
       all_violations: allViolations,
     });
-  }, [routes, vehicleMap, warehouseMap]);
+  }, [routes, vehicleMap, warehouseMap, rulesMatrix]);
 
   const hasPending = useMemo(() => {
     return (groupedRoutes["Por Distribuir"] || []).length > 0;

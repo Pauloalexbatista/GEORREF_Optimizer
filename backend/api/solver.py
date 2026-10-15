@@ -1748,7 +1748,7 @@ def get_route_audit(project_id: int, current_user: UserResponse = Depends(get_cu
         if not fleet_cfg:
             fleet_cfg = state_dict.get("fleet_config_used") or state_dict.get("fleet_config", {})
             
-        wh_df = state_dict.get("warehouses_used") or state_dict.get("warehouses_geocoded", state_dict.get("df_warehouses"))
+        wh_df = _pick_first_valid(state_dict.get("warehouses_used"), state_dict.get("warehouses_geocoded"), state_dict.get("df_warehouses"))
         rules_mat = state_dict.get("rules_matrix", [])
         
         audit_res = audit_route_plan(df_routes, fleet_cfg, wh_df, rules_mat)

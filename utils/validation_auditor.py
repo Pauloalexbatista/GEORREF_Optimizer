@@ -212,8 +212,8 @@ def audit_route_plan(
             total_kg += c_kg
             total_vol += c_vol
 
-            # 2. Check Tags / Rules Compatibility (Tolerância Zero)
-            if c_rules or v_rules:
+            # 2. Check Tags / Rules Compatibility (Apenas quando existem regras na Matriz de Regras)
+            if rules_matrix and (c_rules or v_rules):
                 if not is_vehicle_compatible(v_rules, c_rules, rules_matrix):
                     v_item = {
                         "type": "tag_rule",
