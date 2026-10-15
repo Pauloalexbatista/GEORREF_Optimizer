@@ -1349,26 +1349,22 @@ export default function TacticalPage() {
                   <button
                     type="button"
                     onClick={() => setStrategy("clusters")}
-                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
-                      strategy === "clusters"
-                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
-                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      strategy === "clusters" ? "opt-param-active" : "opt-param-inactive"
                     }`}
                   >
-                    <div className="font-semibold text-xs text-zinc-100">Rotas Agrupadas por Zonas</div>
-                    <div className="text-[10px] text-zinc-400">Agrupa em torno dos clientes distantes (centro de gravidade). Enche as viaturas na mesma zona geográfica.</div>
+                    <div className="text-xs opt-title">Rotas Agrupadas por Zonas</div>
+                    <div className="text-[10px] opt-desc">Agrupa em torno dos clientes distantes (centro de gravidade). Enche as viaturas na mesma zona geográfica.</div>
                   </button>
                   <button
                     type="button"
                     onClick={() => setStrategy("min_km")}
-                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
-                      strategy === "min_km"
-                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
-                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      strategy === "min_km" ? "opt-param-active" : "opt-param-inactive"
                     }`}
                   >
-                    <div className="font-semibold text-xs text-zinc-100">Mínimos KM (Menor Distância)</div>
-                    <div className="text-[10px] text-zinc-400">Minimiza estritamente os quilómetros percorridos e consumo total.</div>
+                    <div className="text-xs opt-title">Mínimos KM (Menor Distância)</div>
+                    <div className="text-[10px] opt-desc">Minimiza estritamente os quilómetros percorridos e consumo total.</div>
                   </button>
                 </div>
               </div>
@@ -1382,26 +1378,22 @@ export default function TacticalPage() {
                   <button
                     type="button"
                     onClick={() => setLoadMode("full")}
-                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
-                      loadMode === "full"
-                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
-                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      loadMode === "full" ? "opt-param-active" : "opt-param-inactive"
                     }`}
                   >
-                    <div className="font-semibold text-xs text-zinc-100">Minimizar Viaturas (Carga Máxima)</div>
-                    <div className="text-[10px] text-zinc-400">Enche os carros ao máximo da capacidade, sem viaturas subutilizadas na rua.</div>
+                    <div className="text-xs opt-title">Minimizar Viaturas (Carga Máxima)</div>
+                    <div className="text-[10px] opt-desc">Enche os carros ao máximo da capacidade, sem viaturas subutilizadas na rua.</div>
                   </button>
                   <button
                     type="button"
                     onClick={() => setLoadMode("balanced")}
-                    className={`text-left px-2.5 py-1.5 rounded border transition-colors ${
-                      loadMode === "balanced"
-                        ? "bg-indigo-950 border-indigo-500 text-indigo-100 font-bold"
-                        : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      loadMode === "balanced" ? "opt-param-active" : "opt-param-inactive"
                     }`}
                   >
-                    <div className="font-semibold text-xs text-zinc-100">Equilibrar Frota (Distribuição Homogénea)</div>
-                    <div className="text-[10px] text-zinc-400">Distribui paragens e carga homogeneamente entre as viaturas disponíveis.</div>
+                    <div className="text-xs opt-title">Equilibrar Frota (Distribuição Homogénea)</div>
+                    <div className="text-[10px] opt-desc">Distribui paragens e carga homogeneamente entre as viaturas disponíveis.</div>
                   </button>
                 </div>
               </div>
@@ -1416,38 +1408,32 @@ export default function TacticalPage() {
                     <button
                       type="button"
                       onClick={() => setSolvingDepth("fast")}
-                      className={`px-2 py-1.5 rounded border text-center transition-colors ${
-                        solvingDepth === "fast"
-                          ? "bg-zinc-800 border-indigo-500 text-indigo-100 font-bold"
-                          : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                      className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                        solvingDepth === "fast" ? "opt-param-active" : "opt-param-inactive"
                       }`}
                     >
-                      <div className="text-xs font-semibold">Rápido</div>
-                      <div className="text-[9px] text-zinc-400">~30 seg</div>
+                      <div className="text-xs opt-title">Rápido</div>
+                      <div className="text-[9px] opt-desc">~30 seg</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSolvingDepth("balanced")}
-                      className={`px-2 py-1.5 rounded border text-center transition-colors ${
-                        solvingDepth === "balanced"
-                          ? "bg-zinc-800 border-indigo-500 text-indigo-100 font-bold"
-                          : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                      className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                        solvingDepth === "balanced" ? "opt-param-active" : "opt-param-inactive"
                       }`}
                     >
-                      <div className="text-xs font-semibold">Equilibrado</div>
-                      <div className="text-[9px] text-zinc-400">1 a 2 min</div>
+                      <div className="text-xs opt-title">Equilibrado</div>
+                      <div className="text-[9px] opt-desc">1 a 2 min</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSolvingDepth("deep")}
-                      className={`px-2 py-1.5 rounded border text-center transition-colors ${
-                        solvingDepth === "deep"
-                          ? "bg-zinc-800 border-indigo-500 text-indigo-100 font-bold"
-                          : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                      className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                        solvingDepth === "deep" ? "opt-param-active" : "opt-param-inactive"
                       }`}
                     >
-                      <div className="text-xs font-semibold">Profundo</div>
-                      <div className="text-[9px] text-zinc-400">3 a 5 min</div>
+                      <div className="text-xs opt-title">Profundo</div>
+                      <div className="text-[9px] opt-desc">3 a 5 min</div>
                     </button>
                   </div>
 
