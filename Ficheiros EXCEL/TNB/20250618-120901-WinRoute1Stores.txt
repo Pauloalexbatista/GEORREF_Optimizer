@@ -1,0 +1,52 @@
+﻿Armazém Açores Central 225	225	TERCEIRA – OCEÂNICA Avenida Álvaro Martins Homem, 15/21		9760-412	Praia Da Vitória	PRT	0	0	1	0	01:00	
+Armazém Albufeira 35	35	Zona Industrial Vale Paraíso, Armazém C - 8200 Albufeira		8200-425	Guia-Albufeira	PRT	-8,24470375002714	37,116726915899	1	6	01:00	
+Armazém Algoz 281	281	Algoz Park 1 Lote 15 		8365-084	Ferrarias	PRT	0	0	1	0	01:00	
+Armazém Algoz - praia 282	282	Algoz Park 1 Lote 15 		8365-084	Ferrarias	PRT	0	0	1	0	01:00	
+Armazém Bel2000 89	89	Quinta Casal da Pipa		2670-399	Loures	PRT	-9,193120003	38,84106827	1	6	01:00	
+Armazém Castelo Branco Rhenus 292	292	Cruzamento Do Maxiais, Pavilhão B		6000-022	Maxiais	PRT	0	0	1	0	01:00	
+Armazem externo Aveiro 213	213	Centro Logístico – Polo 2, Rua das Sudas		3770-062	Oiã Aveiro	PRT	-8,52537243299336	40,5389690536552	1	6	01:00	
+Armazém externo Évora 283	283	Rua Da Fundição, Armazém 7A		7005-362	Évora	PRT	0	0	1	0	01:00	
+Armazém externo GLS Leiria 275	275	Doroana Park Estrada Nacional 109, Nave 13		2415-180	Ponte da Pedra	PRT	-8,83116026188182	39,7917388072343	1	6	01:00	
+Armazem externo Ilhas 216	216	Ilhas				PRT	0	0	1	0	01:00	
+Armazem externo Leiria 214	214	Rua Do Janardo Lote 33 A Zona Industrial Da Zicofa, 2415-804 Leiria		2415-804	Leiria	PRT	-8,7775637	39,7724784	1	6	01:00	
+Armazém externo PAOP Beja 290	290	Estrada Das Apolinarias, Beja Retail Park		7800-453	Beja	PRT	0	0	1	0	01:00	
+Armazém externo PUP Beja 227	227	Associação Empresarial do Baixo Alentejo Lote 274		7800-453	Beja	PRT	0	0	1	0	01:00	
+Armazém externo PUP Cascais 234	234	Rua de S. Francisco 786, Parque Doroana Arm. BA		2645-019	Alcabideche	PRT	0	0	1	0	01:00	
+Armazem externo PUP Castelo Branco 211	211	Pavilhão E, Cruz da Légua		6000-022	Benquerença	PRT	-7,55834	39,7905024	1	6	01:00	
+Armazém externo PUP Évora 229	229	Zona Industrial Almeirim Sul, Praceta das Empresas Lote 6 – Edifício Evocargo		7005-284	Évora	PRT	-7,9079716	38,5508612	1	6	01:00	
+Armazém externo PUP IKEA Loulé 285	285	Avenida Do Algarve Nº5		8135-182	Almancil	PRT	0	0	1	0	01:00	
+Armazém externo PUP Palmela 215	215	Parque Industrial Vila Amélia lote 109 Armazém C		2950-805	Quinta do Anjo	PRT	0	0	1	0	01:00	
+Armazém externo PUP Portalegre 241	241	Rua de São Pedro, nº 11		7430-280	Gáfete	PRT	0	0	1	0	01:00	
+Armazém externo PUP Portimão 243	243	Sitio da Mesquita		8500-132	Mexilhoeira Grande	PRT	0	0	1	0	01:00	
+Armazém externo PUP Santarém 233	233	Rua da Zona Industrial		2005-002	Santarém	PRT	-8,7122347	39,2619993	1	6	01:00	
+Armazém Faro 154	154	Mercado Abastecedor da Região de Faro, S.A. Armazém E2.04/05, Sítio do Guilhim		8009-021	Faro	PRT	-7,9271573	37,0855935	1	6	01:00	
+Armazém Faro - Danificados 156	156	Mercado Abastecedor da Região de Faro, S.A. Armazém E2.04/05, Sítio do Guilhim		8009-021	Faro	PRT	-7,9271573	37,0855935	1	6	01:00	
+Armazém Faro - Praia 155	155	Mercado Abastecedor da Região de Faro, S.A. Armazém E2.04/05, Sítio do Guilhim		8009-021	Faro	PRT	-7,9271573	37,0855935	1	6	01:00	
+Armazém IKEA Alfragide 158	158	Zona Industrial de Alfragide - Estrada Nacional 117		2614-520	Amadora	PRT	-9,21521174506714	38,7276203473813	1	6	01:00	
+Armazém Loures 19	19	Zona Industrial de Frielas - Rua Cidade do Porto lote 2 C/D		2660-026	Frielas	PRT	-9,148433703	38,81866861	1	6	01:00	
+Armazem Madeira 220	220	Estrada Do Garajau Nº 143		9125-067	Caniço	PRT	0	0	1	0	01:00	
+Armazém Palmela 260	260	Quinta Da Marquesa I, Herdade Quinta Da Torre Arm. 1, Quinta Do Anjo, 2950-557 Setúbal		2950-557	Quinta do Anjo	PRT	0	0	1	0	01:00	
+Armazém Palmela - Praia 261	261	Quinta Da Marquesa I, Herdade Quinta Da Torre Arm. 1, Quinta Do Anjo, 2950-557 Setúbal		2950-557	Quinta do Anjo	PRT	0	0	1	0	01:00	
+Armazém Pombal 279	279	Estr. Nacional 1 67, Meirinhas		3105-235	Meirinhas	PRT	0	0	1	0	01:00	
+Armazém Porto 36	36	Rua Estrada Real, Meia Légua, Escapães		4524-908	Santa Maria da Feira	PRT	-8,502831	40,9292796	1	6	01:00	
+Armazém Prior Velho 90	90	Rua Professor Henrique De Barros - Quinta Do Marchante 15		2685-339	Prior Velho 	PRT	-9,12268641221483	38,7886475216954	1	6	01:00	
+Armazém Prior Velho - Praia 91	91	Rua Professor Henrique de Barros - Quinta do Marchante 15		2685-339	Prior Velho 	PRT	-9,122686412215	38,788647521695	1	6	01:00	
+Armazém PUP Açores Oriental/Ocidental 224	224	Logislink – Ponta Delgada Rua Azores Park		9500-794	São Roque	PRT	-16,8581797875313	32,6459893000796	1	6	01:00	
+Armazém PUP Madeira 240	240	Logislink - Estrada do Garajau nº 143		9125-067	Caniço/Santa Cruz	PRT	-16,8581797875313	32,6459893000796	1	6	01:00	
+Armazém Santa Maria da Feira 276	276	Rua Estrada Real, Meia Légua, Escapães		4524-908	ESCAPÃES	PRT	-8,502831	40,9292796	1	6	01:00	
+Armazém Santa Maria da Feira - praia 277	277	Rua Estrada Real, Meia Légua, Escapães		4524-908	ESCAPÃES	PRT	-8,50182462624531	40,9301802657682	1	6	01:00	
+Armazém SJ da Talha 81	81	Estrada 10, Quinta Maçarocas		2695-719	São João Da Talha	PRT	-9,089003301336	38,822791232827	1	6	01:00	
+Armazém SJ da Talha - Praia 175	175	Estrada 10, Quinta Maçarocas		2695-719	São João Da Talha	PRT	-9,08900330133627	38,822791232827	1	6	01:00	
+Armazém Vila Real 270	270	Rua Do Bairro Da Carriça, Armazém 3		5000-051	Arroios	PRT	-7,72076844900516	41,2832454751783	1	6	01:00	
+Cais IKEA Alfragide 159	159	Zona Industrial de Alfragide - Estrada Nacional 117		2614-520	Amadora	PRT	-9,2159774	38,7286435	1	6	01:00	
+Cais IKEA Loulé 223	223	IKEA Loulé  - Avenida do Algarve Nº 5		8135-182	Almancil	PRT	0	0	1	0	01:00	
+Cais IKEA Loures 160	160	EN 250 Rua 28 de Setembro		2660-001	Frielas	PRT	-9,144661618835	38,817812802413	1	6	01:00	
+Expresso IKEA Alfragide 11	11	Zona Industrial de Alfragide - Estrada Nacional 117		2614-520	Amadora	PRT	-9,2159774	38,7286435	1	6	01:00	
+Expresso IKEA Loures 27	27	EN 250 Rua 28 de Setembro		2660-001	Frielas	PRT	-9,144661618835	38,817812802413	1	6	01:00	
+IKEA Loulé 147	147	IKEA Loulé  - Avenida do Algarve Nº 5		8135-182	Almancil	PRT	-7,9962729	37,0969241	1	6	01:00	
+IKEA Loures 22	22	EN 250 Rua 28 de Setembro		2660-001	Frielas	PRT	-9,1446616188352	38,8178128024125	1	6	01:00	
+Leroy Merlin - Adarse 245	245	Armazéns Logic - Lugar das Hortas Adarse nº2		2615-001	Alverca do Ribatejo	PRT	-9,02861188760782	38,9018518260567	1	6	01:00	
+Leroy Merlin - Arrogela 246	246	Logic - Estrada da Arrogela Frações A a E, Quinta do Pinheiro		2615-184	Alverca do Ribatejo	PRT	0	0	1	0	01:00	
+Leroy Merlin - Póvoa 247	247	Logic - Parque Industrial Salgados da Póvoa, Apartado 58		2626-909	PÓVOA DE SANTA IRIA	PRT	0	0	1	0	01:00	
+Logística IKEA Loulé 149	149	IKEA Loulé  - Avenida do Algarve Nº 5		8135-182	Almancil	PRT	0	0	1	0	01:00	
+Prio Energy, S.A 291	291	R. Rei Da Memória 69A		2475-125	Benedita	PRT	0	0	1	0	01:00	

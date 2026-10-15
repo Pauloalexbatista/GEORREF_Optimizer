@@ -672,7 +672,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 if w_col in warehouses_df.columns:
                     default_wh_name = str(warehouses_df.iloc[0][w_col])
                     break
-
+        vehicle_first_trip_depot_arrival = {}
         for vehicle_idx, route in enumerate(result["routes"]):
             vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
             v_info = fleet_dict.get(vehicle_name, fleet_dict.get(vehicle_name.replace(" (Volta 2)", ""), {}))
@@ -727,13 +727,33 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     })
                     
             if raw_stops:
-                if "(Volta 2)" in vehicle_name and vehicle_idx < len(vehicle_start_times):
-                    v_start_str = minutes_to_time_str(vehicle_start_times[vehicle_idx])
+                v_speed = float(v_info.get("speed", 50.0))
+                if "(Volta 2)" in vehicle_name:
+                    base_v = vehicle_name.replace(" (Volta 2)", "")
+                    if base_v in vehicle_first_trip_depot_arrival:
+                        arr_depot_min, _ = vehicle_first_trip_depot_arrival[base_v]
+                        reload_min = 30  # 30 min reload/lunch
+                        v2_start_min = max(int(arr_depot_min + reload_min), 720)
+                        v_start_str = minutes_to_time_str(v2_start_min)
+                    elif vehicle_idx < len(vehicle_start_times):
+                        v_start_str = minutes_to_time_str(vehicle_start_times[vehicle_idx])
+                    else:
+                        v_start_str = "13:00:00"
                 else:
                     v_start_str = str(v_info.get("start_time", "08:00:00"))
-                v_speed = float(v_info.get("speed", 50.0))
+
                 processed_stops = recalculate_route_stops(raw_stops, depot_lat, depot_lon, v_start_str, v_speed)
                 routes_list.extend(processed_stops)
+
+                if "(Volta 2)" not in vehicle_name and processed_stops:
+                    last_s = processed_stops[-1]
+                    last_dep_min = parse_time_to_minutes(str(last_s.get("Saida", "12:00")), 720)
+                    last_c_lat = float(last_s.get("Latitude", depot_lat))
+                    last_c_lon = float(last_s.get("Longitude", depot_lon))
+                    ret_km = haversine_distance(last_c_lat, last_c_lon, depot_lat, depot_lon) * 1.30
+                    ret_trav_min = (ret_km / max(v_speed, 45.0)) * 60.0
+                    arr_depot_min = last_dep_min + ret_trav_min
+                    vehicle_first_trip_depot_arrival[vehicle_name] = (arr_depot_min, ret_km)
                     
         # 7. Process dropped nodes (unassigned deliveries -> Por Distribuir)
         dropped_nodes = result.get("dropped_nodes", [])

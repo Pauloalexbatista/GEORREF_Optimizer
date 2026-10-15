@@ -600,18 +600,75 @@ class AdvancedRouteOptimizer:
                 if changed:
                     break
 
-        # Final 2-Opt Polish on all active routes
-        for v in range(num_vehicles):
-            if routes[v]:
-                routes[v] = optimize_stops_2opt(v, routes[v])
-
+        # Phase 2.5: Active Greedy Absorption for Unassigned Clients (Por Distribuir)
         assigned_nodes = set()
         for r in routes:
             for n in r:
                 assigned_nodes.add(n)
 
         num_nodes = len(distance_matrix)
-        final_dropped = [c for c in range(num_warehouses, num_nodes) if c not in assigned_nodes]
+        unassigned_candidates = [c for c in range(num_warehouses, num_nodes) if c not in assigned_nodes]
+        
+        if unassigned_candidates:
+            # Sort unassigned by proximity to depot so near-depot or high-priority stops are tested first
+            d_zero = starts[0] if starts else 0
+            unassigned_candidates.sort(key=lambda c: distance_matrix[d_zero][c])
+            
+            for cand_node in unassigned_candidates:
+                best_v = None
+                best_cand_seq = None
+                best_extra_km = float('inf')
+
+                cand_dem = demands[cand_node] if cand_node < len(demands) else 0.0
+                cand_vdem = volume_demands[cand_node] if volume_demands and cand_node < len(volume_demands) else 0.0
+
+                for v in range(num_vehicles):
+                    curr_stops = routes[v]
+                    v_max = vehicle_max_stops[v] if vehicle_max_stops and v < len(vehicle_max_stops) else 30
+                    if len(curr_stops) + 1 > v_max:
+                        continue
+
+                    # Pre-check weight capacity
+                    tot_w = sum(demands[n] for n in curr_stops) + cand_dem
+                    v_cap = vehicle_capacities[v] if v < len(vehicle_capacities) else float('inf')
+                    if tot_w > v_cap:
+                        continue
+
+                    # Pre-check volume capacity
+                    if volume_demands and vehicle_volume_capacities:
+                        tot_vol = sum(volume_demands[n] for n in curr_stops) + cand_vdem
+                        v_vcap = vehicle_volume_capacities[v] if v < len(vehicle_volume_capacities) else float('inf')
+                        if tot_vol > v_vcap:
+                            continue
+
+                    ok_base, base_dist = evaluate_feasibility(v, curr_stops) if curr_stops else (True, 0.0)
+
+                    # Try insertion at every position
+                    for pos in range(len(curr_stops) + 1):
+                        cand_seq = curr_stops[:pos] + [cand_node] + curr_stops[pos:]
+                        ok_feas, cand_dist = evaluate_feasibility(v, cand_seq)
+                        if ok_feas:
+                            added_km = cand_dist - base_dist
+                            if added_km < best_extra_km:
+                                best_extra_km = added_km
+                                best_v = v
+                                best_cand_seq = cand_seq
+
+                if best_v is not None and best_cand_seq is not None:
+                    routes[best_v] = best_cand_seq
+                    assigned_nodes.add(cand_node)
+
+        # Final 2-Opt Polish on all active routes
+        for v in range(num_vehicles):
+            if routes[v]:
+                routes[v] = optimize_stops_2opt(v, routes[v])
+
+        final_assigned = set()
+        for r in routes:
+            for n in r:
+                final_assigned.add(n)
+
+        final_dropped = [c for c in range(num_warehouses, num_nodes) if c not in final_assigned]
 
         return {
             "routes": routes,

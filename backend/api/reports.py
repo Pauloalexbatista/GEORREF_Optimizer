@@ -140,8 +140,16 @@ def export_project_final_report(project_id: int):
             raise HTTPException(status_code=400, detail="Sem rotas para exportar.")
             
         df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
-        df_deliveries = state_dict.get("df_entregas", state_dict.get("deliveries_df"))
-        df_warehouses = state_dict.get("warehouses_df", state_dict.get("warehouses"))
+        df_deliveries = (
+            state_dict.get("clients_geocoded")
+            if state_dict.get("clients_geocoded") is not None
+            else state_dict.get("df_entregas", state_dict.get("deliveries_df"))
+        )
+        df_warehouses = (
+            state_dict.get("warehouses_geocoded")
+            if state_dict.get("warehouses_geocoded") is not None
+            else state_dict.get("df_warehouses", state_dict.get("warehouses_used", state_dict.get("warehouses")))
+        )
         fleet_cfg = state_dict.get("fleet_config", state_dict.get("fleet"))
         opt_params = state_dict.get("optimization_params")
         rules_mat = state_dict.get("rules_matrix")
