@@ -611,7 +611,7 @@ class AdvancedRouteOptimizer:
         
         if unassigned_candidates:
             # Sort unassigned by proximity to depot so near-depot or high-priority stops are tested first
-            d_zero = starts[0] if starts else 0
+            d_zero = depot_indices[0] if depot_indices else 0
             unassigned_candidates.sort(key=lambda c: distance_matrix[d_zero][c])
             
             for cand_node in unassigned_candidates:
