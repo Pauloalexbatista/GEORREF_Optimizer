@@ -52,22 +52,24 @@ def is_vehicle_compatible(
     Verifica se uma viatura é compatível com uma entrega considerando regras e múltiplas tags:
     
     1. Proibições Rígidas (NÃO): Se qualquer tag da viatura tiver regra de proibição 'NAO' com qualquer tag da entrega, é IMEDIATAMENTE DESQUALIFICADA.
-    2. Obrigatoriedades (SIM): Para cada tag exigida pela entrega:
+    2. Obrigatoriedades (SIM): Para cada tag exigida pela entrega configurada na matriz de regras:
        - A viatura deve possuir uma tag autorizada para essa restrição (por 'SIM' na matriz ou tag idêntica).
+       - Tags informativas da entrega que não constem na matriz de regras não bloqueiam a viatura.
     """
     v_tags = extract_tags(vehicle_tags)
     d_tags = extract_tags(delivery_tags)
     
-    # Se a entrega não tem nenhuma restrição especial
+    # Se a entrega não tem nenhuma tag ou se não há matriz de regras configurada
     if not d_tags:
         return True
         
-    if rules_matrix is None:
-        rules_matrix = []
+    if not rules_matrix:
+        return True
         
     # Normalizar matriz de regras
     prohibitions = set() # (tag_v, tag_d)
     permissions = set()  # (tag_v, tag_d)
+    configured_delivery_tags = set()
     
     for r in rules_matrix:
         tv = str(r.get('Tag_Veiculo', r.get('tag_veiculo', ''))).strip().upper()
@@ -77,6 +79,7 @@ def is_vehicle_compatible(
         if not tv or not td:
             continue
             
+        configured_delivery_tags.add(td)
         if perm in ['NAO', 'NÃO', 'NO', 'PROIBIR', 'FALSE', '0']:
             prohibitions.add((tv, td))
         else:
@@ -88,22 +91,20 @@ def is_vehicle_compatible(
             if (vt, dt) in prohibitions:
                 return False
                 
-    # 2. Verificar Obrigatoriedade de cada Tag da Entrega
+    # 2. Verificar Obrigatoriedade de cada Tag da Entrega configurada na matriz
     for dt in d_tags:
-        # A entrega exige 'dt'. O veículo tem de satisfazer 'dt'
+        if dt not in configured_delivery_tags:
+            continue
+            
         matched = False
-        
-        # Match direto (o veículo tem exatamente essa tag)
         if dt in v_tags:
             matched = True
         else:
-            # Match via matriz de regras (alguma tag do veículo tem permissão explícita 'SIM' para 'dt')
             for vt in v_tags:
                 if (vt, dt) in permissions:
                     matched = True
                     break
                     
-        # Se a entrega exige uma tag restritiva e o veículo não satisfaz, é incompatível
         if not matched:
             return False
             
