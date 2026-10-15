@@ -785,6 +785,33 @@ export default function MapComponent({
     });
     return { selectedStopsTotalKg: Math.round(kg), selectedStopsTotalVol: vol };
   }, [visibleClients, selectedClientKeys]);
+
+  // Map of client count and kg per vehicle for selects and labels
+  const vehicleStatsMap = useMemo(() => {
+    const map: Record<string, { count: number; kg: number }> = {};
+    vehicles.forEach((v) => {
+      map[v] = { count: 0, kg: 0 };
+    });
+    let pendingCount = 0;
+    let pendingKg = 0;
+
+    clients.forEach((c) => {
+      if (isPendingRoute(c.Rota)) {
+        pendingCount++;
+        pendingKg += Number(c.Peso_KG || 0);
+      } else {
+        const matched = vehicles.find((v) => routesMatch(v, c.Rota));
+        if (matched) {
+          if (!map[matched]) map[matched] = { count: 0, kg: 0 };
+          map[matched].count++;
+          map[matched].kg += Number(c.Peso_KG || 0);
+        }
+      }
+    });
+
+    return { map, pendingCount, pendingKg: Math.round(pendingKg) };
+  }, [clients, vehicles]);
+
   // Points for auto fit bounds (focuses directly on active route stops when single route selected)
   const visiblePoints: [number, number][] = useMemo(() => {
     const pts: [number, number][] = [];
@@ -1518,12 +1545,17 @@ export default function MapComponent({
                         onChange={(e) => onMoveClientRoute(c.Cliente || (c as any).Nome_Cliente || "", e.target.value, c.id || c.ID_Original, c.Morada, (c as any).Latitude || (c as any).lat, (c as any).Longitude || (c as any).lon)}
                         className="w-full text-[11px] bg-white border border-zinc-300 rounded-lg px-2 py-1 font-semibold text-zinc-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
                       >
-                        <option value="Por Distribuir">🟡 Por Distribuir</option>
-                        {vehicles.map((v) => (
-                          <option key={v} value={v}>
-                            🚚 {v}
-                          </option>
-                        ))}
+                        <option value="Por Distribuir">
+                          🟡 Por Distribuir ({vehicleStatsMap.pendingCount} {vehicleStatsMap.pendingCount === 1 ? "cliente" : "clientes"})
+                        </option>
+                        {vehicles.map((v) => {
+                          const stats = vehicleStatsMap.map[v] || { count: 0, kg: 0 };
+                          return (
+                            <option key={v} value={v}>
+                              🚚 {v} ({stats.count} {stats.count === 1 ? "cliente" : "clientes"}{stats.count === 0 ? " · Vazio" : ` · ${stats.kg} kg`})
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   )}
@@ -1597,12 +1629,17 @@ export default function MapComponent({
               onChange={(e) => setBulkTargetRoute(e.target.value)}
               className="bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1 text-xs text-zinc-200 font-semibold outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
             >
-              <option value="Por Distribuir">🟡 Por Distribuir</option>
-              {vehicles.map((v) => (
-                <option key={v} value={v}>
-                  🚚 {v}
-                </option>
-              ))}
+              <option value="Por Distribuir">
+                🟡 Por Distribuir ({vehicleStatsMap.pendingCount} {vehicleStatsMap.pendingCount === 1 ? "cliente" : "clientes"})
+              </option>
+              {vehicles.map((v) => {
+                const stats = vehicleStatsMap.map[v] || { count: 0, kg: 0 };
+                return (
+                  <option key={v} value={v}>
+                    🚚 {v} ({stats.count} {stats.count === 1 ? "cliente" : "clientes"}{stats.count === 0 ? " · Vazio" : ` · ${stats.kg} kg`})
+                  </option>
+                );
+              })}
             </select>
           </div>
 
