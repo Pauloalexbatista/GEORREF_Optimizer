@@ -72,6 +72,7 @@ O ficheiro Excel do projeto (`GeoRoutePlan.xlsx`) é composto por 9 abas interli
 | `Custo_Hora` | Recomendado | Custo operacional por hora (€/h) (ex: *12.00*) |
 | `Max_Entregas` | Recomendado | Número máximo de paragens permitidas por turno (ex: *25*) |
 | `Regras` | Opcional | Tags de restrição da viatura (ex: *[FRIO], [PESADOS], [CENTRO_URBANO]*) |
+| `2ª Volta` | Opcional | Permite 2ª volta / recarga no armazém no mesmo dia (*Sim* ou *Não*) |
 | `Motorista_Nome` | Recomendado | Nome do condutor principal atribuído |
 | `Motorista_Telemovel`| Recomendado | Contacto telefónico do condutor |
 

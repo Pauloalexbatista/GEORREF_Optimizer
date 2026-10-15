@@ -31,6 +31,9 @@ class FleetVehicle:
     motorista_nome: str = ""
     motorista_telemovel: str = ""
     is_active: int = 1
+    segunda_volta: str = "Não"
+    codigo_veiculo: str = ""
+    codigo_motorista: str = ""
 
 
 @dataclass

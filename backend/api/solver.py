@@ -226,6 +226,8 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
     
     if isinstance(fleet_config, pd.DataFrame):
         for _, row in fleet_config.iterrows():
+            raw_2v = str(row.get("2ª Volta", row.get("2a Volta", row.get("segunda_volta", "Não")))).strip()
+            val_2v = "Sim" if raw_2v.lower() in ["sim", "s", "yes", "true", "1"] else "Não"
             fleet_dict[str(row["Veiculo"])] = {
                 "capacity": float(row.get("Capacidade_KG", 1000.0)),
                 "capacity_volume": float(row.get("Cap_Volume_m3", row.get("Capacidade_Vol", 5.0))),
@@ -235,11 +237,14 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                 "end_time": str(row.get("Hora_Fim_Turno", row.get("Horario_Fim", "18:00:00"))),
                 "warehouse": str(row.get("Armazem", default_wh)),
                 "regras": str(row.get("Regras", "")),
-                "max_entregas": int(row.get("Max_Entregas", row.get("max_entregas", 30)) or 30)
+                "max_entregas": int(row.get("Max_Entregas", row.get("max_entregas", 30)) or 30),
+                "segunda_volta": val_2v
             }
     elif isinstance(fleet_config, dict):
         for v_k, v_v in fleet_config.items():
             if isinstance(v_v, dict):
+                raw_2v = str(v_v.get("segunda_volta", v_v.get("2ª Volta", v_v.get("2a Volta", "Não")))).strip()
+                val_2v = "Sim" if raw_2v.lower() in ["sim", "s", "yes", "true", "1"] else "Não"
                 fleet_dict[str(v_k)] = {
                     "capacity": float(v_v.get("capacity", v_v.get("capacidade_kg", 1000.0))),
                     "capacity_volume": float(v_v.get("capacity_volume", v_v.get("capacidade_vol", 5.0))),
@@ -249,9 +254,12 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                     "end_time": str(v_v.get("end_time", v_v.get("horario_fim", "18:00:00"))),
                     "warehouse": str(v_v.get("warehouse", v_v.get("armazem", default_wh))),
                     "regras": str(v_v.get("regras", v_v.get("Regras", ""))),
-                    "max_entregas": int(v_v.get("max_entregas", v_v.get("Max_Entregas", 30)) or 30)
+                    "max_entregas": int(v_v.get("max_entregas", v_v.get("Max_Entregas", 30)) or 30),
+                    "segunda_volta": val_2v
                 }
             else:
+                raw_2v = str(getattr(v_v, "segunda_volta", getattr(v_v, "2ª Volta", "Não"))).strip()
+                val_2v = "Sim" if raw_2v.lower() in ["sim", "s", "yes", "true", "1"] else "Não"
                 fleet_dict[str(v_k)] = {
                     "capacity": float(getattr(v_v, "capacidade_kg", 1000.0)),
                     "capacity_volume": float(getattr(v_v, "capacidade_vol", 5.0)),
@@ -261,7 +269,8 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                     "end_time": str(getattr(v_v, "horario_fim", "18:00:00")),
                     "warehouse": str(getattr(v_v, "armazem", default_wh)),
                     "regras": str(getattr(v_v, "regras", getattr(v_v, "Regras", ""))),
-                    "max_entregas": int(getattr(v_v, "max_entregas", getattr(v_v, "Max_Entregas", 30)) or 30)
+                    "max_entregas": int(getattr(v_v, "max_entregas", getattr(v_v, "Max_Entregas", 30)) or 30),
+                    "segunda_volta": val_2v
                 }
     return fleet_dict
 
@@ -473,7 +482,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "end_time": str(dict_f.get("horario_fim") or "18:00:00"),
                         "warehouse": str(dict_f.get("armazem") or ""),
                         "regras": str(dict_f.get("regras") or ""),
-                        "max_entregas": int(dict_f.get("max_entregas") or 30)
+                        "max_entregas": int(dict_f.get("max_entregas") or 30),
+                        "segunda_volta": str(dict_f.get("segunda_volta") or "Não")
                     }
         
         # Fallback to snapshot if database table is empty
@@ -564,6 +574,19 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_start_times.append(s_min)
             vehicle_end_times.append(e_min)
 
+            # Suporte a 2ª Volta se configurada na viatura (Sim/Não)
+            is_2v = str(vehicle_data.get("segunda_volta", "Não")).strip().lower() in ["sim", "s", "yes", "true", "1", "2"]
+            if is_2v:
+                v2_name = f"{vehicle_name} (Volta 2)"
+                vehicle_capacities.append(vehicle_data["capacity"])
+                vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
+                depot_indices.append(dep_idx)
+                vehicle_names.append(v2_name)
+                vehicle_warehouses.append(wh_name)
+                v2_start = max(s_min + 240, 780)  # A partir das 13:00 / pós-almoço
+                vehicle_start_times.append(v2_start)
+                vehicle_end_times.append(e_min)
+
         # Parse client time windows with warehouse prefix for exact 1-to-1 index matching
         client_time_windows = [(0, 1440) for _ in range(num_warehouses)]
         for idx, row in deliveries_df.iterrows():
@@ -609,8 +632,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             
         client_warehouses = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Armazem"].fillna("")) if "Armazem" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
         client_rules = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Regras"].fillna("")) if "Regras" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
-        vehicle_rules = [str(fleet_dict.get(v_name, {}).get("regras", "")) for v_name in vehicle_names]
-        vehicle_max_stops = [int(fleet_dict.get(v_name, {}).get("max_entregas", 30) or 30) for v_name in vehicle_names]
+        vehicle_rules = [str(fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {})).get("regras", "")) for v_name in vehicle_names]
+        vehicle_max_stops = [int(fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {})).get("max_entregas", 30) or 30) for v_name in vehicle_names]
         rules_matrix = state_dict.get("rules_matrix", [])
         
         client_service_times = [0 for _ in range(num_warehouses)] + [int(dr.get("tempo_descarga_min") or 10) for dr in delivery_rows]
@@ -652,7 +675,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
 
         for vehicle_idx, route in enumerate(result["routes"]):
             vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
-            v_info = fleet_dict.get(vehicle_name, {})
+            v_info = fleet_dict.get(vehicle_name, fleet_dict.get(vehicle_name.replace(" (Volta 2)", ""), {}))
             warehouse_origin = v_info.get("warehouse", default_wh_name)
             depot_lat, depot_lon = get_depot_coords(warehouses_df, warehouse_origin)
             
@@ -704,7 +727,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     })
                     
             if raw_stops:
-                v_start_str = str(v_info.get("start_time", "08:00:00"))
+                if "(Volta 2)" in vehicle_name and vehicle_idx < len(vehicle_start_times):
+                    v_start_str = minutes_to_time_str(vehicle_start_times[vehicle_idx])
+                else:
+                    v_start_str = str(v_info.get("start_time", "08:00:00"))
                 v_speed = float(v_info.get("speed", 50.0))
                 processed_stops = recalculate_route_stops(raw_stops, depot_lat, depot_lon, v_start_str, v_speed)
                 routes_list.extend(processed_stops)

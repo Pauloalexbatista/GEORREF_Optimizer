@@ -136,6 +136,7 @@ def generate_full_project_excel(
         ('Custo_Hora', COLOR_REC),
         ('Max_Entregas', COLOR_REC),
         ('Regras', COLOR_OPT),
+        ('2ª Volta', COLOR_OPT),
         ('Motorista_Nome', COLOR_REC),
         ('Motorista_Telemovel', COLOR_REC)
     ]
@@ -145,6 +146,9 @@ def generate_full_project_excel(
     if fleet_config is not None:
         if isinstance(fleet_config, pd.DataFrame):
             for _, r in fleet_config.iterrows():
+                val_2v = str(r.get('2ª Volta', r.get('2a Volta', r.get('segunda_volta', 'Não')))).strip()
+                if val_2v.lower() in ['sim', 's', 'yes', 'true', '1']: val_2v = 'Sim'
+                else: val_2v = 'Não'
                 fleet_rows.append([
                     str(r.get('Armazem', default_wh_name) if str(r.get('Armazem', '')).strip() not in ['', 'N/A', 'None', 'Armazém Central'] else default_wh_name),
                     str(r.get('Veiculo', '')),
@@ -157,6 +161,7 @@ def generate_full_project_excel(
                     safe_float(r.get('Custo_Hora', 12.50)),
                     safe_int(r.get('Max_Entregas', 30)),
                     str(r.get('Regras', '')),
+                    val_2v,
                     str(r.get('Motorista_Nome', '')),
                     str(r.get('Motorista_Telemovel', ''))
                 ])
@@ -165,6 +170,8 @@ def generate_full_project_excel(
                 wh_v = str(safe_val(v_data, 'armazem', default_wh_name))
                 if not wh_v or wh_v in ['', 'N/A', 'None', 'Armazém Central']:
                     wh_v = default_wh_name
+                raw_2v = str(safe_val(v_data, 'segunda_volta', safe_val(v_data, '2ª Volta', 'Não'))).strip()
+                val_2v = 'Sim' if raw_2v.lower() in ['sim', 's', 'yes', 'true', '1'] else 'Não'
                 fleet_rows.append([
                     wh_v,
                     str(v_name),
@@ -177,16 +184,17 @@ def generate_full_project_excel(
                     safe_float(safe_val(v_data, 'custo_hora', 12.50)),
                     safe_int(safe_val(v_data, 'max_entregas', 30)),
                     str(safe_val(v_data, 'regras', '')),
+                    val_2v,
                     str(safe_val(v_data, 'motorista_nome', '')),
                     str(safe_val(v_data, 'motorista_telemovel', ''))
                 ])
     if not fleet_rows:
-        fleet_rows = [['Armazém Central', 'Carrinha 01', 1000.0, 10.0, 50.0, '08:00:00', '18:00:00', 0.65, 12.50, 30, '', '', '']]
+        fleet_rows = [['Armazém Central', 'Carrinha 01', 1000.0, 10.0, 50.0, '08:00:00', '18:00:00', 0.65, 12.50, 30, '', 'Não', '', '']]
     
     for r_idx, row_vals in enumerate(fleet_rows, start=2):
         for c_idx, val in enumerate(row_vals, start=1):
             ws_fleet.cell(row=r_idx, column=c_idx, value=val)
-    format_data_rows(ws_fleet, 2, 1 + len(fleet_rows), len(fleet_headers_spec), center_cols=(6, 7, 10, 11, 13), right_cols=(3, 4, 5, 8, 9))
+    format_data_rows(ws_fleet, 2, 1 + len(fleet_rows), len(fleet_headers_spec), center_cols=(6, 7, 10, 11, 12, 14), right_cols=(3, 4, 5, 8, 9))
     autofit_columns(ws_fleet, len(fleet_headers_spec))
     
     # 3. Entregas

@@ -137,6 +137,7 @@ def _parse_and_persist_workbook_sheets(file_path: str, project_id: int, user_id:
                 c_chr = _match(df_f.columns, ['Custo_Hora', 'Custo_hora', 'Cost_Hour'])
                 c_max = _match(df_f.columns, ['Max_Entregas', 'Max_Paragens'])
                 c_rg = _match(df_f.columns, ['Regras', 'Tags', 'Restricoes'])
+                c_2v = _match(df_f.columns, ['2ª Volta', '2a Volta', '2ª_Volta', '2a_Volta', '2 Volta', 'Segunda_Volta', 'Segunda Volta'])
                 
                 for idx, r in df_f.iterrows():
                     v_name = str(r[c_v]).strip() if c_v and pd.notna(r[c_v]) else f"Viatura {idx+1}"
@@ -149,6 +150,8 @@ def _parse_and_persist_workbook_sheets(file_path: str, project_id: int, user_id:
                     v_e_t = str(r[c_e]).strip() if c_e and pd.notna(r[c_e]) else "18:00:00"
                     v_rg = str(r[c_rg]).strip() if c_rg and pd.notna(r[c_rg]) else ""
                     if v_rg.lower() == 'nan': v_rg = ""
+                    val_2v = str(r[c_2v]).strip().lower() if c_2v and pd.notna(r[c_2v]) else "não"
+                    is_2v = "Sim" if val_2v in ['sim', 's', 'yes', 'y', 'true', '1', '2'] else "Não"
                     
                     fleet_dict[v_name] = {
                         "veiculo": v_name,
@@ -162,7 +165,8 @@ def _parse_and_persist_workbook_sheets(file_path: str, project_id: int, user_id:
                         "custo_km": _clean_num(r[c_ckm], 0.65) if c_ckm and pd.notna(r[c_ckm]) else 0.65,
                         "custo_hora": _clean_num(r[c_chr], 12.50) if c_chr and pd.notna(r[c_chr]) else 12.50,
                         "max_entregas": int(_clean_num(r[c_max], 50)) if c_max and pd.notna(r[c_max]) else 50,
-                        "regras": v_rg
+                        "regras": v_rg,
+                        "segunda_volta": is_2v
                     }
                     fleet_rows_for_db.append({
                         "veiculo": v_name,
@@ -173,7 +177,8 @@ def _parse_and_persist_workbook_sheets(file_path: str, project_id: int, user_id:
                         "horario_inicio": v_s_t,
                         "horario_fim": v_e_t,
                         "armazem": v_wh,
-                        "regras": v_rg
+                        "regras": v_rg,
+                        "segunda_volta": is_2v
                     })
             break
 

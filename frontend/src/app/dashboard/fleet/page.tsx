@@ -38,6 +38,7 @@ interface Vehicle {
   motorista_nome: string;
   motorista_telemovel: string;
   is_active: number;
+  segunda_volta?: string;
 }
 
 interface RuleItem {
@@ -251,6 +252,7 @@ export default function FleetPage() {
       motorista_nome: "",
       motorista_telemovel: "",
       is_active: 1,
+      segunda_volta: "Não",
     };
     setFleet((prev) => [...prev, newVeh]);
   };
@@ -707,13 +709,14 @@ export default function FleetPage() {
                     <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">€/hora</th>
                     <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Máx. Ent.</th>
                     <th className="py-2 px-2 border-r border-zinc-800">Regras</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">2ª Volta</th>
                     <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredFleet.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="py-8 text-center text-zinc-500">
+                      <td colSpan={14} className="py-8 text-center text-zinc-500">
                         Nenhuma viatura encontrada. Clique em "+ Adicionar Viatura".
                       </td>
                     </tr>
@@ -828,6 +831,20 @@ export default function FleetPage() {
                               className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                               placeholder="Regras / Tags..."
                             />
+                          </td>
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
+                            <select
+                              value={v.segunda_volta || "Não"}
+                              onChange={(e) => updateVehicle(idx, "segunda_volta", e.target.value)}
+                              className={`px-1.5 py-0.5 rounded text-[11px] font-bold border outline-none cursor-pointer transition-colors ${
+                                (v.segunda_volta === "Sim")
+                                  ? "bg-emerald-950/80 text-emerald-400 border-emerald-600"
+                                  : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700"
+                              }`}
+                            >
+                              <option value="Não" className="bg-zinc-900 text-zinc-300">Não</option>
+                              <option value="Sim" className="bg-zinc-900 text-emerald-400 font-bold">Sim</option>
+                            </select>
                           </td>
                           <td className="py-1 px-2 text-center">
                             <input
