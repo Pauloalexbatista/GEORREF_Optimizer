@@ -165,6 +165,7 @@ class FleetSaveRequest(BaseModel):
     rules_matrix: List[RuleItem] = []
     drivers: List[DriverItem] = []
     reasons: List[ReasonItem] = []
+    clients: Optional[List[Dict[str, Any]]] = None
 
 
 
@@ -719,6 +720,78 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
             })
         state_dict["reasons"] = reasons_list
         state_dict["failure_reasons"] = reasons_list
+
+        # Save Clients if provided
+        if req.clients:
+            with get_db() as conn:
+                cursor = conn.cursor()
+                for c in req.clients:
+                    c_id = c.get("id")
+                    if c_id:
+                        cursor.execute("""
+                            UPDATE entregas SET
+                                codigo_cliente = COALESCE(?, codigo_cliente),
+                                nome_cliente = COALESCE(?, nome_cliente),
+                                morada = COALESCE(?, morada),
+                                codigo_postal = COALESCE(?, codigo_postal),
+                                _concelho = COALESCE(?, _concelho),
+                                peso_kg = COALESCE(?, peso_kg),
+                                volume_m3 = COALESCE(?, volume_m3),
+                                janela_inicio = COALESCE(?, janela_inicio),
+                                janela_fim = COALESCE(?, janela_fim),
+                                tempo_descarga_min = COALESCE(?, tempo_descarga_min),
+                                regras = COALESCE(?, regras),
+                                vendedor = COALESCE(?, vendedor),
+                                telefone = COALESCE(?, telefone),
+                                valor_cobrar = COALESCE(?, valor_cobrar),
+                                armazem = COALESCE(?, armazem)
+                            WHERE id = ? AND projeto_id = ?
+                        """, (
+                            c.get("codigo_cliente"),
+                            c.get("nome_cliente"),
+                            c.get("morada"),
+                            c.get("codigo_postal"),
+                            c.get("concelho"),
+                            c.get("peso_kg"),
+                            c.get("volume_m3"),
+                            c.get("janela_inicio"),
+                            c.get("janela_fim"),
+                            c.get("tempo_descarga_min"),
+                            c.get("regras"),
+                            c.get("vendedor"),
+                            c.get("telefone"),
+                            c.get("valor_cobrar"),
+                            c.get("armazem"),
+                            c_id,
+                            project_id
+                        ))
+                conn.commit()
+
+            raw_clients = state_dict.get("clients_geocoded")
+            if raw_clients is not None:
+                df_c = raw_clients if isinstance(raw_clients, pd.DataFrame) else pd.DataFrame(raw_clients)
+                if not df_c.empty:
+                    for c in req.clients:
+                        cid = c.get("id")
+                        if not cid: continue
+                        idx_match = []
+                        if "id" in df_c.columns:
+                            idx_match = df_c[df_c["id"] == cid].index
+                        if len(idx_match) == 0 and "ID_Original" in df_c.columns:
+                            idx_match = df_c[df_c["ID_Original"] == cid].index
+                        if len(idx_match) > 0:
+                            if "regras" in c:
+                                if "Regras" in df_c.columns: df_c.loc[idx_match, "Regras"] = c["regras"]
+                                if "regras" in df_c.columns: df_c.loc[idx_match, "regras"] = c["regras"]
+                            if "peso_kg" in c:
+                                if "Peso_KG" in df_c.columns: df_c.loc[idx_match, "Peso_KG"] = c["peso_kg"]
+                            if "volume_m3" in c:
+                                if "Volume_m3" in df_c.columns: df_c.loc[idx_match, "Volume_m3"] = c["volume_m3"]
+                            if "armazem" in c:
+                                if "Armazem" in df_c.columns: df_c.loc[idx_match, "Armazem"] = c["armazem"]
+                            if "vendedor" in c:
+                                if "Vendedor" in df_c.columns: df_c.loc[idx_match, "Vendedor"] = c["vendedor"]
+                    state_dict["clients_geocoded"] = df_c
 
         # Save to SQLite frota table
         from database import save_frota_projeto

@@ -1322,6 +1322,10 @@ export default function MapComponent({
           const phone = c.Telefone || c.Telefone_Cliente || c.telefone || "";
           const driverNotes = c.Notas_Motorista || c.notas_motorista || c.Notas || c.notas || c.Observacoes || c.observacoes || "";
           const vendedor = c.Vendedor || c.vendedor || "";
+          const clientRules = c.Regras || (c as any).regras || (c as any).Restricoes || (c as any).restricoes || "";
+          const armazemOrigem = c.Armazem || (c as any).armazem || "";
+          const unloadTime = Number((c as any).tempo_descarga_min || (c as any).Tempo_Descarga_Min || 0);
+          const codAmount = Number((c as any).valor_cobrar || (c as any).Valor_Cobrar || 0);
           const stopWeight = c.Peso_KG !== undefined && c.Peso_KG !== null ? c.Peso_KG : (c.Carga_Acum || 0);
           const stopVolume = c.Volume_m3 !== undefined && c.Volume_m3 !== null ? c.Volume_m3 : (c.Volume_M3 || 0);
           const windowFormatted = formatTimeWindow(c.Janela_Horaria);
@@ -1464,7 +1468,48 @@ export default function MapComponent({
                     </div>
                   </div>
 
-                  {/* 6. Route Reassignment Selector inside Popup */}
+                  {/* 6. Regras & Características da Entrega */}
+                  <div className="p-1.5 bg-purple-50/90 border border-purple-200/90 rounded-md text-[10px] text-purple-950 mb-2">
+                    <span className="font-bold uppercase tracking-wider block text-[9px] text-purple-700 flex items-center justify-between mb-0.5">
+                      <span className="flex items-center space-x-1">
+                        <span>🏷️</span>
+                        <span>Regras & Características da Entrega:</span>
+                      </span>
+                      {unloadTime > 0 && (
+                        <span className="text-[9px] text-purple-800 font-semibold lowercase">
+                          ⏱️ {unloadTime} min
+                        </span>
+                      )}
+                    </span>
+                    {clientRules ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {clientRules.split(/[,;\s]+/).filter(Boolean).map((rg: string, i: number) => (
+                          <span key={i} className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-purple-950 font-bold font-mono text-[9.5px]">
+                            {rg}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-zinc-400 italic text-[9.5px]">Sem regras ou restrições especiais</span>
+                    )}
+
+                    {(codAmount > 0 || armazemOrigem) && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1 border-t border-purple-200/60 text-[9px]">
+                        {armazemOrigem && (
+                          <span className="text-purple-900 font-medium truncate" title="Armazém de Abastecimento">
+                            🏢 {armazemOrigem}
+                          </span>
+                        )}
+                        {codAmount > 0 && (
+                          <span className="px-1 py-0.2 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300">
+                            💰 Cobrar: {Number(codAmount).toFixed(2)} €
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 7. Route Reassignment Selector inside Popup */}
                   {onMoveClientRoute && (
                     <div className="pt-2 border-t border-zinc-200 flex items-center justify-between gap-2">
                       <label className="text-[10px] font-bold text-zinc-600 shrink-0">Mover para:</label>

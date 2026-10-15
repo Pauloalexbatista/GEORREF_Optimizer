@@ -18,6 +18,26 @@ function isPendingRoute(routeName?: string) {
   return s.includes("PENDENTE") || s.includes("DISTRIBUIR");
 }
 
+function formatClientForMap(r: any) {
+  return {
+    ...r,
+    id: r.id || r.ID_Original,
+    ID_Original: r.id || r.ID_Original,
+    Doc_ID: r.Doc_ID || r.doc_id || r.numero_doc || "",
+    Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
+    Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+    Nome_Cliente: r.Nome_Cliente || r.Cliente,
+    Telefone: r.Telefone || r.Telefone_Cliente || r.telefone || "",
+    Observacoes: r.Observacoes || r.observacoes || r.Notas_Motorista || "",
+    Notas_Motorista: r.Notas_Motorista || r.notas_motorista || r.Observacoes || r.observacoes || "",
+    Vendedor: r.Vendedor || r.vendedor || "",
+    Regras: r.Regras || r.regras || r.Restricoes || r.restricoes || "",
+    Armazem: r.Armazem || r.armazem || "",
+    Tempo_Descarga_Min: Number(r.Tempo_Descarga_Min || r.tempo_descarga_min || 10),
+    Valor_Cobrar: Number(r.Valor_Cobrar || r.valor_cobrar || 0),
+  };
+}
+
 export default function DetachedMapPage() {
   const { theme, toggleTheme } = useTheme();
   const { t } = useI18n();
@@ -59,19 +79,7 @@ export default function DetachedMapPage() {
         }),
       });
       if (res && res.routes) {
-        const mappedClients = res.routes.map((r: any) => ({
-          ...r,
-          id: r.id || r.ID_Original,
-          ID_Original: r.id || r.ID_Original,
-          Doc_ID: r.Doc_ID || r.doc_id || "",
-          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
-          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
-          Nome_Cliente: r.Nome_Cliente || r.Cliente,
-          Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
-          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
-          Vendedor: r.Vendedor || (r as any).vendedor || "",
-        }));
+        const mappedClients = res.routes.map(formatClientForMap);
         setClients(mappedClients);
         setStatusMsg(res.message || "Rotas re-otimizadas com sucesso!");
         const payload = {
@@ -141,19 +149,7 @@ export default function DetachedMapPage() {
           apiRequest(`/api/fleet/${projId}`)
         ]);
         if (routesRes && routesRes.routes && routesRes.routes.length > 0) {
-          const mappedClients = routesRes.routes.map((r: any) => ({
-            ...r,
-            id: r.id || r.ID_Original,
-            ID_Original: r.id || r.ID_Original,
-            Doc_ID: r.Doc_ID || r.doc_id || "",
-            Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
-            Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
-            Nome_Cliente: r.Nome_Cliente || r.Cliente,
-            Telefone: r.Telefone || r.Telefone_Cliente || "",
-            Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
-            Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
-            Vendedor: r.Vendedor || (r as any).vendedor || "",
-          }));
+          const mappedClients = routesRes.routes.map(formatClientForMap);
           setClients(mappedClients);
         }
         if (fleetRes) {
@@ -280,19 +276,7 @@ export default function DetachedMapPage() {
       });
 
       if (res && res.routes) {
-        const mappedClients = res.routes.map((r: any) => ({
-          ...r,
-          id: r.id || r.ID_Original,
-          ID_Original: r.id || r.ID_Original,
-          Doc_ID: r.Doc_ID || r.doc_id || "",
-          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
-          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
-          Nome_Cliente: r.Nome_Cliente || r.Cliente,
-          Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
-          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
-          Vendedor: r.Vendedor || (r as any).vendedor || "",
-        }));
+        const mappedClients = res.routes.map(formatClientForMap);
         setClients(mappedClients);
         setStatusMsg(`Guardado às ${new Date().toLocaleTimeString()}`);
 
@@ -342,19 +326,7 @@ export default function DetachedMapPage() {
       });
 
       if (res && res.routes) {
-        const mappedClients = res.routes.map((r: any) => ({
-          ...r,
-          id: r.id || r.ID_Original,
-          ID_Original: r.id || r.ID_Original,
-          Doc_ID: r.Doc_ID || r.doc_id || "",
-          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
-          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
-          Nome_Cliente: r.Nome_Cliente || r.Cliente,
-          Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
-          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
-          Vendedor: r.Vendedor || (r as any).vendedor || "",
-        }));
+        const mappedClients = res.routes.map(formatClientForMap);
         setClients(mappedClients);
         setStatusMsg(`Transferidas ${items.length} paragens às ${new Date().toLocaleTimeString()}`);
 
@@ -424,19 +396,7 @@ export default function DetachedMapPage() {
       });
 
       if (res && res.routes) {
-        const mappedClients = res.routes.map((r: any) => ({
-          ...r,
-          id: r.id || r.ID_Original,
-          ID_Original: r.id || r.ID_Original,
-          Doc_ID: r.Doc_ID || r.doc_id || "",
-          Codigo_Cliente: r.Codigo_Cliente || r.codigo_cliente || "",
-          Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
-          Nome_Cliente: r.Nome_Cliente || r.Cliente,
-          Telefone: r.Telefone || r.Telefone_Cliente || "",
-          Observacoes: r.Observacoes || (r as any).observacoes || (r as any).Notas_Motorista || "",
-          Notas_Motorista: (r as any).Notas_Motorista || (r as any).notas_motorista || r.Observacoes || (r as any).observacoes || "",
-          Vendedor: r.Vendedor || (r as any).vendedor || "",
-        }));
+        const mappedClients = res.routes.map(formatClientForMap);
         setClients(mappedClients);
         setStatusMsg(`Coordenadas atualizadas (${new Date().toLocaleTimeString()})`);
 

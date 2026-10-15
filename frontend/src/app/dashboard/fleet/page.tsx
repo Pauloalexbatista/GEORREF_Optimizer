@@ -68,16 +68,42 @@ interface NonDeliveryReason {
   is_active: number;
 }
 
-type TabType = "warehouses" | "fleet" | "rules" | "drivers" | "reasons";
+interface ClientDeliveryItem {
+  id: number;
+  codigo_cliente: string;
+  nome_cliente: string;
+  morada: string;
+  codigo_postal: string;
+  concelho: string;
+  peso_kg: number;
+  volume_m3: number;
+  janela_inicio: string;
+  janela_fim: string;
+  tempo_descarga_min: number;
+  regras: string;
+  vendedor: string;
+  telefone: string;
+  valor_cobrar: number;
+  armazem: string;
+  latitude: number;
+  longitude: number;
+  nivel_qualidade?: number;
+  fonte_match?: string;
+  rota?: string;
+  ordem?: number;
+}
+
+type TabType = "warehouses" | "fleet" | "clients" | "rules" | "drivers" | "reasons";
 
 export default function FleetPage() {
   const { selectedProject } = useProjects();
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<TabType>("warehouses");
 
-  // State for all 5 tables
+  // State for all 6 tables
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [fleet, setFleet] = useState<Vehicle[]>([]);
+  const [clients, setClients] = useState<ClientDeliveryItem[]>([]);
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [reasons, setReasons] = useState<NonDeliveryReason[]>([]);
@@ -89,6 +115,7 @@ export default function FleetPage() {
 
   // Search/Filters per tab
   const [searchFleet, setSearchFleet] = useState("");
+  const [searchClients, setSearchClients] = useState("");
   const [searchRules, setSearchRules] = useState("");
   const [searchDrivers, setSearchDrivers] = useState("");
   const [searchReasons, setSearchReasons] = useState("");
@@ -96,6 +123,7 @@ export default function FleetPage() {
   // Geocoding Modal State
   const [geoModalOpen, setGeoModalOpen] = useState(false);
   const [editingWhIndex, setEditingWhIndex] = useState<number | null>(null);
+  const [editingClient, setEditingClient] = useState<ClientDeliveryItem | null>(null);
 
   // Load all tables on project change
   useEffect(() => {
@@ -105,7 +133,10 @@ export default function FleetPage() {
       setLoading(true);
       setFeedback(null);
       try {
-        const data = await apiRequest(`/api/fleet/${selectedProject.id}`);
+        const [data, clientsRes] = await Promise.all([
+          apiRequest(`/api/fleet/${selectedProject.id}`),
+          apiRequest(`/api/geocoding/${selectedProject.id}`)
+        ]);
         if (data) {
           if (data.warehouses) setWarehouses(data.warehouses);
           if (data.fleet) setFleet(data.fleet);
@@ -113,8 +144,34 @@ export default function FleetPage() {
           if (data.drivers) setDrivers(data.drivers);
           if (data.reasons) setReasons(data.reasons);
         }
+        if (Array.isArray(clientsRes)) {
+          setClients(clientsRes.map((c: any) => ({
+            id: c.id,
+            codigo_cliente: c.codigo_cliente || "",
+            nome_cliente: c.nome_cliente || c.codigo_cliente || "",
+            morada: c.morada || "",
+            codigo_postal: c.codigo_postal || "",
+            concelho: c.concelho || "",
+            peso_kg: Number(c.peso_kg || 0),
+            volume_m3: Number(c.volume_m3 || 0),
+            janela_inicio: c.janela_inicio || "08:00",
+            janela_fim: c.janela_fim || "18:00",
+            tempo_descarga_min: Number(c.tempo_descarga_min || 10),
+            regras: c.regras || "",
+            vendedor: c.vendedor || "",
+            telefone: c.telefone || "",
+            valor_cobrar: Number(c.valor_cobrar || 0),
+            armazem: c.armazem || (data?.warehouses?.[0]?.name || "Armazém Principal"),
+            latitude: Number(c.latitude || 0),
+            longitude: Number(c.longitude || 0),
+            nivel_qualidade: c.nivel_qualidade,
+            fonte_match: c.fonte_match,
+            rota: c.rota || "Por Distribuir",
+            ordem: c.ordem || 0,
+          })));
+        }
       } catch (err: any) {
-        console.error("Erro ao carregar tabelas de frota:", err);
+        console.error("Erro ao carregar tabelas de frota e clientes:", err);
       } finally {
         setLoading(false);
       }
@@ -135,6 +192,7 @@ export default function FleetPage() {
         rules_matrix: rules,
         drivers,
         reasons,
+        clients,
       };
 
       await apiRequest(`/api/fleet/${selectedProject.id}`, {
@@ -142,7 +200,7 @@ export default function FleetPage() {
         body: JSON.stringify(payload),
       });
 
-      setFeedback({ type: "success", msg: "Todas as tabelas de suporte e regras foram guardadas com sucesso!" });
+      setFeedback({ type: "success", msg: "Todas as tabelas de suporte, regras e clientes foram guardadas com sucesso!" });
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
       console.error("Erro ao guardar tabelas:", err);
@@ -335,7 +393,66 @@ export default function FleetPage() {
     setReasons((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // --- CLIENTS HANDLERS ---
+  const updateClientField = (id: number, field: keyof ClientDeliveryItem, value: any) => {
+    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
+  };
+
+  const addClient = () => {
+    const newId = clients.length > 0 ? Math.max(...clients.map((c) => c.id || 0)) + 1 : 1;
+    const newClient: ClientDeliveryItem = {
+      id: newId,
+      codigo_cliente: `CLI_${newId}`,
+      nome_cliente: `Novo Cliente ${newId}`,
+      morada: "",
+      codigo_postal: "",
+      concelho: "",
+      peso_kg: 50,
+      volume_m3: 0.5,
+      janela_inicio: "08:00",
+      janela_fim: "18:00",
+      tempo_descarga_min: 10,
+      regras: "",
+      vendedor: "",
+      telefone: "",
+      valor_cobrar: 0,
+      armazem: warehouses[0]?.name || "Armazém Principal",
+      latitude: 0,
+      longitude: 0,
+      nivel_qualidade: 99,
+      rota: "Por Distribuir",
+      ordem: 0,
+    };
+    setClients((prev) => [newClient, ...prev]);
+  };
+
+  const deleteClient = async (id: number) => {
+    if (!confirm("Tem a certeza que deseja eliminar esta entrega/cliente?")) return;
+    try {
+      await apiRequest(`/api/geocoding/delivery/${id}`, { method: "DELETE" });
+      setClients((prev) => prev.filter((c) => c.id !== id));
+      setFeedback({ type: "success", msg: "Cliente/entrega eliminado com sucesso." });
+    } catch (err: any) {
+      setFeedback({ type: "error", msg: err.message || "Erro ao eliminar cliente." });
+    }
+  };
+
   // Filtered lists
+  const filteredClients = useMemo(() => {
+    if (!searchClients.trim()) return clients;
+    const q = searchClients.toLowerCase().trim();
+    return clients.filter(
+      (c) =>
+        (c.codigo_cliente && c.codigo_cliente.toLowerCase().includes(q)) ||
+        (c.nome_cliente && c.nome_cliente.toLowerCase().includes(q)) ||
+        (c.morada && c.morada.toLowerCase().includes(q)) ||
+        (c.concelho && c.concelho.toLowerCase().includes(q)) ||
+        (c.vendedor && c.vendedor.toLowerCase().includes(q)) ||
+        (c.regras && c.regras.toLowerCase().includes(q)) ||
+        (c.armazem && c.armazem.toLowerCase().includes(q))
+    );
+  }, [clients, searchClients]);
+
   const filteredFleet = useMemo(() => {
     if (!searchFleet.trim()) return fleet;
     const q = searchFleet.toLowerCase();
@@ -454,6 +571,17 @@ export default function FleetPage() {
           </button>
 
           <button
+            onClick={() => setActiveTab("clients")}
+            className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
+              activeTab === "clients"
+                ? "bg-zinc-850 border-indigo-500 text-indigo-400"
+                : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+            }`}
+          >
+            <span>📦</span> 3. Clientes & Encomendas ({clients.length})
+          </button>
+
+          <button
             onClick={() => setActiveTab("rules")}
             className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer border-b-2 flex items-center gap-1.5 ${
               activeTab === "rules"
@@ -461,7 +589,7 @@ export default function FleetPage() {
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
             }`}
           >
-            <span>⚖️</span> 3. Regras ({rules.length})
+            <span>⚖️</span> 4. Regras ({rules.length})
           </button>
 
           <button
@@ -472,7 +600,7 @@ export default function FleetPage() {
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
             }`}
           >
-            <span>👤</span> 4. Motoristas & PINs ({drivers.length})
+            <span>👤</span> 5. Motoristas & PINs ({drivers.length})
           </button>
 
           <button
@@ -483,7 +611,7 @@ export default function FleetPage() {
                 : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
             }`}
           >
-            <span>⚠️</span> 5. Justificação de Entregas ({reasons.length})
+            <span>⚠️</span> 6. Justificação de Entregas ({reasons.length})
           </button>
         </div>
 
@@ -865,7 +993,218 @@ export default function FleetPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* TAB 3: RULES (Aba Regras / Matriz de Compatibilidade)         */}
+        {/* TAB 3: CLIENTES & ENCOMENDAS (Aba Clientes do Projeto)        */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === "clients" && (
+          <div className="space-y-3 animate-in fade-in">
+            {/* Toolbar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-zinc-900/60 p-3.5 rounded-2xl border border-zinc-800">
+              <div>
+                <h3 className="text-sm font-bold text-zinc-100 flex items-center space-x-2">
+                  <span>📦</span>
+                  <span>Clientes & Encomendas de Distribuição ({clients.length})</span>
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Configure restrições operacionais, tempos de descarga e etiquetas de regras das encomendas.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <input
+                  type="text"
+                  placeholder="Pesquisar cliente, morada, regras, vendedor..."
+                  value={searchClients}
+                  onChange={(e) => setSearchClients(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 px-3 py-1.5 rounded-xl outline-none focus:border-indigo-500 w-full sm:w-72"
+                />
+                <button
+                  onClick={addClient}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-all shrink-0 cursor-pointer flex items-center gap-1"
+                >
+                  <span>+</span> <span>Adicionar Cliente</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto border border-zinc-800 rounded-2xl bg-zinc-900/40 backdrop-blur-sm max-h-[68vh]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-zinc-900/90 text-zinc-400 font-bold uppercase tracking-wider text-[10px] sticky top-0 z-10 border-b border-zinc-800">
+                  <tr>
+                    <th className="py-2.5 px-1.5 text-center w-16 border-r border-zinc-800">Ações</th>
+                    <th className="py-2.5 px-2 border-r border-zinc-800 w-28">Cód / Doc</th>
+                    <th className="py-2.5 px-2 border-r border-zinc-800 w-44">Cliente</th>
+                    <th className="py-2.5 px-2 border-r border-zinc-800 w-36">Armazém</th>
+                    <th className="py-2.5 px-2 border-r border-zinc-800 min-w-[200px]">Morada & Localidade</th>
+                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-20">Peso (kg)</th>
+                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-16">Vol. (m³)</th>
+                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-28">Janela Horária</th>
+                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-16">Descarga</th>
+                    <th className="py-2.5 px-2 border-r border-zinc-800 min-w-[160px] bg-purple-950/20 text-purple-300">
+                      🏷️ Regras da Entrega
+                    </th>
+                    <th className="py-2.5 px-2 border-r border-zinc-800 w-28">Vendedor</th>
+                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-20">Cobrar (€)</th>
+                    <th className="py-2.5 px-2 text-center w-28">Rota Atribuída</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
+                  {filteredClients.length === 0 ? (
+                    <tr>
+                      <td colSpan={13} className="py-8 text-center text-zinc-500">
+                        Nenhum cliente encontrado com os filtros atuais.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredClients.map((c) => (
+                      <tr key={c.id} className="hover:bg-zinc-850/50 transition-colors">
+                        <td className="py-1 px-1.5 text-center border-r border-zinc-800 bg-zinc-900/40">
+                          <div className="flex items-center justify-center space-x-1">
+                            <button
+                              onClick={() => setEditingClient(c)}
+                              className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-amber-950/40 rounded transition-colors cursor-pointer"
+                              title="Corrigir Georreferenciação no Mapa"
+                            >
+                              📍
+                            </button>
+                            <button
+                              onClick={() => deleteClient(c.id)}
+                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                              title="Eliminar Cliente / Entrega"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-1 px-2 border-r border-zinc-800 font-mono text-zinc-400 text-[11px]">
+                          {c.codigo_cliente}
+                        </td>
+                        <td className="py-1 px-2 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={c.nome_cliente}
+                            onChange={(e) => updateClientField(c.id, "nome_cliente", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-100 font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                          />
+                        </td>
+                        <td className="py-1 px-2 border-r border-zinc-800">
+                          <select
+                            value={c.armazem || (warehouses[0]?.name || "")}
+                            onChange={(e) => updateClientField(c.id, "armazem", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-300 w-full text-xs focus:bg-zinc-900 px-1 py-0.5 rounded cursor-pointer"
+                          >
+                            {warehouses.map((w, wIdx) => (
+                              <option key={wIdx} value={w.name} className="bg-zinc-900 text-zinc-200">
+                                {w.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-1 px-2 border-r border-zinc-800 text-[11px]">
+                          <div className="flex flex-col">
+                            <input
+                              type="text"
+                              value={c.morada}
+                              onChange={(e) => updateClientField(c.id, "morada", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-200 font-medium text-[11px] focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                            <div className="flex items-center space-x-1 text-zinc-500 text-[10px] pl-1 font-mono">
+                              <span>{c.codigo_postal}</span>
+                              <span>{c.concelho}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={c.peso_kg}
+                            onChange={(e) => updateClientField(c.id, "peso_kg", parseFloat(e.target.value) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                          />
+                        </td>
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={c.volume_m3}
+                            onChange={(e) => updateClientField(c.id, "volume_m3", parseFloat(e.target.value) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                          />
+                        </td>
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
+                          <div className="flex items-center justify-center space-x-1">
+                            <input
+                              type="text"
+                              value={c.janela_inicio}
+                              onChange={(e) => updateClientField(c.id, "janela_inicio", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[10.5px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-12"
+                            />
+                            <span className="text-zinc-600">-</span>
+                            <input
+                              type="text"
+                              value={c.janela_fim}
+                              onChange={(e) => updateClientField(c.id, "janela_fim", e.target.value)}
+                              className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-[10.5px] focus:bg-zinc-900 px-0.5 py-0.5 rounded w-12"
+                            />
+                          </div>
+                        </td>
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
+                          <input
+                            type="number"
+                            value={c.tempo_descarga_min}
+                            onChange={(e) => updateClientField(c.id, "tempo_descarga_min", parseInt(e.target.value, 10) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                          />
+                        </td>
+                        <td className="py-1 px-2 border-r border-zinc-800 bg-purple-950/10">
+                          <input
+                            type="text"
+                            value={c.regras || ""}
+                            onChange={(e) => updateClientField(c.id, "regras", e.target.value)}
+                            placeholder="ex: [M_V_Normal], [FRIO]..."
+                            className="bg-transparent border-none outline-none text-purple-200 font-mono font-semibold text-xs focus:bg-zinc-900 px-1.5 py-0.5 rounded w-full placeholder:text-zinc-600"
+                          />
+                        </td>
+                        <td className="py-1 px-2 border-r border-zinc-800">
+                          <input
+                            type="text"
+                            value={c.vendedor || ""}
+                            onChange={(e) => updateClientField(c.id, "vendedor", e.target.value)}
+                            className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                          />
+                        </td>
+                        <td className="py-1 px-1 text-center border-r border-zinc-800">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={c.valor_cobrar || 0}
+                            onChange={(e) => updateClientField(c.id, "valor_cobrar", parseFloat(e.target.value) || 0)}
+                            className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                          />
+                        </td>
+                        <td className="py-1 px-2 text-center text-[10.5px]">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold ${
+                              c.rota && !c.rota.includes("Distribuir")
+                                ? "bg-indigo-950 text-indigo-300 border border-indigo-700/60"
+                                : "bg-amber-950/80 text-amber-300 border border-amber-800/60"
+                            }`}
+                          >
+                            {c.rota || "Por Distribuir"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* TAB 4: RULES (Aba Regras / Matriz de Compatibilidade)         */}
         {/* ------------------------------------------------------------- */}
         {activeTab === "rules" && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl p-4 space-y-3">
@@ -1265,6 +1604,49 @@ export default function FleetPage() {
               setGeoModalOpen(false);
               setEditingWhIndex(null);
             }}
+          />
+        )}
+
+        {/* Modal de Georreferenciação Manual do Cliente (Unificado) */}
+        {editingClient && (
+          <UnifiedGeocodingModal
+            isOpen={!!editingClient}
+            title={`Georreferenciação Manual do Cliente: ${editingClient.codigo_cliente} (${editingClient.nome_cliente})`}
+            entityType="delivery"
+            initialData={{
+              name: editingClient.nome_cliente || editingClient.codigo_cliente,
+              address: editingClient.morada || "",
+              cp: editingClient.codigo_postal || "",
+              locality: editingClient.concelho || "",
+              lat: Number(editingClient.latitude || 0),
+              lon: Number(editingClient.longitude || 0),
+            }}
+            onSave={async (data) => {
+              updateClientField(editingClient.id, "morada", data.address);
+              updateClientField(editingClient.id, "codigo_postal", data.cp);
+              updateClientField(editingClient.id, "concelho", data.locality);
+              updateClientField(editingClient.id, "latitude", data.lat);
+              updateClientField(editingClient.id, "longitude", data.lon);
+              updateClientField(editingClient.id, "nivel_qualidade", 1);
+
+              try {
+                await apiRequest(`/api/geocoding/delivery/${editingClient.id}`, {
+                  method: "PUT",
+                  body: JSON.stringify({
+                    morada: data.address,
+                    codigo_postal: data.cp,
+                    concelho: data.locality,
+                    latitude: data.lat,
+                    longitude: data.lon,
+                  }),
+                });
+                setFeedback({ type: "success", msg: `Localização de ${editingClient.nome_cliente} atualizada com sucesso!` });
+              } catch (e: any) {
+                console.error("Erro ao guardar coordenadas do cliente:", e);
+              }
+              setEditingClient(null);
+            }}
+            onClose={() => setEditingClient(null)}
           />
         )}
       </div>
