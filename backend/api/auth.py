@@ -89,48 +89,60 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> UserResponse:
 
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest):
-    user_raw = get_utilizador(req.email.strip().lower())
-    if not user_raw:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ou password incorretos"
-        )
-    
-    user = dict(user_raw)
+    try:
+        user_raw = get_utilizador(req.email.strip().lower())
+        if not user_raw:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Email ou password incorretos"
+            )
+        
+        user = dict(user_raw)
 
-    # Check active status
-    if not user.get("is_active", 1):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="A sua conta encontra-se desativada pelo Administrador."
-        )
+        # Check active status
+        if not user.get("is_active", 1):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="A sua conta encontra-se desativada pelo Administrador."
+            )
 
-    # Check license expiration date (if not superadmin)
-    is_super = bool(user.get("is_superadmin", 0) == 1)
-    valid_date_str = user.get("data_validade")
-    if not is_super and valid_date_str:
-        try:
-            dt = datetime.strptime(valid_date_str[:10], "%Y-%m-%d").date()
-            if dt < date.today():
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"A sua subscrição expirou em {dt.strftime('%d/%m/%Y')}. Por favor, contacte o Administrador para renovar o seu acesso."
-                )
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+        # Check license expiration date (if not superadmin)
+        is_super = bool(user.get("is_superadmin", 0) == 1)
+        valid_date_str = user.get("data_validade")
+        if not is_super and valid_date_str:
+            try:
+                dt = datetime.strptime(valid_date_str[:10], "%Y-%m-%d").date()
+                if dt < date.today():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"A sua subscrição expirou em {dt.strftime('%d/%m/%Y')}. Por favor, contacte o Administrador para renovar o seu acesso."
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                pass
 
-    # Check password
-    if not verify_password(req.password, user["password_hash"]):
+        # Check password
+        if not verify_password(req.password, user["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Email ou password incorretos"
+            )
+        
+        # Generate token
+        token = create_access_token(data={"sub": str(user["id"]), "email": user["email"]})
+        if isinstance(token, bytes):
+            token = token.decode("utf-8")
+        return TokenResponse(access_token=str(token), token_type="bearer")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[AUTH LOGIN ERROR]: {e}\n{traceback.format_exc()}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ou password incorretos"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro no servidor durante a autenticação: {str(e)}"
         )
-    
-    # Generate token
-    token = create_access_token(data={"sub": str(user["id"]), "email": user["email"]})
-    return TokenResponse(access_token=token, token_type="bearer")
 
 @router.post("/register")
 def register():
