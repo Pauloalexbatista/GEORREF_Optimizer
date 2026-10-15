@@ -10,6 +10,7 @@ import { MapFilterState } from "@/components/MapComponent";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
+const UnifiedGeocodingModal = dynamic(() => import("@/components/UnifiedGeocodingModal"), { ssr: false });
 
 function isPendingRoute(routeName?: string) {
   if (!routeName) return true;
@@ -28,6 +29,7 @@ export default function DetachedMapPage() {
   const [statusMsg, setStatusMsg] = useState("A aguardar sincronização...");
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
+  const [geocodingClient, setGeocodingClient] = useState<any | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
   const handleReoptimizeSubset = async (options: {
@@ -457,6 +459,89 @@ export default function DetachedMapPage() {
     }
   };
 
+  const handleSaveGeoreferencing = async (data: {
+    address: string;
+    cp: string;
+    locality: string;
+    lat: number;
+    lon: number;
+  }) => {
+    if (!geocodingClient) return;
+    const clientName = geocodingClient.Cliente || geocodingClient.Nome_Cliente || "";
+    const projId = selectedProject?.id || parseInt(localStorage.getItem("georoute_selected_project_id") || "0", 10);
+    const delivId = geocodingClient.id || geocodingClient.ID_Original;
+
+    setStatusMsg(`A atualizar georreferenciação de ${clientName}...`);
+
+    try {
+      if (delivId) {
+        await apiRequest(`/api/geocoding/delivery/${delivId}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            morada: data.address,
+            codigo_postal: data.cp,
+            concelho: data.locality,
+            latitude: data.lat,
+            longitude: data.lon,
+          }),
+        });
+      }
+
+      // Atualizar lista local de clientes no mapa
+      const updatedClients = clients.map((c) => {
+        const isMatch = (delivId && (c.id === delivId || c.ID_Original === delivId)) ||
+                        (c.Cliente === clientName) ||
+                        (geocodingClient.Doc_ID && c.Doc_ID === geocodingClient.Doc_ID);
+        if (isMatch) {
+          return {
+            ...c,
+            Morada: data.address,
+            CP: data.cp,
+            Localidade: data.locality,
+            Latitude: data.lat,
+            Longitude: data.lon,
+          };
+        }
+        return c;
+      });
+
+      setClients(updatedClients);
+      setStatusMsg(`Georreferenciação de ${clientName} atualizada com sucesso!`);
+
+      // Broadcast e localStorage para sincronização com o 1º ecrã
+      const payload = {
+        type: "MAP_UPDATE",
+        clients: updatedClients,
+        warehouses,
+        vehicles,
+        fleet,
+        timestamp: Date.now(),
+      };
+      try {
+        channelRef.current?.postMessage(payload);
+        localStorage.setItem("georoute_map_state", JSON.stringify(payload));
+      } catch (e) {}
+
+      const savedClientRoute = geocodingClient.Rota;
+      setGeocodingClient(null);
+
+      // Se o cliente pertencia a uma viatura real (ex: "TNB 752 - Eletrica") e não "Por Distribuir",
+      // re-otimiza essa viatura automaticamente para recalcular o percurso e a quilometragem real sem o desvio gigante
+      if (projId && savedClientRoute && !isPendingRoute(savedClientRoute)) {
+        setStatusMsg(`A recalcular rota de ${savedClientRoute} com as novas coordenadas...`);
+        await handleReoptimizeSubset({
+          selectedRoutes: [savedClientRoute],
+          objective: "distance",
+          balanceRoutes: false,
+          respectTimeWindows: true,
+        });
+      }
+    } catch (err: any) {
+      console.error("Erro ao gravar georreferenciação:", err);
+      alert(`Erro ao guardar georreferenciação: ${err.message || "Erro desconhecido"}`);
+    }
+  };
+
   return (
     <div className="w-screen h-screen bg-zinc-950 flex flex-col overflow-hidden">
       {/* Top Bar for Detached Window */}
@@ -534,11 +619,31 @@ export default function DetachedMapPage() {
           onMoveClientRoute={handleMoveClientRoute}
           onBulkReassign={handleBulkReassign}
           onUpdateClientCoords={handleUpdateClientCoords}
+          onGeoreferenceClient={(client) => setGeocodingClient(client)}
           onReoptimizeSubset={(rNames) => {
             setModalSelectedRoutes(rNames);
             setReoptimizeModalOpen(true);
           }}
         />
+
+        {/* Unified Geocoding / Correction Modal directly from Map Marker */}
+        {geocodingClient && (
+          <UnifiedGeocodingModal
+            isOpen={!!geocodingClient}
+            title={`Georreferenciação: ${geocodingClient.Cliente || geocodingClient.Nome_Cliente || ""} ${geocodingClient.Doc_ID ? `(${geocodingClient.Doc_ID})` : ""}`}
+            entityType="delivery"
+            initialData={{
+              name: geocodingClient.Cliente || geocodingClient.Nome_Cliente || "",
+              address: geocodingClient.Morada || "",
+              cp: geocodingClient.CP || "",
+              locality: geocodingClient.Localidade || "",
+              lat: Number(geocodingClient.Latitude || 0),
+              lon: Number(geocodingClient.Longitude || 0),
+            }}
+            onClose={() => setGeocodingClient(null)}
+            onSave={handleSaveGeoreferencing}
+          />
+        )}
 
         {/* Re-optimize Selected Routes Modal on 2nd Monitor */}
         <ReoptimizeModal

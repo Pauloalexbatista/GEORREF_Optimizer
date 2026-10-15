@@ -70,6 +70,7 @@ export interface MapComponentProps {
   onMoveClientRoute?: (clientName: string, newRoute: string, deliveryId?: number, address?: string, lat?: number, lon?: number) => void;
   onBulkReassign?: (items: { clientName: string; deliveryId?: number; address?: string; lat?: number; lon?: number }[], newRoute: string) => Promise<void>;
   onUpdateClientCoords?: (clientName: string, lat: number, lon: number) => void;
+  onGeoreferenceClient?: (client: MapClient) => void;
   filterState?: MapFilterState;
   onFilterChange?: (filters: MapFilterState) => void;
   onReoptimizeSubset?: (selectedRoutes: string[]) => void;
@@ -374,6 +375,7 @@ export default function MapComponent({
   onMoveClientRoute,
   onBulkReassign,
   onUpdateClientCoords,
+  onGeoreferenceClient,
   filterState,
   onFilterChange,
   onReoptimizeSubset,
@@ -1478,6 +1480,21 @@ export default function MapComponent({
                           </option>
                         ))}
                       </select>
+                    </div>
+                  )}
+
+                  {/* 7. Quick Georeferencing / Coordinate Correction Modal Trigger */}
+                  {onGeoreferenceClient && (
+                    <div className="pt-2 border-t border-zinc-200">
+                      <button
+                        type="button"
+                        onClick={() => onGeoreferenceClient(c)}
+                        className="w-full py-1.5 px-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-lg text-[11px] font-bold flex items-center justify-center space-x-1.5 shadow-sm transition-all cursor-pointer"
+                        title="Abrir ecrã de georreferenciação para corrigir morada ou coordenadas"
+                      >
+                        <span className="text-xs">📍</span>
+                        <span>Corrigir Georreferenciação</span>
+                      </button>
                     </div>
                   )}
                 </div>
