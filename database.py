@@ -451,6 +451,33 @@ def eliminar_projeto(projeto_id):
         conn.commit()
 
 
+def limpar_projetos_expirados(empresa_id=None, dias=7):
+    """
+    Elimina automaticamente projetos criados há mais de X dias (RGPD & Limpeza de Disco),
+    salvo se o projeto estiver marcado como 'ativo na rua' (is_active = 1).
+    """
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(days=dias)).strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if empresa_id is not None:
+            cursor.execute(
+                "SELECT id FROM projetos WHERE (is_active IS NULL OR is_active = 0) AND created_at < ? AND empresa_id = ?",
+                (cutoff, empresa_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM projetos WHERE (is_active IS NULL OR is_active = 0) AND created_at < ?",
+                (cutoff,)
+            )
+        expired_ids = [r[0] for r in cursor.fetchall()]
+
+    for pid in expired_ids:
+        eliminar_projeto(pid)
+
+    return len(expired_ids)
+
+
 def ativar_projeto(projeto_id, empresa_id):
     """Ativa o projeto como distribuicao ativa na rua e desativa outros da empresa."""
     with get_db() as conn:

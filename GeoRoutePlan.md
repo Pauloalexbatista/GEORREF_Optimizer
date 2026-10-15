@@ -320,7 +320,39 @@ O sistema audita e classifica cada coordenada de entrega em 9 níveis de precis�
 
 ---
 
-## 📋 8. Checklist de Início de Sessão para o Desenvolvedor / Agente
+## 🔒 9. Política de Retenção de Dados, RGPD & Arquitetura da App de Motoristas
+
+### 9.1 Regra de Retenção de 7 Dias (1 Semana) & Limite de 10 Distribuições:
+1. **Ciclo de Vida das Distribuições (7 Dias)**:
+   * Cada projeto/distribuição tem um ciclo de vida ativo no servidor de **7 dias (1 semana)** a contar da data de distribuição.
+   * **Exceção de Segurança**: Projetos com estado ativo na rua (`status = 'active'`) nunca são eliminados automaticamente.
+   * **Responsabilidade do Arquivo**: O cliente descarrega o **Excel Canónico de 9 Abas** para o seu arquivo local/ERP. Como o sistema suporta *roundtrip* completo, se o cliente necessitar de revisitar ou auditar a distribuição no futuro, basta importar novamente o Excel de 9 abas que o sistema reconstrói as rotas e métricas exatamente como estavam.
+2. **Limite de 10 Projetos por Empresa**:
+   * O sistema limita a 10 o número de distribuições simultâneas por empresa no servidor, prevenindo a degradação de espaço e custos no SQLite / VPS Coolify.
+
+### 9.2 Diretrizes de RGPD & Proteção de Dados Pessoais (Lei n.º 58/2019 e CNPD):
+1. **Minimização de Dados**:
+   * Apenas recolher e processar os campos estritamente necessários à entrega (nome, morada, contacto e janela horária).
+2. **Geocoding Seguro (APIs Externas)**:
+   * Ao comunicar com a Google Maps API ou OpenStreetMap (Nominatim), **nunca** enviar dados pessoais de clientes (nome, telefone, NIF ou observações). Enviar exclusivamente a cadeia de texto da morada, concelho e código postal.
+3. **Isolamento Multitenant Inviolável**:
+   * Todos os acessos a projetos, rotas, entregas, frotas e consumos devem ser estritamente filtrados por `empresa_id` através do token JWT autenticado.
+4. **Proteção de Notas de Motorista e Observações**:
+   * O campo `Notas_Motorista` pode conter informações de acesso ou notas sensíveis dos clientes. O acesso a este campo no PWA móvel é restrito unicamente ao motorista atribuído à respetiva viatura.
+
+### 9.3 Arquitetura de Rastreio da App de Motoristas (`motoristas_webapp`):
+Em estrita conformidade com as deliberações da **CNPD** e com os **artigos 19.º e 20.º do Código do Trabalho** (proibição de vigilância contínua à distância do trabalhador):
+1. **Sem Rastreio Contínuo de Passos**:
+   * A aplicação móvel **NÃO recolhe nem regista continuamente** o trajeto segundo a segundo do motorista.
+2. **Geolocalização Estritamente Pontual (Event-Driven)**:
+   * **Pico de Entrega / POD (*Proof of Delivery*)**: Apenas no momento em que o motorista submete a paragem ("Entregue" ou "Não Entregue com Justificação"), a aplicação pode registar uma coordenada pontual como comprovativo georreferenciado de presença no cliente.
+   * **Apoio ao Motorista (Sob Demanda / Voluntário)**: Botão no PWA onde o motorista, por sua livre iniciativa, partilha momentaneamente a sua posição com o gestor de tráfego/armazém para pedir apoio no despiste de moradas erradas ou acessos difíceis.
+3. **Cessação no Fim de Turno**:
+   * Ao finalizar o manifesto da rota, o PWA encerra todas as permissões de localização.
+
+---
+
+## 📋 10. Checklist de Início de Sessão para o Desenvolvedor / Agente
 
 Antes de iniciar qualquer desenvolvimento:
 - [ ] Ler este documento (`GeoRoutePlan.md`) na íntegra.
@@ -329,3 +361,4 @@ Antes de iniciar qualquer desenvolvimento:
 - [ ] Garantir que qualquer alteração de dados mantém a compatibilidade integral com o **Ficheiro Excel de 9 Abas** e os seus campos canónicos.
 - [ ] Validar que todas as alterações ao solver respeitam as restrições avaliadas pelo **Motor de Regras** (`utils/rules_engine.py`).
 - [ ] **Manter a regra de custo zero de matrizes (Haversine + OR-Tools) até haver clientes reais pagantes para ativar a Google Routes Matrix API**.
+- [ ] **Cumprir as regras de retenção de 7 dias e as diretrizes de RGPD/CNPD para a App de Motoristas**.
