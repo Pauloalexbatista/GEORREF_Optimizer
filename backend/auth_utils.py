@@ -3,8 +3,9 @@ import hashlib
 from datetime import datetime, timedelta
 import bcrypt
 from typing import Optional
+import os
 
-SECRET_KEY = 'georoute_super_secret_key_change_me_in_production'
+SECRET_KEY = os.getenv('SECRET_KEY', 'georoute_super_secret_key_change_me_in_production')
 ALGORITHM = 'HS256'
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours for ease of multi-monitor use
 
