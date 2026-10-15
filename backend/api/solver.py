@@ -961,8 +961,15 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
         df_r = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
         if not df_r.empty:
             df_r = df_r.copy()
+            if "latitude" in df_r.columns and "Latitude" not in df_r.columns:
+                df_r["Latitude"] = df_r["latitude"]
+            if "longitude" in df_r.columns and "Longitude" not in df_r.columns:
+                df_r["Longitude"] = df_r["longitude"]
+            for col in ["latitude", "longitude"]:
+                if col in df_r.columns:
+                    df_r.drop(columns=[col], inplace=True)
             # Assegurar que as colunas de coordenadas e pesos são float para evitar 'Invalid value for dtype int64'
-            for col in ["Latitude", "Longitude", "latitude", "longitude", "Peso_KG", "Volume_m3", "KM_Anterior", "Dist_Acum"]:
+            for col in ["Latitude", "Longitude", "Peso_KG", "Volume_m3", "KM_Anterior", "Dist_Acum"]:
                 if col not in df_r.columns:
                     df_r[col] = 0.0
                 else:
@@ -972,6 +979,7 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
                     df_r[str_col] = ""
                 else:
                     df_r[str_col] = df_r[str_col].fillna("").astype(str)
+            df_r = df_r.loc[:, ~df_r.columns.duplicated(keep="first")].copy()
 
             # Sync fresh live coordinates and delivery data from database into df_r
             for idx, r in df_r.iterrows():
@@ -1774,7 +1782,9 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         warehouses_df = state_dict.get("warehouses_geocoded")
         if warehouses_df is None or (isinstance(warehouses_df, pd.DataFrame) and warehouses_df.empty):
             warehouses_df = state_dict.get("warehouses_used", pd.DataFrame())
-        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used")) or {}
+        fleet_config = _pick_first_valid(state_dict.get("fleet_config"), state_dict.get("fleet_config_used"))
+        if fleet_config is None:
+            fleet_config = {}
         fleet_dict = extract_fleet_dict(fleet_config, warehouses_df)
         
         target_routes = [r.strip() for r in req.selected_routes if r.strip()]
@@ -1817,9 +1827,9 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         for idx_row in subset_indices:
             row_s = df_canonical.loc[idx_row]
             locations.append((float(row_s["Latitude"]), float(row_s["Longitude"])))
-            demands.append(float(row_s.get("Peso_KG") or 50.0))
-            volume_demands.append(float(row_s.get("Volume_m3") or 0.1))
-            service_times.append(int(row_s.get("Tempo_Entrega") or row_s.get("tempo_descarga_min") or 10))
+            demands.append(float(clean_num(row_s.get("Peso_KG"), default=50.0)))
+            volume_demands.append(float(clean_num(row_s.get("Volume_m3"), default=0.1)))
+            service_times.append(int(clean_num(row_s.get("Tempo_Entrega", row_s.get("tempo_descarga_min")), default=10)))
 
         dist_matrix = calculate_haversine_matrix(locations)
 
@@ -1845,9 +1855,12 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             e_min = parse_time_to_minutes(str(row_s.get("Janela_Fim", "")), 1440)
             client_tw.append((s_min, e_min))
 
-        client_wh = ["" for _ in range(num_warehouses)] + list(subset_df["Armazem"].fillna(""))
+        wh_c = "Armazem" if "Armazem" in subset_df.columns else "armazem" if "armazem" in subset_df.columns else None
+        client_wh = ["" for _ in range(num_warehouses)] + (list(subset_df[wh_c].fillna("").astype(str)) if wh_c else ["" for _ in range(len(subset_df))])
         v_wh = [str(fleet_dict[v].get("warehouse", "")).strip() for v in target_vehicles]
-        client_r = ["" for _ in range(num_warehouses)] + list(subset_df.get("regras", pd.Series([""] * len(subset_df))).fillna(""))
+        
+        rg_c = "Regras" if "Regras" in subset_df.columns else "regras" if "regras" in subset_df.columns else None
+        client_r = ["" for _ in range(num_warehouses)] + (list(subset_df[rg_c].fillna("").astype(str)) if rg_c else ["" for _ in range(len(subset_df))])
         v_r = [str(fleet_dict[v].get("regras", "")) for v in target_vehicles]
 
         opt = AdvancedRouteOptimizer()

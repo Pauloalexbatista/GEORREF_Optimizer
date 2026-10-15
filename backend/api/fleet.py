@@ -1474,3 +1474,460 @@ async def import_fleet_warehouses(
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao processar ficheiro: {str(e)}")
+
+@router.post("/import-mobiliario/{project_id}")
+async def import_mobiliario_files(
+    project_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Importa ficheiros Mobiliário do sistema ERP da empresa (Stores, Fleet, Services)
+    e popula diretamente as tabelas SQLite (entregas, frota) e o snapshot GeoRoutePlan.
+    """
+    proj = get_projeto(project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+
+    if not files:
+        raise HTTPException(status_code=400, detail="Nenhum ficheiro fornecido para importação.")
+
+    try:
+        from datetime import datetime
+        from core.session_state import FleetVehicle
+        from database import save_frota_projeto
+
+        google_api_key = current_user.google_api_key if hasattr(current_user, 'google_api_key') else None
+        if not google_api_key:
+            from database import get_google_api_key
+            google_api_key = get_google_api_key()
+
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), DB_GEO_PATH)
+        geocoder = WaterfallGeocoder(db_path, google_api_key=google_api_key)
+
+        def _decode_file(raw_bytes: bytes) -> str:
+            for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:
+                try:
+                    return raw_bytes.decode(enc)
+                except Exception:
+                    continue
+            return raw_bytes.decode("utf-8", errors="ignore")
+
+        def _parse_time_min(val_str: str) -> int:
+            if not val_str:
+                return 15
+            s = str(val_str).strip()
+            if ":" in s:
+                parts = s.split(":")
+                try:
+                    h = int(parts[0])
+                    m = int(parts[1])
+                    return h * 60 + m
+                except Exception:
+                    pass
+            try:
+                return int(float(s))
+            except Exception:
+                return 15
+
+        def _parse_flt(val_str, default=0.0) -> float:
+            if val_str is None:
+                return default
+            s = str(val_str).strip().replace(",", ".")
+            try:
+                return float(s)
+            except Exception:
+                return default
+
+        # Ler e categorizar os ficheiros
+        file_stores_lines = []
+        file_fleet_lines = []
+        file_services_lines = []
+
+        for f in files:
+            content_bytes = await f.read()
+            text = _decode_file(content_bytes)
+            raw_lines = [l.strip("\r\n") for l in text.split("\n") if l.strip()]
+            if not raw_lines:
+                continue
+
+            first_cols = raw_lines[0].split("\t")
+            fn = f.filename.lower() if f.filename else ""
+            num_cols = len(first_cols)
+
+            if "store" in fn or "armaz" in fn or num_cols == 13 or (num_cols >= 10 and num_cols <= 15):
+                file_stores_lines = raw_lines
+            elif "fleet" in fn or "frota" in fn or num_cols == 41 or (num_cols >= 35 and num_cols <= 43):
+                file_fleet_lines = raw_lines
+            elif "service" in fn or "servi" in fn or "entrega" in fn or num_cols == 47 or num_cols >= 44:
+                file_services_lines = raw_lines
+
+        if not file_stores_lines and not file_fleet_lines and not file_services_lines:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foi possível identificar os ficheiros Mobiliário (Stores, Fleet ou Services). Verifique se enviou os ficheiros de texto tabulados correspondentes."
+            )
+
+        # 1. Processar Armazéns (Stores)
+        wh_rows = []
+        store_map = {}  # store_id -> wh_row
+        for line in file_stores_lines:
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            w_name = parts[0].strip()
+            w_id = parts[1].strip()
+            w_addr = parts[2].strip() if len(parts) > 2 else ""
+            w_cp = parts[4].strip() if len(parts) > 4 else ""
+            w_loc = parts[5].strip() if len(parts) > 5 else ""
+            w_lon = _parse_flt(parts[7]) if len(parts) > 7 else 0.0
+            w_lat = _parse_flt(parts[8]) if len(parts) > 8 else 0.0
+            w_load = _parse_time_min(parts[11]) if len(parts) > 11 else 30
+
+            if (w_lat == 0.0 or w_lon == 0.0) and (w_addr or w_cp):
+                try:
+                    res_tuple = geocoder.resolve_address(w_addr, w_cp, w_loc, fast_mode=True)
+                    res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    if res and res.get("lat") and res.get("lon"):
+                        w_lat = float(res["lat"])
+                        w_lon = float(res["lon"])
+                except Exception:
+                    pass
+
+            wh_item = {
+                "Nome_Armazem": w_name,
+                "Nome": w_name,
+                "Store_ID": w_id,
+                "Morada": w_addr,
+                "CP": w_cp,
+                "Codigo_Postal": w_cp,
+                "Localidade": w_loc,
+                "Latitude": w_lat,
+                "Longitude": w_lon,
+                "Hora_Abertura": "06:00:00",
+                "Hora_Fecho": "22:00:00",
+                "Tempo_Carga_Min": w_load,
+                "Contacto_Responsavel": ""
+            }
+            wh_rows.append(wh_item)
+            if w_id:
+                store_map[w_id] = wh_item
+
+        # Fallback de Armazém se Stores não foi fornecido
+        if not wh_rows:
+            wh_rows.append({
+                "Nome_Armazem": "Armazém Principal",
+                "Nome": "Armazém Principal",
+                "Store_ID": "19",
+                "Morada": "Zona Industrial de Frielas",
+                "CP": "2660-026",
+                "Codigo_Postal": "2660-026",
+                "Localidade": "Frielas",
+                "Latitude": 38.818668,
+                "Longitude": -9.148433,
+                "Hora_Abertura": "06:00:00",
+                "Hora_Fecho": "22:00:00",
+                "Tempo_Carga_Min": 30,
+                "Contacto_Responsavel": ""
+            })
+            store_map["19"] = wh_rows[0]
+
+        # 2. Processar Frota (Fleet)
+        fleet_dict = {}
+        veh_code_to_name = {}
+        veh_to_id = {}
+        driver_to_id = {}
+        drivers_list = []
+        fleet_rows_for_db = []
+
+        for line in file_fleet_lines:
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            v_id = parts[0].strip()
+            v_name = parts[1].strip() or f"Viatura {v_id}"
+            d_id = parts[2].strip() if len(parts) > 2 else ""
+            d_name = parts[3].strip() if len(parts) > 3 else ""
+            v_store_id = parts[4].strip() if len(parts) > 4 else ""
+            v_rules = parts[6].strip() if len(parts) > 6 else ""
+            v_kg = _parse_flt(parts[11], 1000.0) if len(parts) > 11 else 1000.0
+            raw_vol = _parse_flt(parts[13], 10.0) if len(parts) > 13 else 10.0
+            v_vol = round(raw_vol / 1000.0, 2) if raw_vol > 50 else raw_vol
+            v_max = int(_parse_flt(parts[15], 30)) if len(parts) > 15 else 30
+            v_start = parts[19].strip() if len(parts) > 19 and parts[19].strip() else "08:00"
+            v_end = parts[20].strip() if len(parts) > 20 and parts[20].strip() else "20:00"
+
+            wh_name = store_map.get(v_store_id, {}).get("Nome_Armazem", wh_rows[0]["Nome_Armazem"])
+
+            v_obj = FleetVehicle(
+                capacidade_kg=v_kg,
+                capacidade_vol=v_vol,
+                custo_km=0.65,
+                velocidade_media=50.0,
+                horario_inicio=v_start,
+                horario_fim=v_end,
+                armazem=wh_name
+            )
+            v_obj.custo_hora = 12.50
+            v_obj.max_entregas = v_max
+            v_obj.regras = v_rules
+            v_obj.motorista_nome = d_name
+            v_obj.codigo_veiculo = v_id
+            v_obj.codigo_motorista = d_id
+            fleet_dict[v_name] = v_obj
+
+            veh_code_to_name[v_id] = v_name
+            veh_to_id[v_name] = v_id
+            if d_name:
+                driver_to_id[d_name] = d_id
+                driver_to_id[v_name] = d_id
+
+            fleet_rows_for_db.append({
+                "veiculo": v_name,
+                "capacidade_kg": v_kg,
+                "capacidade_volume": v_vol,
+                "custo_km": 0.65,
+                "velocidade_media": 50.0,
+                "horario_inicio": v_start,
+                "horario_fim": v_end,
+                "armazem": wh_name,
+                "regras": v_rules,
+                "max_entregas": v_max,
+                "motorista_nome": d_name,
+                "motorista_telemovel": "910000000",
+                "codigo_veiculo": v_id,
+                "codigo_motorista": d_id,
+                "is_active": 1
+            })
+
+            if d_name:
+                drivers_list.append({
+                    "name": d_name,
+                    "pin": "1234",
+                    "phone": "910000000",
+                    "vehicle": v_name,
+                    "matricula": "",
+                    "route": v_name,
+                    "is_active": 1
+                })
+
+        # 3. Processar Serviços / Entregas (Services)
+        deliveries_list = []
+        routes_solution_list = []
+        detected_service_date = ""
+
+        for s_idx, line in enumerate(file_services_lines):
+            parts = line.split("\t")
+            if len(parts) < 17:
+                continue
+
+            s_rules = parts[2].strip() if len(parts) > 2 else ""
+            doc_id = parts[16].strip()
+            if not doc_id:
+                continue
+
+            cli_name = parts[17].strip() if len(parts) > 17 else doc_id
+            addr = parts[18].strip() if len(parts) > 18 else ""
+            cp = parts[19].strip() if len(parts) > 19 else ""
+            loc = parts[20].strip() if len(parts) > 20 else ""
+            j1_start = parts[24].strip() if len(parts) > 24 and parts[24].strip() else "08:00"
+            j1_end = parts[25].strip() if len(parts) > 25 and parts[25].strip() else "20:00"
+            unload_min = _parse_time_min(parts[26]) if len(parts) > 26 else 15
+            weight = _parse_flt(parts[30]) if len(parts) > 30 else 50.0
+            raw_vol = _parse_flt(parts[31]) if len(parts) > 31 else 10.0
+            volume = round(raw_vol / 1000.0, 3) if raw_vol > 10 else raw_vol
+
+            v_code = parts[33].strip() if len(parts) > 33 else ""
+            drv_code = parts[34].strip() if len(parts) > 34 else ""
+            s_store_id = parts[35].strip() if len(parts) > 35 else ""
+            stop_order = int(_parse_flt(parts[36], s_idx + 1)) if len(parts) > 36 else (s_idx + 1)
+            raw_date = parts[41].strip() if len(parts) > 41 else ""
+            if raw_date and not detected_service_date:
+                detected_service_date = raw_date
+
+            wh_name = store_map.get(s_store_id, {}).get("Nome_Armazem", wh_rows[0]["Nome_Armazem"])
+
+            # Georreferenciação com cascata Low-Cost
+            lat, lon = 0.0, 0.0
+            if addr or cp:
+                try:
+                    res_tuple = geocoder.resolve_address(addr, cp, loc, fast_mode=True)
+                    res_geo = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    if res_geo and res_geo.get("lat") and res_geo.get("lon"):
+                        lat = float(res_geo["lat"])
+                        lon = float(res_geo["lon"])
+                except Exception:
+                    pass
+
+            qual = 1 if (lat != 0.0 and lon != 0.0) else 99
+            src = "OSM/LOCAL" if qual == 1 else "PENDENTE"
+
+            # Nome da viatura associada
+            assigned_veh_name = "Por Distribuir"
+            if v_code:
+                if v_code in veh_code_to_name:
+                    assigned_veh_name = veh_code_to_name[v_code]
+                elif v_code in fleet_dict:
+                    assigned_veh_name = v_code
+                else:
+                    assigned_veh_name = f"Viatura {v_code}"
+                    veh_code_to_name[v_code] = assigned_veh_name
+                    veh_to_id[assigned_veh_name] = v_code
+                    if drv_code:
+                        driver_to_id[assigned_veh_name] = drv_code
+
+            d_entry = {
+                "Armazem": wh_name,
+                "Doc_ID": doc_id,
+                "Codigo_Cliente": doc_id,
+                "Cliente": cli_name,
+                "Nome_Cliente": cli_name,
+                "Morada": addr,
+                "CP": cp,
+                "Codigo_Postal": cp,
+                "Localidade": loc,
+                "Latitude": lat,
+                "Longitude": lon,
+                "Telefone_Cliente": "",
+                "Telefone": "",
+                "Peso_KG": weight,
+                "Peso": weight,
+                "Volume_M3": volume,
+                "Volume_m3": volume,
+                "Janela_Inicio": j1_start,
+                "Janela_Fim": j1_end,
+                "Janela_Horaria": f"{j1_start} - {j1_end}",
+                "Tempo_Descarga_Min": unload_min,
+                "Tipo_Operacao": "ENTREGA",
+                "Regras": s_rules,
+                "Notas_Motorista": "",
+                "Observacoes": "",
+                "Prioridade": "Normal",
+                "Vendedor": "",
+                "Rota": assigned_veh_name,
+                "Ordem": stop_order,
+                "Ordem_Paragem": stop_order
+            }
+            deliveries_list.append(d_entry)
+
+            if assigned_veh_name != "Por Distribuir":
+                routes_solution_list.append({
+                    "id": len(routes_solution_list) + 1,
+                    "ID_Original": doc_id,
+                    "Doc_ID": doc_id,
+                    "Codigo_Cliente": doc_id,
+                    "Cliente": cli_name,
+                    "Nome_Cliente": cli_name,
+                    "Morada": addr,
+                    "CP": cp,
+                    "Localidade": loc,
+                    "Telefone_Cliente": "",
+                    "Telefone": "",
+                    "Latitude": lat,
+                    "Longitude": lon,
+                    "Rota": assigned_veh_name,
+                    "Veiculo": assigned_veh_name,
+                    "Armazem": wh_name,
+                    "Ordem": stop_order,
+                    "Ordem_Paragem": stop_order,
+                    "Janela_Horaria": f"{j1_start} - {j1_end}",
+                    "Hora_Chegada_Prevista": "",
+                    "Hora_Saida_Prevista": "",
+                    "Distancia_KM": 0.0,
+                    "Distancia_Acumulada_KM": 0.0,
+                    "Tempo_Viagem_Min": 0.0,
+                    "Tempo_Espera_Min": 0.0,
+                    "Carga_Restante_KG": weight,
+                    "Carga_Restante_Vol": volume,
+                    "Status": "Planeado",
+                    "Notas_Motorista": "",
+                    "Observacoes": "",
+                    "Vendedor": "",
+                    "Peso_KG": weight,
+                    "Volume_m3": volume
+                })
+
+        # 4. Guardar Entregas na tabela SQLite entregas
+        if deliveries_list:
+            ensure_entregas_columns()
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
+                for d in deliveries_list:
+                    lat_d = float(d.get("Latitude", 0.0))
+                    lon_d = float(d.get("Longitude", 0.0))
+                    qual_d = 1 if (lat_d != 0 and lon_d != 0) else 99
+                    src_d = "FICHEIRO" if qual_d == 1 else "PENDENTE"
+                    cursor.execute("""
+                        INSERT INTO entregas (
+                            projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
+                            peso_kg, volume_m3, prioridade, janela_inicio, janela_fim, tempo_descarga_min,
+                            latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem,
+                            telefone, observacoes, vendedor, rota, ordem_paragem, regras
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
+                        d.get("CP", ""), d.get("Localidade", ""), float(d.get("Peso_KG", 50.0)),
+                        float(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
+                        d.get("Janela_Fim", "18:00"), int(d.get("Tempo_Descarga_Min", 15)),
+                        lat_d, lon_d, qual_d, src_d,
+                        d.get("Morada", ""), d.get("Armazem", wh_rows[0]["Nome_Armazem"]),
+                        "", "", "", d.get("Rota", "Por Distribuir"),
+                        int(d.get("Ordem", 1)), str(d.get("Regras", "") or "")
+                    ))
+                conn.commit()
+
+        # 5. Guardar Frota na tabela SQLite frota
+        if fleet_rows_for_db:
+            save_frota_projeto(project_id, fleet_rows_for_db)
+
+        # 6. Salvar Snapshot completo
+        df_wh = pd.DataFrame(wh_rows) if wh_rows else pd.DataFrame()
+        df_routes_imported = pd.DataFrame(routes_solution_list) if routes_solution_list else pd.DataFrame()
+        has_routes = not df_routes_imported.empty
+
+        state_dict = {
+            "warehouses_geocoded": df_wh,
+            "fleet_config": fleet_dict,
+            "rules_matrix": [],
+            "clients_geocoded": pd.DataFrame(deliveries_list) if deliveries_list else pd.DataFrame(),
+            "routes_solution": df_routes_imported if has_routes else None,
+            "routes_df": df_routes_imported if has_routes else None,
+            "drivers": drivers_list,
+            "motoristas": drivers_list,
+            "service_date": detected_service_date or datetime.now().strftime("%Y-%m-%d"),
+            "mobiliario_meta": {
+                "store_map": {k: {"Nome": v.get("Nome_Armazem"), "ID": k} for k, v in store_map.items()},
+                "veh_to_id": veh_to_id,
+                "driver_to_id": driver_to_id
+            },
+            "phase_1_complete": bool(deliveries_list),
+            "phase_2_complete": bool(fleet_dict),
+            "phase_3_complete": has_routes
+        }
+
+        payload = serialize_state(state_dict)
+        fase_num = 3 if has_routes else 2
+        snapshot_name = f"Importação Mobiliário ({datetime.now().strftime('%H:%M:%S')})"
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
+                (project_id, current_user.id, fase_num, snapshot_name, payload)
+            )
+            conn.commit()
+
+        return {
+            "status": "success",
+            "message": f"Ficheiros Mobiliário importados com sucesso! ({len(wh_rows)} armazéns, {len(fleet_dict)} veículos, {len(deliveries_list)} entregas georreferenciadas, {len(routes_solution_list)} serviços atribuídos).",
+            "num_warehouses": len(wh_rows),
+            "num_vehicles": len(fleet_dict),
+            "num_deliveries": len(deliveries_list),
+            "num_routes": len(routes_solution_list)
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao importar ficheiros Mobiliário: {str(e)}")

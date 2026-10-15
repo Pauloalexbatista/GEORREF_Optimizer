@@ -417,6 +417,34 @@ export default function GeoreferencingPage() {
     }
   };
 
+  const handleMobiliarioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedProject) return;
+
+    setLoading(true);
+    setStep("geocoding");
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+
+    try {
+      const importRes = await apiRequest(`/api/fleet/import-mobiliario/${selectedProject.id}`, {
+        method: "POST",
+        body: formData,
+      });
+      alert(importRes.message || "Ficheiros Mobiliário importados com sucesso!");
+      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+      setDeliveries(data);
+      setStep("results");
+    } catch (err: any) {
+      alert(err.message || "Erro ao importar ficheiros Mobiliário. Verifique os ficheiros de texto tabulados.");
+      setStep("upload");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleStartGeocoding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fileId || !selectedProject) return;
@@ -544,39 +572,70 @@ export default function GeoreferencingPage() {
         </div>
 
         {step === "upload" && (
-          <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center bg-zinc-900/30 flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
-            <div className="w-12 h-12 rounded-xl bg-zinc-800/80 flex items-center justify-center text-zinc-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto mt-6">
+            {/* Opção 1: Ficheiro Excel Canónico */}
+            <div className="border border-zinc-800 rounded-2xl p-8 text-center bg-zinc-900/40 hover:bg-zinc-900/60 transition-all flex flex-col items-center justify-between space-y-4 shadow-lg border-t-indigo-500/40">
+              <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <span className="text-2xl">📊</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white tracking-tight">Importar Ficheiro Excel Canónico</h3>
+                <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
+                  Ficheiro oficial GeoRoutePlan.xlsx (9 abas) contendo armazéns, frota, regras e encomendas estruturadas.
+                </p>
+              </div>
+              <div className="w-full pt-2 flex flex-col items-center gap-2">
+                <label className="cursor-pointer w-full bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-xl px-5 py-2.5 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all block">
+                  <span>{loading ? "A carregar..." : "+ Selecionar Excel (.xlsx)"}</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleFileUpload}
+                    disabled={loading}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFile("/api/fleet/template/unified", "GeoRoutePlan.xlsx")}
+                  className="text-[11px] text-zinc-400 hover:text-indigo-400 transition-colors flex items-center space-x-1.5 cursor-pointer mt-1"
+                >
+                  <span>📥</span>
+                  <span className="underline">Descarregar Modelo Excel Canónico</span>
+                </button>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-200">Carregar Ficheiro de Encomendas</h3>
-              <p className="text-xs text-zinc-300 mt-1 max-w-sm">
-                Arraste ou carregue um ficheiro Excel (.xlsx, .xls) ou CSV contendo os dados dos clientes e entregas.
-              </p>
-            </div>
-            <div>
-              <label className="cursor-pointer bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white rounded-xl px-5 py-2.5 text-xs font-semibold shadow-md shadow-indigo-500/10 transition-all inline-block">
-                <span>{loading ? "A carregar..." : "+ Selecionar Ficheiro"}</span>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleFileUpload}
-                  disabled={loading}
-                  className="hidden"
-                />
-              </label>
-            </div>
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => handleDownloadFile("/api/fleet/template/unified", "GeoRoutePlan.xlsx")}
-                className="text-[11px] text-zinc-400 hover:text-indigo-400 transition-colors flex items-center space-x-1.5 cursor-pointer"
-              >
-                <span>📥</span>
-                <span className="underline">Descarregar Modelo Excel</span>
-              </button>
+
+            {/* Opção 2: Ficheiros Mobiliário (ERP Empresa) */}
+            <div className="border border-zinc-800 rounded-2xl p-8 text-center bg-zinc-900/40 hover:bg-zinc-900/60 transition-all flex flex-col items-center justify-between space-y-4 shadow-lg border-t-blue-500/40">
+              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                <span className="text-2xl">📦</span>
+              </div>
+              <div>
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <h3 className="text-sm font-bold text-white tracking-tight">Importação Ficheiros Mobiliário</h3>
+                  <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-medium">ERP TNB</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
+                  Importa diretamente os 3 ficheiros da empresa (Stores, Fleet e Services .txt) para as tabelas existentes e georreferenciação.
+                </p>
+              </div>
+              <div className="w-full pt-2 flex flex-col items-center gap-2">
+                <label className="cursor-pointer w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl px-5 py-2.5 text-xs font-semibold shadow-md shadow-blue-500/10 transition-all block">
+                  <span>{loading ? "A carregar..." : "+ Selecionar Ficheiros Mobiliário (.txt)"}</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".txt,.csv,.tsv"
+                    onChange={handleMobiliarioUpload}
+                    disabled={loading}
+                    className="hidden"
+                  />
+                </label>
+                <span className="text-[10px] text-zinc-500">
+                  Dica: pode selecionar os 3 ficheiros em simultâneo (Stores, Fleet, Services)
+                </span>
+              </div>
             </div>
           </div>
         )}

@@ -127,6 +127,19 @@ html.light .bg-sky-700 span {
   color: #ffffff !important;
 }
 
+/* Proteção de contraste para pills/badges dentro de botões coloridos selecionados */
+html.light .badge-pill-contrast,
+html.dark .badge-pill-contrast,
+.badge-pill-contrast,
+html.light .bg-indigo-600 span.badge-pill-contrast,
+html.dark .bg-indigo-600 span.badge-pill-contrast,
+html.light .bg-amber-600 span.badge-pill-contrast,
+html.dark .bg-amber-600 span.badge-pill-contrast {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #ffffff !important;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

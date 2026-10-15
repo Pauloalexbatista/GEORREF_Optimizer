@@ -568,8 +568,9 @@ def save_frota_projeto(projeto_id, frota_data):
                 INSERT INTO frota (
                     projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
                     velocidade_media, horario_inicio, horario_fim, armazem, regras,
-                    max_entregas, motorista_nome, motorista_telemovel, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    max_entregas, motorista_nome, motorista_telemovel, is_active,
+                    codigo_veiculo, codigo_motorista
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, f.get('veiculo'), float(f.get('capacidade_kg') or 1000.0),
                 float(f.get('capacidade_volume') or f.get('capacidade_vol') or 5.0), float(f.get('custo_km') or 0.5),
@@ -578,7 +579,9 @@ def save_frota_projeto(projeto_id, frota_data):
                 int(f.get('max_entregas') or f.get('Max_Entregas') or 30),
                 str(f.get('motorista_nome') or f.get('Motorista_Nome') or f.get('motorista') or ''),
                 str(f.get('motorista_telemovel') or f.get('Motorista_Telemovel') or ''),
-                int(f.get('is_active', 1) if f.get('is_active') is not None else 1)
+                int(f.get('is_active', 1) if f.get('is_active') is not None else 1),
+                str(f.get('codigo_veiculo') or ''),
+                str(f.get('codigo_motorista') or '')
             ))
         
         conn.commit()
@@ -1147,6 +1150,8 @@ def ensure_entregas_columns():
                 ("max_entregas", "INTEGER DEFAULT 30"),
                 ("motorista_nome", "TEXT DEFAULT ''"),
                 ("motorista_telemovel", "TEXT DEFAULT ''"),
+                ("codigo_veiculo", "TEXT DEFAULT ''"),
+                ("codigo_motorista", "TEXT DEFAULT ''"),
                 ("is_active", "BOOLEAN DEFAULT 1")
             ]:
                 if col not in cols_f:

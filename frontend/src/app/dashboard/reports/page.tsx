@@ -11,6 +11,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [exportingMob, setExportingMob] = useState(false);
+  const [exportMobSuccess, setExportMobSuccess] = useState(false);
 
   useEffect(() => {
     if (!selectedProject?.id) {
@@ -69,6 +71,25 @@ export default function ReportsPage() {
       window.open(`/api/reports/${selectedProject.id}/export`, "_blank");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleExportMobiliario = async () => {
+    if (!selectedProject?.id) return;
+    setExportingMob(true);
+    setExportMobSuccess(false);
+
+    try {
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const filename = `Exportacao_Mobiliario_${dateStr}.zip`;
+      await api.download(`/api/reports/${selectedProject.id}/export-mobiliario`, filename);
+      setExportMobSuccess(true);
+      setTimeout(() => setExportMobSuccess(false), 5000);
+    } catch (e: any) {
+      console.error("Erro ao descarregar ficheiros Mobiliário:", e);
+      window.open(`/api/reports/${selectedProject.id}/export-mobiliario`, "_blank");
+    } finally {
+      setExportingMob(false);
     }
   };
 
@@ -146,6 +167,24 @@ export default function ReportsPage() {
                 </>
               )}
             </button>
+
+            <button
+              onClick={handleExportMobiliario}
+              disabled={exportingMob || !selectedProject?.id}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold px-5 py-3 rounded-xl transition-all shadow-lg shadow-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {exportingMob ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>A Gerar Mobiliário...</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-lg">📦</span>
+                  <span>Exportação Ficheiros Mobiliário</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -174,6 +213,20 @@ export default function ReportsPage() {
               </div>
             </div>
             <span className="text-xs text-emerald-500 font-mono">GeoRoutePlan.xlsx</span>
+          </div>
+        )}
+
+        {/* Notificação de Sucesso de Download Mobiliário */}
+        {exportMobSuccess && (
+          <div className="bg-blue-950/60 border border-blue-500/30 text-blue-300 p-4 rounded-xl flex items-center justify-between animate-fade-in">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">📦</span>
+              <div>
+                <p className="font-semibold text-sm">Ficheiros Mobiliário Descarregados com Sucesso!</p>
+                <p className="text-xs text-blue-400/80">Arquivo ZIP gerado com RotasMobiliario e coordenadasMobiliaria prontos para o ERP.</p>
+              </div>
+            </div>
+            <span className="text-xs text-blue-400 font-mono font-bold">ERP MOBILIÁRIO</span>
           </div>
         )}
 

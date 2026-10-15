@@ -1080,12 +1080,14 @@ export default function MapComponent({
                 if (pendingCount === 0) return null;
                 const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, "Por Distribuir"));
                 const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], "Por Distribuir");
+                const isMultiSelected = selectedRoutes.length > 1 && selectedRoutes.some(r => routesMatch(r, "Por Distribuir"));
+                const isPendingActive = isExclusive || isMultiSelected;
 
                 return (
                   <button
                     onClick={(e) => toggleRouteFilter("Por Distribuir", e)}
                     className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer border ${
-                      isExclusive
+                      isPendingActive
                         ? "bg-amber-600 text-white border-amber-500 shadow-sm ring-1 ring-amber-400"
                         : isSelected
                         ? "bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-500/40"
@@ -1096,7 +1098,14 @@ export default function MapComponent({
                       <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
                       <span>⚠️ Por Distribuir</span>
                     </span>
-                    <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30">
+                    <span
+                      style={isPendingActive ? { backgroundColor: "#ffffff", color: "#78350f", borderColor: "#ffffff" } : undefined}
+                      className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded border ${
+                        isPendingActive
+                          ? "badge-pill-contrast bg-white text-amber-950 border-white shadow-xs"
+                          : "bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/30"
+                      }`}
+                    >
                       {pendingCount}
                     </span>
                   </button>
@@ -1117,6 +1126,8 @@ export default function MapComponent({
                 const routeColor = getRouteColor(v, vehicles);
                 const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, v));
                 const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v);
+                const isMultiSelected = selectedRoutes.length > 1 && selectedRoutes.some(r => routesMatch(r, v));
+                const isRouteActive = isExclusive || isMultiSelected;
                 const vClients = clients.filter(c => routesMatch(c.Rota, v));
                 const count = vClients.length;
                 const totalKg = Math.round(vClients.reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0));
@@ -1147,7 +1158,7 @@ export default function MapComponent({
                     onClick={(e) => toggleRouteFilter(v, e)}
                     title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
                     className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex flex-col gap-1 cursor-pointer border ${
-                      isExclusive
+                      isRouteActive
                         ? "bg-indigo-600 text-white border-indigo-500 shadow-md ring-2 ring-indigo-400/80"
                         : isSelected
                         ? "bg-white dark:bg-zinc-900/90 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 hover:border-indigo-400/60 shadow-sm"
@@ -1161,7 +1172,7 @@ export default function MapComponent({
                           className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ring-1 ring-black/20"
                           style={{ backgroundColor: routeColor }}
                         />
-                        <span className={`truncate font-bold text-[11px] ${isExclusive ? "text-white" : ""}`}>
+                        <span className={`truncate font-bold text-[11px] ${isRouteActive ? "text-white" : ""}`}>
                           {v}
                         </span>
                       </div>
@@ -1169,10 +1180,15 @@ export default function MapComponent({
                       <div className="flex items-center space-x-1.5 shrink-0">
                         {/* Delivery count pill - Sempre legível com alto contraste */}
                         <span
-                          className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                          style={
+                            isRouteActive && count > 0
+                              ? { backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#ffffff" }
+                              : undefined
+                          }
+                          className={`badge-pill-contrast px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
                             count > 0
-                              ? isExclusive
-                                ? "bg-zinc-950 text-white border-zinc-700 shadow-xs"
+                              ? isRouteActive
+                                ? "bg-white text-slate-950 border-white shadow-xs"
                                 : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
                               : "bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-600 dark:border-zinc-800"
                           }`}
@@ -1182,7 +1198,7 @@ export default function MapComponent({
 
                         {/* Cargo kg */}
                         <span className={`w-14 text-right font-mono text-[10px] ${
-                          isExclusive ? "text-indigo-100 font-bold" : "text-zinc-500 dark:text-zinc-400"
+                          isRouteActive ? "text-indigo-100 font-bold" : "text-zinc-500 dark:text-zinc-400"
                         }`}>
                           {count > 0 ? `${totalKg.toLocaleString()}k` : "—"}
                         </span>
@@ -1192,7 +1208,7 @@ export default function MapComponent({
                     {/* Linha 2: KM da rota e Horário de saída e chegada ao armazém */}
                     {count > 0 && (
                       <div className={`flex items-center justify-between text-[10px] font-mono px-1.5 py-0.5 rounded w-full ${
-                        isExclusive
+                        isRouteActive
                           ? "bg-indigo-700/80 text-indigo-100 border border-indigo-500/40"
                           : "bg-zinc-100/70 dark:bg-zinc-850/70 text-zinc-500 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50"
                       }`}>

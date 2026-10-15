@@ -73,9 +73,20 @@ def audit_route_plan(
     Performs a deep compliance audit on all routes.
     """
     import pandas as pd
+    import numpy as np
+
+    def _safe_scalar(val, default=None):
+        if isinstance(val, (pd.Series, np.ndarray, list)):
+            for item in val:
+                if item is not None and not pd.isna(item) and item != "":
+                    return item
+            return default
+        if val is None or pd.isna(val) or val == "":
+            return default
+        return val
 
     if isinstance(routes_solution, pd.DataFrame):
-        df = routes_solution
+        df = routes_solution.copy()
     elif routes_solution:
         df = pd.DataFrame(routes_solution)
     else:
@@ -88,7 +99,10 @@ def audit_route_plan(
             "all_violations": []
         }
 
-    # Normalize column names
+    # Assegurar que não há colunas duplicadas
+    df = df.loc[:, ~df.columns.duplicated(keep="first")].copy()
+
+    # Normalize column names evitando criar colunas duplicadas se já existir o target canónico
     col_map = {
         "rota": "Rota", "cliente": "Cliente", "ordem": "Ordem", "morada": "Morada",
         "chegada": "Chegada", "saida": "Saida", "janela_inicio": "Janela_Inicio",
@@ -97,7 +111,17 @@ def audit_route_plan(
         "lat": "Latitude", "latitude": "Latitude", "lon": "Longitude", "longitude": "Longitude",
         "regras": "Regras", "tags": "Regras", "armazem": "Armazem", "tempo_entrega": "Tempo_Entrega"
     }
-    df = df.rename(columns={c: col_map[c.lower()] for c in df.columns if c.lower() in col_map})
+    rename_dict = {}
+    for c in df.columns:
+        c_low = c.lower()
+        if c_low in col_map:
+            target = col_map[c_low]
+            if target != c and target in df.columns:
+                continue
+            rename_dict[c] = target
+    df = df.rename(columns=rename_dict)
+    # Deduplicação final obrigatória
+    df = df.loc[:, ~df.columns.duplicated(keep="first")].copy()
 
     all_violations = []
     routes_status = {}
@@ -116,7 +140,7 @@ def audit_route_plan(
                     wh_coords["default"] = (float(wrow["Latitude"]), float(wrow["Longitude"]))
 
     for r_name in unique_routes:
-        df_r = df[df["Rota" == r_name] if False else df["Rota"] == r_name]
+        df_r = df[df["Rota"] == r_name]
         if "Ordem" in df_r.columns:
             df_r = df_r.sort_values(by="Ordem")
             
@@ -132,9 +156,11 @@ def audit_route_plan(
             else:
                 v_conf = {}
         elif isinstance(fleet_config, pd.DataFrame) and not fleet_config.empty:
-            match = fleet_config[fleet_config.get("Veiculo", fleet_config.get("veiculo", "")) == r_name]
-            if not match.empty:
-                v_conf = match.iloc[0].to_dict()
+            v_col = "Veiculo" if "Veiculo" in fleet_config.columns else "veiculo" if "veiculo" in fleet_config.columns else None
+            if v_col:
+                match = fleet_config[fleet_config[v_col].astype(str).str.strip() == str(r_name).strip()]
+                if not match.empty:
+                    v_conf = match.iloc[0].to_dict()
 
         v_rules = str(v_conf.get("regras", v_conf.get("Regras", "")))
         v_start_min = parse_time_to_minutes(v_conf.get("horario_inicio", v_conf.get("start_time", "06:30")), 390)
@@ -164,12 +190,12 @@ def audit_route_plan(
             all_violations.append(v_item)
 
         for _, row in df_r.iterrows():
-            client_name = str(row.get("Cliente", row.get("Nome_Cliente", "Cliente")))
-            c_order = int(row.get("Ordem", 0))
-            c_rules = str(row.get("Regras", "") or "")
-            c_kg = float(row.get("Peso_KG", 0.0) or 0.0)
-            c_vol = float(row.get("Volume_m3", 0.0) or 0.0)
-            c_arrival_str = str(row.get("Chegada", "") or "")
+            client_name = str(_safe_scalar(row.get("Cliente", row.get("Nome_Cliente", "Cliente")), "Cliente"))
+            c_order = int(_safe_scalar(row.get("Ordem", 0), 0))
+            c_rules = str(_safe_scalar(row.get("Regras", ""), ""))
+            c_kg = float(_safe_scalar(row.get("Peso_KG", 0.0), 0.0))
+            c_vol = float(_safe_scalar(row.get("Volume_m3", 0.0), 0.0))
+            c_arrival_str = str(_safe_scalar(row.get("Chegada", ""), ""))
 
             # Parse Time Window with full robustness
             jh_str = str(row.get("Janela_Horaria", "") or "").strip()
@@ -256,7 +282,7 @@ def audit_route_plan(
         # 6. Check Shift Return Time to Depot
         if not df_r.empty:
             last_stop = df_r.iloc[-1]
-            last_exit_str = str(last_stop.get("Saida", "") or "")
+            last_exit_str = str(_safe_scalar(last_stop.get("Saida", ""), ""))
             last_exit_min = parse_time_to_minutes(last_exit_str, 0)
             
             # Find depot coordinates
@@ -266,8 +292,8 @@ def audit_route_plan(
                 
             if depot_coords and last_exit_min > 0:
                 depot_lat, depot_lon = depot_coords
-                last_lat = float(last_stop.get("Latitude", 0.0) or 0.0)
-                last_lon = float(last_stop.get("Longitude", 0.0) or 0.0)
+                last_lat = float(_safe_scalar(last_stop.get("Latitude", 0.0), 0.0))
+                last_lon = float(_safe_scalar(last_stop.get("Longitude", 0.0), 0.0))
                 return_dist_km = haversine_distance(last_lat, last_lon, depot_lat, depot_lon) * 1.30
                 ret_speed = 80.0 if return_dist_km > 25.0 else 65.0 if return_dist_km > 10.0 else max(v_speed, 45.0)
                 return_travel_min = (return_dist_km / ret_speed) * 60.0
