@@ -214,8 +214,57 @@ const routeColors = [
   "#e11d48", // Rose
 ];
 
-function getRouteColor(routeName: string, vehicleList: string[]) {
+export type TimeSlotType = "slot1" | "slot2" | "slot3" | "slot4" | "any";
+
+export interface TimeSlotInfo {
+  type: TimeSlotType;
+  label: string;
+  shape: "circle" | "square" | "triangle" | "rect";
+  badge: string;
+}
+
+export function getTimeSlot(janelaStr?: string): TimeSlotInfo {
+  if (!janelaStr || janelaStr === "Qualquer" || janelaStr === "--" || janelaStr === "None") {
+    return { type: "any", label: "Qualquer Horário", shape: "circle", badge: "⚪" };
+  }
+  
+  const cleaned = String(janelaStr).replace(/\d{4}-\d{2}-\d{2}\s*/g, "").replace(/T/g, " ").trim();
+  const match = cleaned.match(/(\d{1,2}):?(\d{2})?/);
+  if (!match) {
+    return { type: "any", label: "Qualquer Horário", shape: "circle", badge: "⚪" };
+  }
+
+  const hour = parseInt(match[1], 10);
+  const minute = match[2] ? parseInt(match[2], 10) : 0;
+  const timeVal = hour + minute / 60;
+
+  if (timeVal < 11.0) {
+    return { type: "slot1", label: "1ª Slot (08h - 11h)", shape: "circle", badge: "⭕" };
+  }
+  if (timeVal < 13.0) {
+    return { type: "slot2", label: "2ª Slot (11h - 13h)", shape: "square", badge: "⬛" };
+  }
+  if (timeVal < 15.0) {
+    return { type: "slot3", label: "3ª Slot (13h - 15h)", shape: "triangle", badge: "🔺" };
+  }
+  return { type: "slot4", label: "4ª Slot (15h - 19h+)", shape: "rect", badge: "🔷" };
+}
+
+function parseTimeToMinutes(t?: string): number {
+  if (!t) return 0;
+  const parts = t.split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+
+function getRouteColor(routeName: string, vehicleList: string[], customColors?: Record<string, string>) {
   if (!routeName || isPendingRoute(routeName)) return "#f59e0b"; // Amber for pending
+  if (customColors) {
+    if (customColors[routeName]) return customColors[routeName];
+    const match = vehicleList.find(v => routesMatch(v, routeName));
+    if (match && customColors[match]) return customColors[match];
+  }
   const idx = vehicleList.findIndex(v => routesMatch(v, routeName));
   if (idx !== -1) return routeColors[idx % routeColors.length];
   
@@ -255,50 +304,88 @@ function getWarehouseIcon(zoom: number) {
   });
 }
 
-// Marker Icon for Clients
-function createNumberedCircleIcon(
+// Marker Icon for Clients with Geometric Shapes based on Time Slot
+function createGeometricMarkerIcon(
   order: number,
   color: string,
   isPending: boolean,
   zoom: number,
-  isSelected: boolean = false
+  isSelected: boolean = false,
+  slot?: TimeSlotInfo
 ) {
+  const effectiveSlot = isPending
+    ? { type: "any" as const, shape: "circle" as const, label: "Pendente", badge: "⚠️" }
+    : (slot || { type: "any" as const, shape: "circle" as const, label: "Qualquer", badge: "⚪" });
+
   const size = isPending
-    ? Math.max(18, Math.min(26, 16 + (zoom - 10) * 2))
-    : Math.max(22, Math.min(32, 20 + (zoom - 10) * 2));
+    ? Math.max(22, Math.min(30, 20 + (zoom - 10) * 2))
+    : Math.max(26, Math.min(38, 24 + (zoom - 10) * 2));
 
   const displayText = isPending ? "⚠️" : String(order || 1);
-  const fontSize = isPending ? Math.round(size * 0.55) : Math.round(size * 0.45);
+  const strokeColor = isSelected ? "#ffffff" : "rgba(255,255,255,0.95)";
+  const strokeWidth = isSelected ? 3 : 2;
+  const filter = isSelected
+    ? "drop-shadow(0 0 6px rgba(99,102,241,1)) drop-shadow(0 2px 6px rgba(0,0,0,0.6))"
+    : "drop-shadow(0 2px 4px rgba(0,0,0,0.45))";
 
-  const shadow = isSelected
-    ? "0 0 0 4px #4f46e5, 0 0 16px rgba(99, 102, 241, 0.9)"
-    : "0 2px 8px rgba(0,0,0,0.4)";
-  const border = isSelected ? "3px solid #ffffff" : "2px solid #ffffff";
-  const transform = isSelected ? "transform: scale(1.2); z-index: 100;" : "";
+  let shapeSvg = "";
+  let textY = size / 2;
+  let fontSize = Math.round(size * 0.44);
+
+  if (effectiveSlot.shape === "triangle") {
+    const pad = 2;
+    const topX = size / 2;
+    const topY = pad;
+    const leftX = pad;
+    const leftY = size - pad;
+    const rightX = size - pad;
+    const rightY = size - pad;
+    shapeSvg = `<polygon points="${topX},${topY} ${rightX},${rightY} ${leftX},${leftY}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" />`;
+    textY = size * 0.64;
+    fontSize = Math.round(size * 0.38);
+  } else if (effectiveSlot.shape === "square") {
+    const pad = 2.5;
+    const s = size - pad * 2;
+    shapeSvg = `<rect x="${pad}" y="${pad}" width="${s}" height="${s}" rx="5" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+    textY = size / 2;
+  } else if (effectiveSlot.shape === "rect") {
+    const padX = 2;
+    const padY = Math.round(size * 0.16);
+    const w = size - padX * 2;
+    const h = size - padY * 2;
+    shapeSvg = `<rect x="${padX}" y="${padY}" width="${w}" height="${h}" rx="5" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+    textY = size / 2;
+    fontSize = Math.round(size * 0.40);
+  } else {
+    // Circle
+    const r = (size - 4) / 2;
+    const dash = effectiveSlot.type === "any" && !isPending ? 'stroke-dasharray="3 2"' : "";
+    shapeSvg = `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" ${dash} />`;
+    textY = size / 2;
+  }
+
+  const svgHtml = `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="filter: ${filter}; overflow: visible; cursor: grab;" xmlns="http://www.w3.org/2000/svg">
+      ${shapeSvg}
+      <text
+        x="${size / 2}"
+        y="${textY}"
+        text-anchor="middle"
+        dominant-baseline="central"
+        fill="#ffffff"
+        font-family="monospace, ui-monospace, sans-serif"
+        font-weight="900"
+        font-size="${fontSize}px"
+        style="pointer-events: none; user-select: none;"
+      >
+        ${displayText}
+      </text>
+    </svg>
+  `;
 
   return L.divIcon({
     className: "custom-client-marker" + (isSelected ? " selected-marker" : ""),
-    html: `
-      <div style="
-        width: ${size}px;
-        height: ${size}px;
-        background-color: ${color};
-        border: ${border};
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: ${shadow};
-        color: #ffffff;
-        font-weight: 900;
-        font-family: monospace;
-        font-size: ${fontSize}px;
-        cursor: grab;
-        ${transform}
-      ">
-        ${displayText}
-      </div>
-    `,
+    html: svgHtml,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -404,6 +491,45 @@ export default function MapComponent({
   const [selectedClientKeys, setSelectedClientKeys] = useState<string[]>([]);
   const [bulkTargetRoute, setBulkTargetRoute] = useState<string>("Por Distribuir");
   const [isBulkLoading, setIsBulkLoading] = useState(false);
+
+  // Custom Vehicle Colors (persisted in localStorage)
+  const [customVehicleColors, setCustomVehicleColors] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_custom_vehicle_colors");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  const handleSetVehicleColor = (vehicleName: string, newColor: string) => {
+    setCustomVehicleColors((prev) => {
+      const updated = { ...prev, [vehicleName]: newColor };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("georoute_custom_vehicle_colors", JSON.stringify(updated));
+        } catch (e) {}
+      }
+      return updated;
+    });
+  };
+
+  // Route Sorting State
+  const [routeSortField, setRouteSortField] = useState<"name" | "stops" | "weight" | "vol" | "km">("name");
+  const [routeSortAsc, setRouteSortAsc] = useState<boolean>(true);
+
+  // Time Slot Legend Toggle
+  const [isLegendOpen, setIsLegendOpen] = useState<boolean>(true);
+
+  const handleSortRoutes = (field: "name" | "stops" | "weight" | "vol" | "km") => {
+    if (routeSortField === field) {
+      setRouteSortAsc(!routeSortAsc);
+    } else {
+      setRouteSortField(field);
+      setRouteSortAsc(true);
+    }
+  };
 
   // Sync when external controlled filterState changes
   useEffect(() => {
@@ -697,32 +823,160 @@ export default function MapComponent({
     };
   }, [warehouseVehicles, clients, selectedWarehouse]);
 
-  // Filtered vehicles list based on active warehouse & status filter
+  // Comprehensive Vehicle Metrics Map (paragens, peso, volume, km, horários e alertas de excesso)
+  const vehicleMetricsMap = useMemo<Record<string, {
+    vehicle: string;
+    count: number;
+    maxStops: number;
+    totalKg: number;
+    capKg: number;
+    totalVol: number;
+    capVol: number;
+    totalRouteKm: number;
+    startTime: string;
+    returnArrivalTime: string;
+    shiftEndTime: string;
+    isOverStops: boolean;
+    isOverWeight: boolean;
+    isOverVol: boolean;
+    isOverTime: boolean;
+    hasErrors: boolean;
+  }>>(() => {
+    const result: Record<string, any> = {};
+
+    warehouseVehicles.forEach((v) => {
+      const vClients = clients.filter((c) => routesMatch(c.Rota, v));
+      const count = vClients.length;
+      const totalKg = Math.round(vClients.reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0));
+      const totalVol = Number(
+        vClients.reduce((sum, c) => sum + (Number(c.Volume_m3 !== undefined ? c.Volume_m3 : c.Volume_M3) || 0), 0).toFixed(2)
+      );
+
+      const vConfig = fleet.find((f: any) => routesMatch(f.veiculo, v));
+      const maxStops = Number(vConfig?.max_entregas) || 0;
+      const capKg = Number(vConfig?.capacidade_kg) || 0;
+      const capVol = Number(vConfig?.capacidade_vol) || 0;
+      const startTimeStr = (vConfig?.horario_inicio || "08:00").slice(0, 5);
+      const shiftEndStr = (vConfig?.horario_fim || "18:00").slice(0, 5);
+      const speed = Number(vConfig?.velocidade_media) || 50.0;
+
+      const sortedStops = [...vClients].sort((a, b) => (Number(a.Ordem) || 0) - (Number(b.Ordem) || 0));
+      let totalRouteKm = 0.0;
+      let returnArrivalTimeStr = startTimeStr;
+
+      if (sortedStops.length > 0) {
+        const lastStop = sortedStops[sortedStops.length - 1];
+        const whName = lastStop.Armazem || vConfig?.armazem;
+        const whObj = warehouses.find((w) => w.name === whName) || warehouses[0];
+        let returnDist = 0.0;
+        if (whObj && lastStop.Latitude && lastStop.Longitude && whObj.lat && whObj.lon) {
+          returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whObj.lat, whObj.lon);
+        }
+        totalRouteKm = (Number(lastStop.Dist_Acum) || 0) + returnDist;
+        const returnTravelMin = (returnDist / speed) * 60.0;
+        returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || lastStop.Chegada || "12:00", returnTravelMin);
+      }
+
+      const isOverStops = count > 0 && maxStops > 0 && count > maxStops;
+      const isOverWeight = count > 0 && capKg > 0 && totalKg > capKg;
+      const isOverVol = count > 0 && capVol > 0 && totalVol > capVol;
+      const isOverTime = count > 0 && shiftEndStr !== "" && parseTimeToMinutes(returnArrivalTimeStr) > parseTimeToMinutes(shiftEndStr);
+
+      result[v] = {
+        vehicle: v,
+        count,
+        maxStops,
+        totalKg,
+        capKg,
+        totalVol,
+        capVol,
+        totalRouteKm: Number(totalRouteKm.toFixed(1)),
+        startTime: startTimeStr,
+        returnArrivalTime: returnArrivalTimeStr,
+        shiftEndTime: shiftEndStr,
+        isOverStops,
+        isOverWeight,
+        isOverVol,
+        isOverTime,
+        hasErrors: isOverStops || isOverWeight || isOverVol || isOverTime,
+      };
+    });
+
+    return result;
+  }, [warehouseVehicles, clients, fleet, warehouses]);
+
+  // Filtered and Sorted vehicles list based on active warehouse, status filter & selected sort column
   const filteredVehiclesList = useMemo(() => {
     let list = [...warehouseVehicles];
 
     // Status Filter
     if (statusFilter === "with_cargo") {
-      list = list.filter(v => clients.some(c => routesMatch(c.Rota, v)));
+      list = list.filter((v) => (vehicleMetricsMap[v]?.count || 0) > 0);
     } else if (statusFilter === "empty") {
-      list = list.filter(v => !clients.some(c => routesMatch(c.Rota, v)));
+      list = list.filter((v) => (vehicleMetricsMap[v]?.count || 0) === 0);
     } else if (statusFilter === "pending") {
       list = []; // In pending status, only pending chip is shown
     }
 
-    // Sort: Vehicles with deliveries first (alphabetical order), empty vehicles at end (alphabetical order)
+    // Dynamic Column Sorting
     return list.sort((a, b) => {
-      const countA = clients.filter(c => routesMatch(c.Rota, a)).length;
-      const countB = clients.filter(c => routesMatch(c.Rota, b)).length;
-      const hasA = countA > 0;
-      const hasB = countB > 0;
-      
-      if (hasA && !hasB) return -1;
-      if (!hasA && hasB) return 1;
-      
-      return a.localeCompare(b, "pt", { numeric: true, sensitivity: "base" });
+      const mA = vehicleMetricsMap[a];
+      const mB = vehicleMetricsMap[b];
+
+      let comp = 0;
+      if (routeSortField === "stops") {
+        comp = (mA?.count || 0) - (mB?.count || 0);
+      } else if (routeSortField === "weight") {
+        comp = (mA?.totalKg || 0) - (mB?.totalKg || 0);
+      } else if (routeSortField === "vol") {
+        comp = (mA?.totalVol || 0) - (mB?.totalVol || 0);
+      } else if (routeSortField === "km") {
+        comp = (mA?.totalRouteKm || 0) - (mB?.totalRouteKm || 0);
+      } else {
+        // "name" default: vehicles with cargo first, then alphabetical
+        const countA = mA?.count || 0;
+        const countB = mB?.count || 0;
+        const hasA = countA > 0;
+        const hasB = countB > 0;
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
+        comp = a.localeCompare(b, "pt", { numeric: true, sensitivity: "base" });
+      }
+
+      return routeSortAsc ? comp : -comp;
     });
-  }, [warehouseVehicles, statusFilter, clients]);
+  }, [warehouseVehicles, statusFilter, vehicleMetricsMap, routeSortField, routeSortAsc]);
+
+  // Table Totals Summary
+  const tableTotals = useMemo(() => {
+    let stops = 0;
+    let kg = 0;
+    let vol = 0;
+    let km = 0;
+    let vehiclesWithCargo = 0;
+    let vehiclesWithErrors = 0;
+
+    filteredVehiclesList.forEach((v) => {
+      const m = vehicleMetricsMap[v];
+      if (m) {
+        if (m.count > 0) vehiclesWithCargo++;
+        if (m.hasErrors) vehiclesWithErrors++;
+        stops += m.count;
+        kg += m.totalKg;
+        vol += m.totalVol;
+        km += m.totalRouteKm;
+      }
+    });
+
+    return {
+      stops,
+      kg,
+      vol: Number(vol.toFixed(2)),
+      km: Number(km.toFixed(1)),
+      vehiclesWithCargo,
+      vehiclesWithErrors,
+    };
+  }, [filteredVehiclesList, vehicleMetricsMap]);
 
   // Filter visible clients
   const visibleClients = useMemo(() => {
@@ -1040,28 +1294,35 @@ export default function MapComponent({
       {/* LEFT-SIDE VERTICAL VEHICLE ROUTES PANEL / TABLE */}
       <div className="absolute left-3 top-14 bottom-4 z-[1000] pointer-events-none flex flex-col justify-start">
         {isRoutesPanelOpen ? (
-          <div className="pointer-events-auto w-64 md:w-72 max-h-[calc(100vh-130px)] flex flex-col bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden transition-all duration-200">
+          <div className="pointer-events-auto w-84 sm:w-96 md:w-[410px] max-h-[calc(100vh-130px)] flex flex-col bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden transition-all duration-200">
             {/* Panel Header */}
             <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <span className="text-sm">🚚</span>
                 <div>
-                  <h3 className="text-xs font-black text-zinc-800 dark:text-zinc-100 tracking-tight">Filtro de Viaturas</h3>
+                  <div className="flex items-center space-x-1.5">
+                    <h3 className="text-xs font-black text-zinc-800 dark:text-zinc-100 tracking-tight">Tabela de Viaturas</h3>
+                    {tableTotals.vehiclesWithErrors > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/50 animate-pulse" title="Viaturas com limites de capacidade, entregas ou horário ultrapassados">
+                        ⚠️ {tableTotals.vehiclesWithErrors} alerta(s)
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
-                    {activeVehiclesCount} com carga · {emptyVehiclesCount} vazias
+                    {activeVehiclesCount} ativas · {emptyVehiclesCount} vazias
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsRoutesPanelOpen(false)}
                 className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all cursor-pointer font-bold text-xs"
-                title="Colapsar painel lateral"
+                title="Colapsar tabela"
               >
                 ◀
               </button>
             </div>
 
-            {/* Quick Actions / Todas as Rotas */}
+            {/* Quick Actions & Special Filters */}
             <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/50 space-y-1">
               {(() => {
                 const totalGeocoded = clients.filter(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0).length;
@@ -1092,10 +1353,10 @@ export default function MapComponent({
               {selectedRoutes.length >= 2 && onReoptimizeSubset && (
                 <button
                   onClick={() => onReoptimizeSubset(selectedRoutes)}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-md shadow-indigo-500/20 flex items-center justify-center space-x-2 cursor-pointer transition-all animate-in fade-in"
+                  className="w-full px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-md shadow-indigo-500/20 flex items-center justify-center space-x-2 cursor-pointer transition-all animate-in fade-in"
                   title="Re-planear e otimizar conjuntamente as rotas selecionadas"
                 >
-                  <svg className="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3.5 h-3.5 text-amber-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                   </svg>
                   <span>✨ Re-otimizar Seleção ({selectedRoutes.length})</span>
@@ -1142,121 +1403,220 @@ export default function MapComponent({
               })()}
             </div>
 
-            {/* Table Header */}
-            <div className="px-3 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-              <span className="flex-1">Viatura / Rota</span>
-              <span className="w-12 text-center">Paragens</span>
-              <span className="w-14 text-right">Carga (kg)</span>
+            {/* Compact Table Header (Clickable for Sorting) */}
+            <div className="px-2 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-12 gap-1 items-center text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider select-none">
+              <div
+                onClick={() => handleSortRoutes("name")}
+                className="col-span-4 flex items-center space-x-1 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                title="Ordenar por nome da viatura"
+              >
+                <span>Viatura</span>
+                {routeSortField === "name" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+              </div>
+              <div
+                onClick={() => handleSortRoutes("stops")}
+                className="col-span-2 text-center cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                title="Ordenar por número de paragens"
+              >
+                <span>Par.</span>
+                {routeSortField === "stops" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+              </div>
+              <div
+                onClick={() => handleSortRoutes("weight")}
+                className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                title="Ordenar por peso em kg"
+              >
+                <span>Kg</span>
+                {routeSortField === "weight" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+              </div>
+              <div
+                onClick={() => handleSortRoutes("vol")}
+                className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                title="Ordenar por volume em m³"
+              >
+                <span>M³</span>
+                {routeSortField === "vol" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+              </div>
+              <div
+                onClick={() => handleSortRoutes("km")}
+                className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                title="Ordenar por km estimados / horário de fim"
+              >
+                <span>KM/Fim</span>
+                {routeSortField === "km" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+              </div>
             </div>
 
-            {/* Table Body - Scrollable list */}
+            {/* Compact Table Body - Scrollable */}
             <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-900/60 p-1 space-y-0.5">
               {filteredVehiclesList.map((v) => {
-                const routeColor = getRouteColor(v, vehicles);
+                const routeColor = getRouteColor(v, vehicles, customVehicleColors);
                 const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, v));
                 const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v);
                 const isMultiSelected = selectedRoutes.length > 1 && selectedRoutes.some(r => routesMatch(r, v));
                 const isRouteActive = isExclusive || isMultiSelected;
-                const vClients = clients.filter(c => routesMatch(c.Rota, v));
-                const count = vClients.length;
-                const totalKg = Math.round(vClients.reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0));
-
-                const sortedStops = [...vClients].sort((a, b) => (Number(a.Ordem) || 0) - (Number(b.Ordem) || 0));
-                const vConfig = fleet.find(f => routesMatch(f.veiculo, v));
-                const startTimeStr = vConfig?.horario_inicio || "08:00";
-                const speed = Number(vConfig?.velocidade_media) || 50.0;
-
-                let totalRouteKm = 0.0;
-                let returnArrivalTimeStr = startTimeStr;
-                if (sortedStops.length > 0) {
-                  const lastStop = sortedStops[sortedStops.length - 1];
-                  const whName = lastStop.Armazem || vConfig?.armazem;
-                  const whObj = warehouses.find(w => w.name === whName) || warehouses[0];
-                  let returnDist = 0.0;
-                  if (whObj && lastStop.Latitude && lastStop.Longitude && whObj.lat && whObj.lon) {
-                    returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whObj.lat, whObj.lon);
-                  }
-                  totalRouteKm = (Number(lastStop.Dist_Acum) || 0) + returnDist;
-                  const returnTravelMin = (returnDist / speed) * 60.0;
-                  returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || lastStop.Chegada || "12:00", returnTravelMin);
-                }
+                
+                const m = vehicleMetricsMap[v] || {
+                  count: 0,
+                  maxStops: 0,
+                  totalKg: 0,
+                  capKg: 0,
+                  totalVol: 0,
+                  capVol: 0,
+                  totalRouteKm: 0,
+                  startTime: "08:00",
+                  returnArrivalTime: "08:00",
+                  shiftEndTime: "18:00",
+                  isOverStops: false,
+                  isOverWeight: false,
+                  isOverVol: false,
+                  isOverTime: false,
+                  hasErrors: false,
+                };
 
                 return (
-                  <button
+                  <div
                     key={v}
                     onClick={(e) => toggleRouteFilter(v, e)}
-                    title={`Clique para ver só ${v} (Ctrl+Clique para seleção múltipla)`}
-                    className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex flex-col gap-1 cursor-pointer border ${
+                    title={`Clique para filtrar ${v} (Ctrl+Clique para multi-seleção)`}
+                    className={`w-full px-2 py-1.5 rounded-xl text-xs transition-all grid grid-cols-12 gap-1 items-center cursor-pointer border ${
                       isRouteActive
-                        ? "bg-indigo-600 text-white border-indigo-500 shadow-md ring-2 ring-indigo-400/80"
+                        ? "bg-indigo-600 text-white border-indigo-500 shadow-md ring-1 ring-indigo-400/80"
                         : isSelected
-                        ? "bg-white dark:bg-zinc-900/90 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 hover:border-indigo-400/60 shadow-sm"
+                        ? "bg-white dark:bg-zinc-900/90 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 hover:border-indigo-400/60 shadow-xs"
                         : "bg-transparent text-zinc-400 dark:text-zinc-500 border-transparent opacity-40 hover:opacity-100 hover:bg-zinc-100 dark:hover:bg-zinc-900/50"
                     }`}
                   >
-                    {/* Linha 1: Viatura + Badge de Paragens + Carga */}
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center space-x-2 flex-1 min-w-0 pr-1 text-left">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ring-1 ring-black/20"
-                          style={{ backgroundColor: routeColor }}
+                    {/* Col 1-4: Color dot with native color picker overlay + Vehicle Name */}
+                    <div className="col-span-4 flex items-center space-x-1.5 min-w-0 pr-1">
+                      <label
+                        className="relative inline-flex items-center justify-center w-3 h-3 rounded-full cursor-pointer shrink-0 shadow-xs ring-1 ring-black/20 hover:scale-125 transition-transform"
+                        style={{ backgroundColor: routeColor }}
+                        title="Clique na bola para mudar a cor desta viatura"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="color"
+                          value={routeColor}
+                          onChange={(e) => handleSetVehicleColor(v, e.target.value)}
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                         />
-                        <span className={`truncate font-bold text-[11px] ${isRouteActive ? "text-white" : ""}`}>
-                          {v}
-                        </span>
-                      </div>
+                      </label>
+                      <span className={`truncate font-bold text-[11px] ${isRouteActive ? "text-white" : ""}`}>
+                        {v}
+                      </span>
+                      {m.hasErrors && (
+                        <span className="text-[10px] shrink-0" title="Viatura com limites ultrapassados!">⚠️</span>
+                      )}
+                    </div>
 
-                      <div className="flex items-center space-x-1.5 shrink-0">
-                        {/* Delivery count pill - Sempre legível com alto contraste */}
+                    {/* Col 5-6: Paragens (com alerta vermelho se exceder) */}
+                    <div className="col-span-2 text-center">
+                      {m.isOverStops ? (
+                        <span
+                          className="px-1 py-0.5 rounded text-[10px] font-mono font-black bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/60 animate-pulse"
+                          title={`⚠️ Limite de entregas ultrapassado: ${m.count} / máx ${m.maxStops} (+${m.count - m.maxStops})`}
+                        >
+                          {m.count}/{m.maxStops}
+                        </span>
+                      ) : (
                         <span
                           style={
-                            isRouteActive && count > 0
+                            isRouteActive && m.count > 0
                               ? { backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#ffffff" }
                               : undefined
                           }
-                          className={`badge-pill-contrast px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
-                            count > 0
+                          className={`inline-block px-1.5 py-0.2 rounded font-mono text-[10px] font-bold border ${
+                            m.count > 0
                               ? isRouteActive
                                 ? "bg-white text-slate-950 border-white shadow-xs"
                                 : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
                               : "bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-600 dark:border-zinc-800"
                           }`}
                         >
-                          {count}
+                          {m.count > 0 ? (m.maxStops > 0 ? `${m.count}/${m.maxStops}` : m.count) : "—"}
                         </span>
-
-                        {/* Cargo kg */}
-                        <span className={`w-14 text-right font-mono text-[10px] ${
-                          isRouteActive ? "text-indigo-100 font-bold" : "text-zinc-500 dark:text-zinc-400"
-                        }`}>
-                          {count > 0 ? `${totalKg.toLocaleString()}k` : "—"}
-                        </span>
-                      </div>
+                      )}
                     </div>
 
-                    {/* Linha 2: KM da rota e Horário de saída e chegada ao armazém */}
-                    {count > 0 && (
-                      <div className={`flex items-center justify-between text-[10px] font-mono px-1.5 py-0.5 rounded w-full ${
-                        isRouteActive
-                          ? "bg-indigo-700/80 text-indigo-100 border border-indigo-500/40"
-                          : "bg-zinc-100/70 dark:bg-zinc-850/70 text-zinc-500 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50"
-                      }`}>
-                        <span className="flex items-center space-x-1">
-                          <span>🏁</span>
-                          <span className="font-bold">{totalRouteKm > 0 ? `${totalRouteKm.toFixed(1)} km` : "—"}</span>
+                    {/* Col 7-8: Peso kg (com alerta vermelho se exceder) */}
+                    <div className="col-span-2 text-right">
+                      {m.isOverWeight ? (
+                        <span
+                          className="px-1 py-0.5 rounded text-[10px] font-mono font-black bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/60 animate-pulse"
+                          title={`⚠️ Limite de peso ultrapassado: ${m.totalKg} kg / cap ${m.capKg} kg (+${m.totalKg - m.capKg} kg)`}
+                        >
+                          {m.totalKg.toLocaleString()}k
                         </span>
-                        <span className="flex items-center space-x-1">
-                          <span>🕒</span>
-                          <span>{startTimeStr} → {returnArrivalTimeStr}</span>
+                      ) : (
+                        <span className={`font-mono text-[10px] ${
+                          isRouteActive ? "text-indigo-100 font-bold" : "text-zinc-600 dark:text-zinc-300"
+                        }`}>
+                          {m.count > 0 ? `${m.totalKg.toLocaleString()}k` : "—"}
                         </span>
-                      </div>
-                    )}
-                  </button>
+                      )}
+                    </div>
+
+                    {/* Col 9-10: Volume m3 (com alerta vermelho se exceder) */}
+                    <div className="col-span-2 text-right">
+                      {m.isOverVol ? (
+                        <span
+                          className="px-1 py-0.5 rounded text-[10px] font-mono font-black bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/60 animate-pulse"
+                          title={`⚠️ Limite de volume ultrapassado: ${m.totalVol} m³ / cap ${m.capVol} m³ (+${(m.totalVol - m.capVol).toFixed(1)} m³)`}
+                        >
+                          {m.totalVol.toFixed(1)}
+                        </span>
+                      ) : (
+                        <span className={`font-mono text-[10px] ${
+                          isRouteActive ? "text-indigo-100 font-semibold" : "text-zinc-500 dark:text-zinc-400"
+                        }`}>
+                          {m.count > 0 ? (m.totalVol > 0 ? m.totalVol.toFixed(1) : "0") : "—"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Col 11-12: KM estimados e Horário (com alerta vermelho se regresso > horario_fim) */}
+                    <div className="col-span-2 text-right">
+                      {m.isOverTime ? (
+                        <span
+                          className="px-1 py-0.5 rounded text-[9.5px] font-mono font-black bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/60 animate-pulse block truncate"
+                          title={`⚠️ Horário de fim ultrapassado: regresso previsto às ${m.returnArrivalTime} > fim às ${m.shiftEndTime}`}
+                        >
+                          {m.returnArrivalTime}
+                        </span>
+                      ) : (
+                        <span className={`font-mono text-[9.5px] block truncate ${
+                          isRouteActive ? "text-indigo-100 font-semibold" : "text-zinc-500 dark:text-zinc-400"
+                        }`} title={m.count > 0 ? `${m.totalRouteKm} km · ${m.startTime} → ${m.returnArrivalTime}` : "Sem entregas"}>
+                          {m.count > 0 ? (m.totalRouteKm > 0 ? `${Math.round(m.totalRouteKm)}k` : m.returnArrivalTime) : "—"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
 
-            {/* Panel Footer */}
+            {/* Summary Row */}
+            <div className="px-2.5 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-12 gap-1 items-center text-[9.5px] font-mono font-black text-zinc-700 dark:text-zinc-300">
+              <div className="col-span-4 truncate uppercase tracking-wider text-[9px] text-zinc-500 dark:text-zinc-400">
+                Totais ({tableTotals.vehiclesWithCargo})
+              </div>
+              <div className="col-span-2 text-center text-indigo-600 dark:text-indigo-400 font-black">
+                {tableTotals.stops}
+              </div>
+              <div className="col-span-2 text-right">
+                {tableTotals.kg.toLocaleString()}k
+              </div>
+              <div className="col-span-2 text-right">
+                {tableTotals.vol}m³
+              </div>
+              <div className="col-span-2 text-right text-indigo-600 dark:text-indigo-400">
+                {tableTotals.km}km
+              </div>
+            </div>
+
+            {/* Panel Footer Navigation */}
             <div className="px-3 py-1.5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 flex items-center justify-between text-[10px]">
               <span className="text-zinc-500 dark:text-zinc-400 font-medium">
                 {selectedRoutes.length === 0 ? "Todas selecionadas" : `${selectedRoutes.length} selecionada(s)`}
@@ -1341,7 +1701,8 @@ export default function MapComponent({
         {/* Visible Clients */}
         {visibleClients.map((c, idx) => {
           const isPending = isPendingRoute(c.Rota);
-          const color = getRouteColor(c.Rota, vehicles);
+          const color = getRouteColor(c.Rota, vehicles, customVehicleColors);
+          const slotInfo = getTimeSlot(c.Janela_Horaria);
 
           const clientName = c.Nome_Cliente || c.Cliente || "Cliente";
           const clientCode = c.Codigo_Cliente || (c.Cliente !== clientName ? c.Cliente : "") || "";
@@ -1363,18 +1724,62 @@ export default function MapComponent({
             <Marker
               key={"marker-" + String(c.Cliente) + "-" + String(c.ID_Original || c.id || idx)}
               position={[c.Latitude, c.Longitude]}
-              icon={createNumberedCircleIcon(
+              icon={createGeometricMarkerIcon(
                 c.Ordem,
                 color,
                 isPending,
                 zoomLevel,
-                selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente))
+                selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente)),
+                slotInfo
               )}
               draggable={true}
               eventHandlers={{
                 dragend: (e) => {
                   const marker = e.target;
                   const position = marker.getLatLng();
+
+                  // Check if dropped near another client of a different route (< 400m)
+                  let nearestOther: MapClient | null = null;
+                  let minOtherDist = Infinity;
+
+                  visibleClients.forEach((other) => {
+                    const isSelf = (other.id && c.id && other.id === c.id) ||
+                                   (other.ID_Original && c.ID_Original && other.ID_Original === c.ID_Original) ||
+                                   (other.Cliente === c.Cliente && other.Morada === c.Morada);
+                    if (isSelf) return;
+
+                    if (other.Latitude && other.Longitude) {
+                      const dist = haversineDistance(position.lat, position.lng, other.Latitude, other.Longitude);
+                      if (dist < minOtherDist) {
+                        minOtherDist = dist;
+                        nearestOther = other;
+                      }
+                    }
+                  });
+
+                  if (nearestOther && minOtherDist <= 0.40 && !routesMatch((nearestOther as MapClient).Rota, c.Rota)) {
+                    const targetRoute = isPendingRoute((nearestOther as MapClient).Rota) ? "Por Distribuir" : (nearestOther as MapClient).Rota;
+                    const targetName = (nearestOther as MapClient).Nome_Cliente || (nearestOther as MapClient).Cliente;
+                    const clientLabel = clientName || c.Cliente;
+                    const willTransfer = window.confirm(
+                      `🎯 Transferência de Rota:\n\nLargou o cliente "${clientLabel}" a ${Math.round(minOtherDist * 1000)}m de "${targetName}".\n\nPretende transferir esta entrega para a rota "${targetRoute}"?`
+                    );
+
+                    if (willTransfer) {
+                      if (onMoveClientRoute) {
+                        onMoveClientRoute(
+                          c.Cliente || (c as any).Nome_Cliente || "",
+                          targetRoute,
+                          c.id || c.ID_Original,
+                          c.Morada,
+                          position.lat,
+                          position.lng
+                        );
+                      }
+                      return;
+                    }
+                  }
+
                   if (onUpdateClientCoords) {
                     onUpdateClientCoords(c.Cliente, position.lat, position.lng);
                   }
@@ -1383,10 +1788,22 @@ export default function MapComponent({
             >
               <Popup>
                 <div className="text-zinc-900 min-w-[280px] max-w-[340px] p-1 font-sans">
-                  {/* 1. Header: Paragem # / Rota & Status */}
+                  {/* 1. Header: Paragem # / Rota & Status + Color Changer */}
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-2 mb-2">
                     <div className="flex items-center space-x-2">
-                      <span className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: color }} />
+                      <label
+                        className="relative inline-flex items-center justify-center w-3.5 h-3.5 rounded-full cursor-pointer shrink-0 shadow-sm ring-1 ring-black/20 hover:scale-125 transition-transform"
+                        style={{ backgroundColor: color }}
+                        title="Clique na bola para mudar a cor desta viatura"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => handleSetVehicleColor(isPending ? "Por Distribuir" : c.Rota, e.target.value)}
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                        />
+                      </label>
                       <span className="font-extrabold text-sm text-zinc-900">
                         {isPending ? "Pendente" : `Paragem #${c.Ordem}`}
                       </span>
@@ -1442,8 +1859,14 @@ export default function MapComponent({
                   {/* 4. Operational Metrics Grid */}
                   <div className="grid grid-cols-2 gap-1.5 text-[11px] mb-2">
                     <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
-                      <span className="text-[9px] text-zinc-400 uppercase font-semibold block">Janela Horária</span>
-                      <span className="font-bold text-zinc-800 text-[11px]">{windowFormatted}</span>
+                      <span className="text-[9px] text-zinc-400 uppercase font-semibold flex items-center justify-between">
+                        <span>Janela Horária</span>
+                        <span className="text-[10px]" title={slotInfo.label}>{slotInfo.badge}</span>
+                      </span>
+                      <span className="font-bold text-zinc-800 text-[11px] block">{windowFormatted}</span>
+                      {slotInfo.type !== "any" && (
+                        <span className="text-[9px] text-indigo-600 font-semibold block">{slotInfo.label}</span>
+                      )}
                     </div>
 
                     <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
@@ -1590,7 +2013,7 @@ export default function MapComponent({
         {showRoads && Object.entries(roadGeometries).map(([rName, coords]) => {
           if (!visibleRouteNames.has(rName)) return null;
           if (selectedRoutes.length > 0 && !selectedRoutes.some(sel => routesMatch(sel, rName))) return null;
-          const color = getRouteColor(rName, vehicles);
+          const color = getRouteColor(rName, vehicles, customVehicleColors);
 
           return (
             <Polyline
@@ -1607,6 +2030,52 @@ export default function MapComponent({
           );
         })}
       </MapContainer>
+
+      {/* FLOATING BOTTOM-RIGHT TIME SLOT GEOMETRIC LEGEND */}
+      <div className="absolute bottom-6 right-3 z-[1000] pointer-events-auto">
+        <div className="bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden transition-all duration-200 min-w-[190px]">
+          <button
+            type="button"
+            onClick={() => setIsLegendOpen(!isLegendOpen)}
+            className="w-full px-3 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 flex items-center justify-between gap-2 cursor-pointer border-b border-zinc-200/80 dark:border-zinc-800/80 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-850 transition-colors"
+            title="Clique para recolher/expandir a legenda das figuras geométricas das slots horárias"
+          >
+            <span className="font-bold text-[11px] text-zinc-800 dark:text-zinc-200 flex items-center space-x-1.5">
+              <span>⏱️</span>
+              <span>Slots Horárias</span>
+            </span>
+            <span className="text-zinc-400 text-[10px] font-mono">{isLegendOpen ? "▼" : "▲"}</span>
+          </button>
+
+          {isLegendOpen && (
+            <div className="p-2 space-y-1.5 font-sans">
+              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
+                <span className="w-4 h-4 rounded-full border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
+                <span className="font-medium">1ª Slot (08h – 11h)</span>
+              </div>
+              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
+                <span className="w-4 h-4 rounded border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
+                <span className="font-medium">2ª Slot (11h – 13h)</span>
+              </div>
+              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
+                <span
+                  className="w-4 h-4 border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0"
+                  style={{ clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)" }}
+                />
+                <span className="font-medium">3ª Slot (13h – 15h)</span>
+              </div>
+              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
+                <span className="w-4 h-2.5 rounded-xs border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
+                <span className="font-medium">4ª Slot (15h – 19h+)</span>
+              </div>
+              <div className="flex items-center space-x-2 text-[10px] text-zinc-500 dark:text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                <span className="w-4 h-4 rounded-full border-2 border-dashed border-zinc-400 shrink-0" />
+                <span>Sem Janela / Qualquer</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       {/* FLOATING BOTTOM BULK REASSIGN ACTION BAR */}
       {selectedClientKeys.length > 0 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-zinc-950/95 dark:bg-zinc-900/95 backdrop-blur-md border border-indigo-500/60 shadow-2xl rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 min-w-[320px] max-w-[95%] animate-in fade-in slide-in-from-bottom-4 pointer-events-auto">
