@@ -3,30 +3,53 @@
 import { useEffect } from "react";
 
 /**
- * Suppresses runtime error popups caused by third-party browser extensions
- * (such as MetaMask / Rabby Wallet code 4900 "The provider is disconnected from all chains").
+ * Suprime popups de erro intrusivos provocados por extensões de terceiros no navegador
+ * (tais como MetaMask, Phantom, Rabby Wallet ou scripts inpage.js de extensões do Chrome/Edge).
  */
 export default function ExtensionErrorSuppressor() {
   useEffect(() => {
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const reason = event.reason;
-      if (!reason) return;
+    const isExtensionError = (err: any): boolean => {
+      if (!err) return false;
+      const str = String(err?.message || err?.stack || err || "");
+      const stack = String(err?.stack || "");
 
-      // Detect Web3 / Extension disconnection objects (e.g. { code: 4900, message: '...' })
+      return (
+        str.toLowerCase().includes("metamask") ||
+        str.includes("inpage.js") ||
+        str.includes("chrome-extension://") ||
+        str.includes("moz-extension://") ||
+        str.includes("disconnected from all chains") ||
+        err?.code === 4900 ||
+        stack.includes("chrome-extension://") ||
+        stack.includes("moz-extension://")
+      );
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (isExtensionError(event.reason)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+
+    const handleError = (event: ErrorEvent) => {
       if (
-        reason?.code === 4900 ||
-        (typeof reason?.message === "string" && reason.message.includes("disconnected from all chains")) ||
-        (typeof reason?.stack === "string" && reason.stack.includes("chrome-extension://")) ||
-        (typeof reason === "object" && reason !== null && reason.code && reason.message)
+        isExtensionError(event.error) ||
+        isExtensionError(event.message) ||
+        String(event.filename || "").includes("extension://")
       ) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
     };
 
-    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    // Usar capture = true para intercetar antes do overlay de desenvolvimento do Next.js
+    window.addEventListener("unhandledrejection", handleUnhandledRejection, true);
+    window.addEventListener("error", handleError, true);
+
     return () => {
-      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection, true);
+      window.removeEventListener("error", handleError, true);
     };
   }, []);
 
