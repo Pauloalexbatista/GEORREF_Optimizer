@@ -278,6 +278,7 @@ export default function TacticalPage() {
   const [selectedRouteNames, setSelectedRouteNames] = useState<string[]>([]);
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
+  const [selectedBigPictureZone, setSelectedBigPictureZone] = useState<string>("all");
 
   const toggleRouteSelection = (routeName: string) => {
     setSelectedRouteNames((prev) =>
@@ -2396,6 +2397,12 @@ export default function TacticalPage() {
             horario_inicio: vehicleMap[v]?.horario_inicio,
             horario_fim: vehicleMap[v]?.horario_fim,
           }))}
+          initialZoneId={selectedBigPictureZone}
+          onSelectZoneOnMap={(zId) => {
+            setSelectedBigPictureZone(zId);
+            setBigPictureModalOpen(false);
+            handleOpenDetachedMap();
+          }}
         />
 
         {/* Re-optimize Selected Routes Modal */}

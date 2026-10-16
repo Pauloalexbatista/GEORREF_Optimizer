@@ -6,7 +6,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useI18n } from "@/context/I18nContext";
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
-import { MapFilterState } from "@/components/MapComponent";
+import type { MapFilterState } from "@/components/MapComponent";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPictureModal";
 
@@ -53,6 +53,7 @@ export default function DetachedMapPage() {
   const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
   const [geocodingClient, setGeocodingClient] = useState<any | null>(null);
   const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
+  const [selectedBigPictureZone, setSelectedBigPictureZone] = useState<string>("all");
   const [isMounted, setIsMounted] = useState(false);
 
   const bigPictureAnalytics = useMemo(() => {
@@ -635,6 +636,10 @@ export default function DetachedMapPage() {
             setModalSelectedRoutes(rNames);
             setReoptimizeModalOpen(true);
           }}
+          onOpenBigPicture={(zoneId) => {
+            setSelectedBigPictureZone(zoneId || "all");
+            setBigPictureModalOpen(true);
+          }}
         />
 
         {/* Unified Geocoding / Correction Modal directly from Map Marker */}
@@ -666,12 +671,17 @@ export default function DetachedMapPage() {
           onConfirm={handleReoptimizeSubset}
         />
 
-        {/* Big Picture Modal no Mapa Destacado */}
+        {/* Big Picture Modal no Mapa Destacado com Estrutura por Zonas */}
         <BigPictureModal
           isOpen={bigPictureModalOpen}
           onClose={() => setBigPictureModalOpen(false)}
           deliveries={clients}
           vehicles={fleet}
+          initialZoneId={selectedBigPictureZone}
+          onSelectZoneOnMap={(zId) => {
+            setSelectedBigPictureZone(zId);
+            setBigPictureModalOpen(false);
+          }}
         />
       </div>
     </div>
