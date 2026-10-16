@@ -279,6 +279,8 @@ export default function TacticalPage() {
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
   const [selectedBigPictureZone, setSelectedBigPictureZone] = useState<string>("all");
+  const [draggedStopKey, setDraggedStopKey] = useState<string | null>(null);
+  const [dragOverStopKey, setDragOverStopKey] = useState<string | null>(null);
 
   const toggleRouteSelection = (routeName: string) => {
     setSelectedRouteNames((prev) =>
@@ -804,11 +806,49 @@ export default function TacticalPage() {
     }
   };
 
-  const handleReorder = async (routeName: string, clientCode: string, currentOrder: number, direction: "up" | "down", deliveryId?: number, address?: string) => {
+  const handleReorder = async (
+    routeName: string,
+    clientCode: string,
+    currentOrTargetOrder: number,
+    directionOrExact: "up" | "down" | "exact",
+    deliveryId?: number,
+    address?: string
+  ) => {
     if (!selectedProject) return;
-    const newOrder = direction === "up" ? currentOrder - 1 : currentOrder + 1;
+    let newOrder = currentOrTargetOrder;
+    if (directionOrExact === "up") newOrder = currentOrTargetOrder - 1;
+    else if (directionOrExact === "down") newOrder = currentOrTargetOrder + 1;
+    if (newOrder < 1) return;
+
     const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
     setActionLoading(actKey);
+
+    // Optimistic UI local swap
+    const prevRoutes = [...routes];
+    const routeStops = routes
+      .filter((r) => r.Rota === routeName)
+      .sort((a, b) => (Number(a.Ordem) || 0) - (Number(b.Ordem) || 0));
+
+    const stopIdx = routeStops.findIndex(
+      (s) =>
+        (deliveryId !== undefined && (s.id === deliveryId || s.ID_Original === deliveryId)) ||
+        (clientCode && (s.Cliente === clientCode || s.Nome_Cliente === clientCode))
+    );
+
+    if (stopIdx !== -1) {
+      const targetIdx = Math.max(0, Math.min(routeStops.length - 1, newOrder - 1));
+      if (stopIdx !== targetIdx) {
+        const reordered = [...routeStops];
+        const [moved] = reordered.splice(stopIdx, 1);
+        reordered.splice(targetIdx, 0, moved);
+        const reindexed = reordered.map((s, idx) => ({ ...s, Ordem: idx + 1 }));
+        const otherRoutes = routes.filter((r) => r.Rota !== routeName);
+        const optimistic = [...otherRoutes, ...reindexed];
+        setRoutes(optimistic);
+        broadcastUpdate(optimistic, vehicles, warehouses);
+      }
+    }
+
     try {
       const res = await apiRequest("/api/solver/reorder", {
         method: "POST",
@@ -828,6 +868,8 @@ export default function TacticalPage() {
       setRoutes(updated);
       broadcastUpdate(updated, vehicles, warehouses);
     } catch (err: any) {
+      setRoutes(prevRoutes);
+      broadcastUpdate(prevRoutes, vehicles, warehouses);
       alert("Erro ao reordenar: " + (err.message || "Erro"));
     } finally {
       setActionLoading(null);
@@ -2187,18 +2229,81 @@ export default function TacticalPage() {
                                           {filteredStops.map((stop, idx) => {
                                             const isLate = !isPending && isDeliveryLate(stop.Chegada, stop.Janela_Horaria);
                                             const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
+                                            const stopKey = stop.id ? `${routeName}_${stop.id}` : `${routeName}_${stop.Cliente}_${idx}`;
                                             const isRowLoading = actionLoading === actKey;
+                                            const isBeingDragged = draggedStopKey === stopKey;
+                                            const isDropTarget = dragOverStopKey === stopKey && !isBeingDragged;
 
                                             return (
                                               <tr
                                                 key={`${stop.Cliente}-${stop.id || idx}`}
-                                                className={`hover:bg-zinc-850/40 transition-colors ${
-                                                  isLate ? "bg-rose-950/20" : ""
+                                                draggable={!isPending && !isRowLoading}
+                                                onDragStart={(e) => {
+                                                  e.dataTransfer.setData(
+                                                    "text/plain",
+                                                    JSON.stringify({
+                                                      routeName,
+                                                      clientCode: stop.Cliente,
+                                                      order: stop.Ordem,
+                                                      deliveryId: stop.id,
+                                                      address: stop.Morada,
+                                                    })
+                                                  );
+                                                  e.dataTransfer.effectAllowed = "move";
+                                                  setDraggedStopKey(stopKey);
+                                                }}
+                                                onDragEnd={() => {
+                                                  setDraggedStopKey(null);
+                                                  setDragOverStopKey(null);
+                                                }}
+                                                onDragOver={(e) => {
+                                                  e.preventDefault();
+                                                  e.dataTransfer.dropEffect = "move";
+                                                  if (draggedStopKey && draggedStopKey !== stopKey) {
+                                                    setDragOverStopKey(stopKey);
+                                                  }
+                                                }}
+                                                onDragLeave={() => {
+                                                  if (dragOverStopKey === stopKey) {
+                                                    setDragOverStopKey(null);
+                                                  }
+                                                }}
+                                                onDrop={(e) => {
+                                                  e.preventDefault();
+                                                  setDraggedStopKey(null);
+                                                  setDragOverStopKey(null);
+                                                  try {
+                                                    const raw = e.dataTransfer.getData("text/plain");
+                                                    if (!raw) return;
+                                                    const data = JSON.parse(raw);
+                                                    if (data.routeName === routeName && data.order !== stop.Ordem) {
+                                                      handleReorder(routeName, data.clientCode, stop.Ordem, "exact", data.deliveryId, data.address);
+                                                    }
+                                                  } catch (err) {
+                                                    console.error("Drop error", err);
+                                                  }
+                                                }}
+                                                className={`transition-all ${
+                                                  isBeingDragged
+                                                    ? "opacity-40 bg-indigo-950/40 border-2 border-dashed border-indigo-500 scale-[0.99]"
+                                                    : isDropTarget
+                                                    ? "bg-indigo-900/40 border-t-2 border-indigo-400"
+                                                    : isLate
+                                                    ? "bg-rose-950/20 hover:bg-rose-950/30"
+                                                    : "hover:bg-zinc-850/40"
                                                 }`}
                                               >
-                                                {/* # Ordem with Reorder Arrows */}
+                                                {/* # Ordem with Reorder Arrows & Drag Handle */}
                                                 <td className="py-2.5 px-3.5 text-center">
-                                                  <div className="flex items-center justify-center space-x-1">
+                                                  <div className="flex items-center justify-center space-x-1.5">
+                                                    {!isPending && (
+                                                      <span
+                                                        className="cursor-grab active:cursor-grabbing text-zinc-500 hover:text-indigo-400 select-none text-xs"
+                                                        title="Arrastar para reordenar sequência"
+                                                      >
+                                                        ⋮⋮
+                                                      </span>
+                                                    )}
                                                     <span className="w-6 h-6 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center font-mono font-bold text-zinc-200 text-xs shadow-inner">
                                                       {stop.Ordem}
                                                     </span>
@@ -2250,15 +2355,30 @@ export default function TacticalPage() {
                                                   </span>
                                                 </td>
 
-                                                {/* Previsão Chegada */}
+                                                {/* Previsão Chegada com Validação de Janela */}
                                                 <td className="py-2 px-2 text-center">
-                                                  <div className="flex items-center justify-center space-x-1">
-                                                    <span className={`font-mono text-xs font-bold ${
-                                                      isLate ? "text-rose-400 bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-800" : "text-emerald-400"
-                                                    }`}>
+                                                  <div
+                                                    className="flex items-center justify-center space-x-1"
+                                                    title={
+                                                      isLate
+                                                        ? `Atraso: Previsão de chegada (${stop.Chegada || "--:--"}) ultrapassa a janela solicitada (${stop.Janela_Horaria || "08:00-19:00"})`
+                                                        : `Pontual: Chegada estimada (${stop.Chegada || "--:--"}) dentro da janela (${stop.Janela_Horaria || "08:00-19:00"})`
+                                                    }
+                                                  >
+                                                    <span
+                                                      className={`font-mono text-xs font-bold px-1.5 py-0.5 rounded ${
+                                                        isLate
+                                                          ? "text-rose-400 bg-rose-950/70 border border-rose-800 shadow-sm"
+                                                          : "text-emerald-400 bg-emerald-950/30 border border-emerald-800/40"
+                                                      }`}
+                                                    >
                                                       {stop.Chegada || "--:--"}
                                                     </span>
-                                                    {isLate && <span title="Atraso face à janela do cliente">⚠️</span>}
+                                                    {isLate && (
+                                                      <span className="cursor-help text-xs" title="Atraso face à janela horária do cliente">
+                                                        ⚠️
+                                                      </span>
+                                                    )}
                                                   </div>
                                                 </td>
 
