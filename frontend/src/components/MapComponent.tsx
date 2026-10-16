@@ -214,40 +214,49 @@ const routeColors = [
   "#e11d48", // Rose
 ];
 
-export type TimeSlotType = "slot1" | "slot2" | "slot3" | "slot4" | "any";
+export type TimeSlotShape = "circle" | "square" | "triangle" | "rect" | "diamond";
 
 export interface TimeSlotInfo {
-  type: TimeSlotType;
+  type: string;
   label: string;
-  shape: "circle" | "square" | "triangle" | "rect";
+  windowStr: string;
+  shape: TimeSlotShape;
   badge: string;
+  count?: number;
 }
 
-export function getTimeSlot(janelaStr?: string): TimeSlotInfo {
-  if (!janelaStr || janelaStr === "Qualquer" || janelaStr === "--" || janelaStr === "None") {
-    return { type: "any", label: "Qualquer Horário", shape: "circle", badge: "⚪" };
+export function parseWindowStartEnd(winStr?: string): { start: number; end: number; formatted: string } | null {
+  if (!winStr || winStr === "Qualquer" || winStr === "--" || winStr === "None" || String(winStr).trim() === "") {
+    return null;
   }
-  
-  const cleaned = String(janelaStr).replace(/\d{4}-\d{2}-\d{2}\s*/g, "").replace(/T/g, " ").trim();
-  const match = cleaned.match(/(\d{1,2}):?(\d{2})?/);
-  if (!match) {
-    return { type: "any", label: "Qualquer Horário", shape: "circle", badge: "⚪" };
-  }
+  const cleaned = String(winStr)
+    .replace(/\d{4}-\d{2}-\d{2}\s*/g, "")
+    .replace(/T/g, " ")
+    .trim();
+  const times = cleaned.match(/\b\d{1,2}(?::\d{2})?\b/g);
+  if (!times || times.length === 0) return null;
 
-  const hour = parseInt(match[1], 10);
-  const minute = match[2] ? parseInt(match[2], 10) : 0;
-  const timeVal = hour + minute / 60;
+  const toMinutes = (t: string) => {
+    const p = t.split(":");
+    const h = parseInt(p[0], 10);
+    const m = p[1] ? parseInt(p[1], 10) : 0;
+    return h * 60 + m;
+  };
 
-  if (timeVal < 11.0) {
-    return { type: "slot1", label: "1ª Slot (08h - 11h)", shape: "circle", badge: "⭕" };
-  }
-  if (timeVal < 13.0) {
-    return { type: "slot2", label: "2ª Slot (11h - 13h)", shape: "square", badge: "⬛" };
-  }
-  if (timeVal < 15.0) {
-    return { type: "slot3", label: "3ª Slot (13h - 15h)", shape: "triangle", badge: "🔺" };
-  }
-  return { type: "slot4", label: "4ª Slot (15h - 19h+)", shape: "rect", badge: "🔷" };
+  const toStr = (mins: number) => {
+    const h = Math.floor(mins / 60) % 24;
+    const m = mins % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  const startMin = toMinutes(times[0]);
+  const endMin = times.length > 1 ? toMinutes(times[1]) : startMin + 120;
+
+  return {
+    start: startMin,
+    end: endMin,
+    formatted: `${toStr(startMin)} - ${toStr(endMin)}`
+  };
 }
 
 function parseTimeToMinutes(t?: string): number {
@@ -354,6 +363,13 @@ function createGeometricMarkerIcon(
     const w = size - padX * 2;
     const h = size - padY * 2;
     shapeSvg = `<rect x="${padX}" y="${padY}" width="${w}" height="${h}" rx="5" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+    textY = size / 2;
+    fontSize = Math.round(size * 0.40);
+  } else if (effectiveSlot.shape === "diamond") {
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = (size - 6) / 2;
+    shapeSvg = `<polygon points="${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" />`;
     textY = size / 2;
     fontSize = Math.round(size * 0.40);
   } else {
@@ -529,6 +545,89 @@ export default function MapComponent({
       setRouteSortField(field);
       setRouteSortAsc(true);
     }
+  };
+
+  // Dynamically analyze only the time windows actually present in the distribution
+  const availableShapes: TimeSlotShape[] = ["circle", "square", "triangle", "rect", "diamond"];
+  const shapeBadges: Record<TimeSlotShape, string> = {
+    circle: "⭕",
+    square: "⬛",
+    triangle: "🔺",
+    rect: "🔷",
+    diamond: "🔶",
+  };
+
+  const dynamicTimeSlots = useMemo(() => {
+    const windowMap = new Map<string, { start: number; end: number; formatted: string; count: number }>();
+    let hasAnyCount = 0;
+
+    clients.forEach((c) => {
+      const parsed = parseWindowStartEnd(c.Janela_Horaria);
+      if (!parsed) {
+        hasAnyCount++;
+        return;
+      }
+      const existing = windowMap.get(parsed.formatted);
+      if (existing) {
+        existing.count++;
+      } else {
+        windowMap.set(parsed.formatted, { ...parsed, count: 1 });
+      }
+    });
+
+    // Sort existing windows chronologically by start time, then end time
+    const sortedWindows = Array.from(windowMap.values()).sort((a, b) => a.start - b.start || a.end - b.end);
+
+    const slotsByWindow = new Map<string, TimeSlotInfo>();
+    const legendSlots: TimeSlotInfo[] = [];
+
+    sortedWindows.forEach((w, index) => {
+      const shape = availableShapes[index % availableShapes.length];
+      const slotNumber = index + 1;
+      const badge = shapeBadges[shape] || "⭕";
+      const slotInfo: TimeSlotInfo = {
+        type: `slot${slotNumber}`,
+        label: `${slotNumber}ª Slot (${w.formatted})`,
+        windowStr: w.formatted,
+        shape: shape,
+        badge: badge,
+        count: w.count,
+      };
+      slotsByWindow.set(w.formatted, slotInfo);
+      legendSlots.push(slotInfo);
+    });
+
+    return {
+      slotsByWindow,
+      legendSlots,
+      hasAnyWindow: hasAnyCount > 0,
+      anyCount: hasAnyCount,
+    };
+  }, [clients]);
+
+  const getClientSlotInfo = (janelaStr?: string): TimeSlotInfo => {
+    const parsed = parseWindowStartEnd(janelaStr);
+    if (!parsed) {
+      return {
+        type: "any",
+        label: "Qualquer Horário",
+        windowStr: "Qualquer",
+        shape: "circle",
+        badge: "⚪",
+        count: 0,
+      };
+    }
+    const found = dynamicTimeSlots.slotsByWindow.get(parsed.formatted);
+    if (found) return found;
+
+    return {
+      type: "custom",
+      label: parsed.formatted,
+      windowStr: parsed.formatted,
+      shape: "circle",
+      badge: "⭕",
+      count: 1,
+    };
   };
 
   // Sync when external controlled filterState changes
@@ -1510,11 +1609,12 @@ export default function MapComponent({
                       )}
                     </div>
 
-                    {/* Col 5-6: Paragens (com alerta vermelho se exceder) */}
+                    {/* Col 5-6: Paragens (com alerta vermelho se exceder e contraste garantido) */}
                     <div className="col-span-2 text-center">
                       {m.isOverStops ? (
                         <span
-                          className="px-1 py-0.5 rounded text-[10px] font-mono font-black bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/60 animate-pulse"
+                          style={isRouteActive ? { backgroundColor: "#ffe4e6", color: "#be123c", borderColor: "#f43f5e" } : undefined}
+                          className="badge-pill-contrast inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-black bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/60 animate-pulse"
                           title={`⚠️ Limite de entregas ultrapassado: ${m.count} / máx ${m.maxStops} (+${m.count - m.maxStops})`}
                         >
                           {m.count}/{m.maxStops}
@@ -1526,11 +1626,13 @@ export default function MapComponent({
                               ? { backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#ffffff" }
                               : undefined
                           }
-                          className={`inline-block px-1.5 py-0.2 rounded font-mono text-[10px] font-bold border ${
+                          className={`badge-pill-contrast inline-block px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
                             m.count > 0
                               ? isRouteActive
                                 ? "bg-white text-slate-950 border-white shadow-xs"
                                 : "bg-indigo-50 text-indigo-950 border-indigo-200 dark:bg-zinc-800 dark:text-indigo-200 dark:border-zinc-700"
+                              : isRouteActive
+                              ? "bg-indigo-700/60 text-indigo-200 border-indigo-500/40"
                               : "bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-600 dark:border-zinc-800"
                           }`}
                         >
@@ -1702,7 +1804,7 @@ export default function MapComponent({
         {visibleClients.map((c, idx) => {
           const isPending = isPendingRoute(c.Rota);
           const color = getRouteColor(c.Rota, vehicles, customVehicleColors);
-          const slotInfo = getTimeSlot(c.Janela_Horaria);
+          const slotInfo = getClientSlotInfo(c.Janela_Horaria);
 
           const clientName = c.Nome_Cliente || c.Cliente || "Cliente";
           const clientCode = c.Codigo_Cliente || (c.Cliente !== clientName ? c.Cliente : "") || "";
@@ -2031,51 +2133,74 @@ export default function MapComponent({
         })}
       </MapContainer>
 
-      {/* FLOATING BOTTOM-RIGHT TIME SLOT GEOMETRIC LEGEND */}
-      <div className="absolute bottom-6 right-3 z-[1000] pointer-events-auto">
-        <div className="bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden transition-all duration-200 min-w-[190px]">
-          <button
-            type="button"
-            onClick={() => setIsLegendOpen(!isLegendOpen)}
-            className="w-full px-3 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 flex items-center justify-between gap-2 cursor-pointer border-b border-zinc-200/80 dark:border-zinc-800/80 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-850 transition-colors"
-            title="Clique para recolher/expandir a legenda das figuras geométricas das slots horárias"
-          >
-            <span className="font-bold text-[11px] text-zinc-800 dark:text-zinc-200 flex items-center space-x-1.5">
-              <span>⏱️</span>
-              <span>Slots Horárias</span>
-            </span>
-            <span className="text-zinc-400 text-[10px] font-mono">{isLegendOpen ? "▼" : "▲"}</span>
-          </button>
+      {/* FLOATING BOTTOM-RIGHT TIME SLOT GEOMETRIC LEGEND (Apenas slots reais da distribuição) */}
+      {(dynamicTimeSlots.legendSlots.length > 0 || dynamicTimeSlots.hasAnyWindow) && (
+        <div className="absolute bottom-6 right-3 z-[1000] pointer-events-auto">
+          <div className="bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden transition-all duration-200 min-w-[210px] max-w-[280px]">
+            <button
+              type="button"
+              onClick={() => setIsLegendOpen(!isLegendOpen)}
+              className="w-full px-3 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 flex items-center justify-between gap-2 cursor-pointer border-b border-zinc-200/80 dark:border-zinc-800/80 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-850 transition-colors"
+              title="Clique para recolher/expandir a legenda das figuras geométricas das slots horárias"
+            >
+              <span className="font-bold text-[11px] text-zinc-800 dark:text-zinc-200 flex items-center space-x-1.5">
+                <span>⏱️</span>
+                <span>Slots Horárias ({dynamicTimeSlots.legendSlots.length})</span>
+              </span>
+              <span className="text-zinc-400 text-[10px] font-mono">{isLegendOpen ? "▼" : "▲"}</span>
+            </button>
 
-          {isLegendOpen && (
-            <div className="p-2 space-y-1.5 font-sans">
-              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
-                <span className="w-4 h-4 rounded-full border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
-                <span className="font-medium">1ª Slot (08h – 11h)</span>
+            {isLegendOpen && (
+              <div className="p-2 space-y-1.5 font-sans">
+                {dynamicTimeSlots.legendSlots.map((slot) => (
+                  <div key={slot.type} className="flex items-center justify-between space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
+                    <div className="flex items-center space-x-2 min-w-0 truncate">
+                      {slot.shape === "circle" && (
+                        <span className="w-4 h-4 rounded-full border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
+                      )}
+                      {slot.shape === "square" && (
+                        <span className="w-4 h-4 rounded border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
+                      )}
+                      {slot.shape === "triangle" && (
+                        <span
+                          className="w-4 h-4 border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0"
+                          style={{ clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)" }}
+                        />
+                      )}
+                      {slot.shape === "rect" && (
+                        <span className="w-4 h-2.5 rounded-xs border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
+                      )}
+                      {slot.shape === "diamond" && (
+                        <span
+                          className="w-3.5 h-3.5 border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0 transform rotate-45"
+                        />
+                      )}
+                      <span className="font-medium truncate">{slot.label}</span>
+                    </div>
+                    {slot.count !== undefined && (
+                      <span className="text-[9.5px] font-mono text-zinc-400 shrink-0 font-bold">
+                        {slot.count}
+                      </span>
+                    )}
+                  </div>
+                ))}
+
+                {dynamicTimeSlots.hasAnyWindow && (
+                  <div className="flex items-center justify-between space-x-2 text-[10px] text-zinc-500 dark:text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-4 h-4 rounded-full border-2 border-dashed border-zinc-400 shrink-0" />
+                      <span>Sem Janela / Qualquer</span>
+                    </div>
+                    <span className="text-[9.5px] font-mono text-zinc-400 font-bold">
+                      {dynamicTimeSlots.anyCount}
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
-                <span className="w-4 h-4 rounded border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
-                <span className="font-medium">2ª Slot (11h – 13h)</span>
-              </div>
-              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
-                <span
-                  className="w-4 h-4 border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0"
-                  style={{ clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)" }}
-                />
-                <span className="font-medium">3ª Slot (13h – 15h)</span>
-              </div>
-              <div className="flex items-center space-x-2 text-[10.5px] text-zinc-700 dark:text-zinc-300">
-                <span className="w-4 h-2.5 rounded-xs border-2 border-indigo-500 bg-indigo-500/20 flex items-center justify-center shrink-0" />
-                <span className="font-medium">4ª Slot (15h – 19h+)</span>
-              </div>
-              <div className="flex items-center space-x-2 text-[10px] text-zinc-500 dark:text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-800">
-                <span className="w-4 h-4 rounded-full border-2 border-dashed border-zinc-400 shrink-0" />
-                <span>Sem Janela / Qualquer</span>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {/* FLOATING BOTTOM BULK REASSIGN ACTION BAR */}
       {selectedClientKeys.length > 0 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-zinc-950/95 dark:bg-zinc-900/95 backdrop-blur-md border border-indigo-500/60 shadow-2xl rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 min-w-[320px] max-w-[95%] animate-in fade-in slide-in-from-bottom-4 pointer-events-auto">

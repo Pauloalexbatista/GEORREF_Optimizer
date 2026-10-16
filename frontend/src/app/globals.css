@@ -116,14 +116,14 @@ html.light .bg-sky-700 {
   color: #ffffff !important;
 }
 
-html.light .bg-emerald-600 span,
-html.light .bg-emerald-700 span,
-html.light .bg-rose-600 span,
-html.light .bg-rose-700 span,
-html.light .bg-indigo-600 span,
-html.light .bg-indigo-700 span,
-html.light .bg-sky-600 span,
-html.light .bg-sky-700 span {
+html.light .bg-emerald-600 span:not(.badge-pill-contrast),
+html.light .bg-emerald-700 span:not(.badge-pill-contrast),
+html.light .bg-rose-600 span:not(.badge-pill-contrast),
+html.light .bg-rose-700 span:not(.badge-pill-contrast),
+html.light .bg-indigo-600 span:not(.badge-pill-contrast),
+html.light .bg-indigo-700 span:not(.badge-pill-contrast),
+html.light .bg-sky-600 span:not(.badge-pill-contrast),
+html.light .bg-sky-700 span:not(.badge-pill-contrast) {
   color: #ffffff !important;
 }
 
@@ -134,7 +134,8 @@ html.dark .badge-pill-contrast,
 html.light .bg-indigo-600 span.badge-pill-contrast,
 html.dark .bg-indigo-600 span.badge-pill-contrast,
 html.light .bg-amber-600 span.badge-pill-contrast,
-html.dark .bg-amber-600 span.badge-pill-contrast {
+html.dark .bg-amber-600 span.badge-pill-contrast,
+span.badge-pill-contrast {
   background-color: #ffffff !important;
   color: #0f172a !important;
   border-color: #ffffff !important;
