@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "@/context/ThemeContext";
 import { useI18n } from "@/context/I18nContext";
@@ -8,6 +8,7 @@ import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
 import { MapFilterState } from "@/components/MapComponent";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
+import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPictureModal";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 const UnifiedGeocodingModal = dynamic(() => import("@/components/UnifiedGeocodingModal"), { ssr: false });
@@ -50,7 +51,12 @@ export default function DetachedMapPage() {
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
   const [geocodingClient, setGeocodingClient] = useState<any | null>(null);
+  const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+
+  const bigPictureAnalytics = useMemo(() => {
+    return computeBigPictureAnalytics(clients, fleet);
+  }, [clients, fleet]);
 
   const handleReoptimizeSubset = async (options: {
     selectedRoutes?: string[];
@@ -538,6 +544,35 @@ export default function DetachedMapPage() {
           >
             <span>📊 {t.navigation.dashboard}</span>
           </a>
+
+          {/* Botão The Big Picture no Mapa Destacado */}
+          {clients.length > 0 && (
+            <button
+              onClick={() => setBigPictureModalOpen(true)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold border cursor-pointer transition-colors flex items-center space-x-1.5 shadow-sm ${
+                bigPictureAnalytics.overallStatus === "critical"
+                  ? "bg-rose-950/70 hover:bg-rose-900 border-rose-700 text-rose-200"
+                  : bigPictureAnalytics.overallStatus === "warning"
+                  ? "bg-amber-950/70 hover:bg-amber-900 border-amber-700 text-amber-200"
+                  : "bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-emerald-400"
+              }`}
+              title="Diagnóstico Executivo de Capacidade & Viabilidade (Balanço Temporal e Carga)"
+            >
+              <span className={`w-2 h-2 rounded-full ${
+                bigPictureAnalytics.overallStatus === "critical"
+                  ? "bg-rose-500 animate-pulse"
+                  : bigPictureAnalytics.overallStatus === "warning"
+                  ? "bg-amber-400"
+                  : "bg-emerald-400"
+              }`} />
+              <span>The Big Picture</span>
+              {bigPictureAnalytics.criticalPeriod && bigPictureAnalytics.criticalPeriod.deficitVehicles > 0 && (
+                <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-mono font-bold">
+                  {bigPictureAnalytics.criticalPeriod.label.split(" ")[0]}: -{bigPictureAnalytics.criticalPeriod.deficitVehicles}v
+                </span>
+              )}
+            </button>
+          )}
           {isMounted && filters.selectedRoutes && filters.selectedRoutes.length >= 2 && (
             <button
               onClick={() => {
@@ -613,6 +648,14 @@ export default function DetachedMapPage() {
           stopsCount={clients.filter(c => modalSelectedRoutes.includes(c.Rota)).length}
           totalKg={clients.filter(c => modalSelectedRoutes.includes(c.Rota)).reduce((sum, c) => sum + (Number(c.Peso_KG) || 0), 0)}
           onConfirm={handleReoptimizeSubset}
+        />
+
+        {/* Big Picture Modal no Mapa Destacado */}
+        <BigPictureModal
+          isOpen={bigPictureModalOpen}
+          onClose={() => setBigPictureModalOpen(false)}
+          deliveries={clients}
+          vehicles={fleet}
         />
       </div>
     </div>

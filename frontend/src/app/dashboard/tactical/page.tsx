@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import AuditModal, { ViolationItem } from "@/components/AuditModal";
 import AgentChatDrawer from "@/components/AgentChatDrawer";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
+import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPictureModal";
 
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
@@ -276,6 +277,7 @@ export default function TacticalPage() {
   const [agentModalOpen, setAgentModalOpen] = useState(false);
   const [selectedRouteNames, setSelectedRouteNames] = useState<string[]>([]);
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
+  const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
 
   const toggleRouteSelection = (routeName: string) => {
     setSelectedRouteNames((prev) =>
@@ -1224,6 +1226,19 @@ export default function TacticalPage() {
     };
   }, [routes, groupedRoutes, vehicles, vehicleMap, warehouseMap, warehouses]);
 
+  // Diagnóstico Executivo The Big Picture (Balanço Temporal AM/PM/Noite e Carga Física)
+  const bigPictureAnalytics = useMemo(() => {
+    const vList = vehicles.map((v) => ({
+      veiculo: v,
+      armazem: vehicleMap[v]?.armazem,
+      capacidade_kg: vehicleMap[v]?.capacidade_kg,
+      capacidade_vol: vehicleMap[v]?.capacidade_vol,
+      horario_inicio: vehicleMap[v]?.horario_inicio,
+      horario_fim: vehicleMap[v]?.horario_fim,
+    }));
+    return computeBigPictureAnalytics(routes, vList);
+  }, [routes, vehicles, vehicleMap]);
+
   // Options for reassigning dropdowns
   const reassignOptions = [
     "Por Distribuir",
@@ -1272,6 +1287,41 @@ export default function TacticalPage() {
                   </>
                 )}
               </button>
+
+              {/* Botão Executivo: The Big Picture (Diagnóstico de Capacidade AM/PM/Noite/Carga) */}
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setBigPictureModalOpen(true)}
+                  className={`cursor-pointer px-2.5 py-1.5 rounded-md font-medium transition-all flex items-center space-x-1.5 border text-xs shadow-sm ${
+                    bigPictureAnalytics.overallStatus === "critical"
+                      ? "bg-rose-950/70 hover:bg-rose-900/80 border-rose-700 text-rose-200"
+                      : bigPictureAnalytics.overallStatus === "warning"
+                      ? "bg-amber-950/70 hover:bg-amber-900/80 border-amber-700 text-amber-200"
+                      : "bg-zinc-950 hover:bg-zinc-850 border-zinc-700 text-emerald-400"
+                  }`}
+                  title="Diagnóstico Executivo de Capacidade & Viabilidade (Balanço Temporal e Físico)"
+                >
+                  <span className={`w-2 h-2 rounded-full ${
+                    bigPictureAnalytics.overallStatus === "critical"
+                      ? "bg-rose-500 animate-pulse"
+                      : bigPictureAnalytics.overallStatus === "warning"
+                      ? "bg-amber-400"
+                      : "bg-emerald-400"
+                  }`} />
+                  <span className="font-semibold">The Big Picture</span>
+                  {bigPictureAnalytics.criticalPeriod && bigPictureAnalytics.criticalPeriod.deficitVehicles > 0 && (
+                    <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-mono font-bold">
+                      {bigPictureAnalytics.criticalPeriod.label.split(" ")[0]}: -{bigPictureAnalytics.criticalPeriod.deficitVehicles}v
+                    </span>
+                  )}
+                  {bigPictureAnalytics.overallStatus === "balanced" && (
+                    <span className="text-[10px] text-emerald-500 font-mono hidden sm:inline">
+                      (Viável)
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* Botão Parâmetros */}
               <button
@@ -2324,6 +2374,21 @@ export default function TacticalPage() {
           onFocusRoute={(rName) => {
             setExpandedRoutes((prev) => ({ ...prev, [rName]: true }));
           }}
+        />
+
+        {/* Big Picture Modal: Diagnóstico de Capacidade Temporal e Carga */}
+        <BigPictureModal
+          isOpen={bigPictureModalOpen}
+          onClose={() => setBigPictureModalOpen(false)}
+          deliveries={routes}
+          vehicles={vehicles.map((v) => ({
+            veiculo: v,
+            armazem: vehicleMap[v]?.armazem,
+            capacidade_kg: vehicleMap[v]?.capacidade_kg,
+            capacidade_vol: vehicleMap[v]?.capacidade_vol,
+            horario_inicio: vehicleMap[v]?.horario_inicio,
+            horario_fim: vehicleMap[v]?.horario_fim,
+          }))}
         />
 
         {/* Re-optimize Selected Routes Modal */}
