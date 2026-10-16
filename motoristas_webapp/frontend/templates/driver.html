@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
@@ -71,6 +71,65 @@
     </button>
   </footer>
 
+  <!-- Modal POD: Confirmação de Entrega com Assinatura & Foto -->
+  <div id="pod-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="pod-modal-title">✓ Comprovativo de Conclusão (POD)</h3>
+          <p id="pod-modal-subtitle" style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Assinatura do cliente e fotografia</p>
+        </div>
+        <button class="modal-close" onclick="closePodModal()">&times;</button>
+      </div>
+
+      <!-- Nome do Recebedor -->
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label class="form-label" style="font-size: 12px; font-weight: 600;">Nome de Quem Recebe / Assina:</label>
+        <input type="text" id="pod-receiver-name" class="form-input" placeholder="Ex: Carlos Silva (Próprio / Familiar / Porteiro)" style="font-size: 13px;">
+      </div>
+
+      <!-- Área de Assinatura Digital no Ecrã -->
+      <div class="form-group" style="margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label class="form-label" style="font-size: 12px; font-weight: 600;">✍️ Assinatura Digital no Ecrã:</label>
+          <button type="button" id="btn-clear-sig" class="btn btn-secondary" style="min-height: 28px; padding: 2px 8px; font-size: 11px;">
+            🗑️ Limpar
+          </button>
+        </div>
+        <div class="signature-box">
+          <canvas id="signature-canvas" class="signature-canvas" width="460" height="180"></canvas>
+        </div>
+        <span style="font-size: 10px; color: var(--text-secondary); display: block; margin-top: 4px;">Assine diretamente com o dedo ou caneta tátil na caixa branca.</span>
+      </div>
+
+      <!-- Captura de Fotografia de Comprovativo -->
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" style="font-size: 12px; font-weight: 600;">📸 Fotografia de Comprovativo (Opcional):</label>
+        <input type="file" id="pod-photo-input" accept="image/*" capture="environment" style="display: none;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" id="btn-pod-photo-trigger" class="btn btn-secondary" style="flex: 1; font-size: 12px;">
+            📷 Tirar / Carregar Foto
+          </button>
+        </div>
+        <div id="pod-photo-preview-container" style="display: none;" class="photo-preview-box">
+          <img id="pod-photo-preview" class="photo-thumbnail" alt="Preview">
+          <div style="flex: 1; font-size: 11px;">
+            <div style="font-weight: 600; color: #16a34a;">Foto capturada com sucesso!</div>
+            <button type="button" id="btn-remove-pod-photo" style="background: none; border: none; color: #dc2626; cursor: pointer; padding: 0; font-size: 11px; text-decoration: underline;">
+              Remover Foto
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botões de Ação -->
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+        <button id="btn-cancel-pod" class="btn btn-secondary" onclick="closePodModal()">Cancelar</button>
+        <button id="btn-confirm-pod" class="btn btn-success" style="font-weight: 700;">✓ Confirmar Conclusão</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal Selecionar Motivo de Não Entrega -->
   <div id="reason-modal" class="modal-backdrop">
     <div class="modal-card">
@@ -84,9 +143,28 @@
           <!-- Opções preenchidas dinamicamente -->
         </select>
       </div>
+
+      <!-- Fotografia de Ocorrência / Insucesso (Opcional) -->
+      <div class="form-group" style="margin-top: 12px;">
+        <label class="form-label" style="font-size: 12px; font-weight: 600;">📸 Foto de Ocorrência / Justificação (Opcional):</label>
+        <input type="file" id="fail-photo-input" accept="image/*" capture="environment" style="display: none;">
+        <button type="button" id="btn-fail-photo-trigger" class="btn btn-secondary btn-block" style="font-size: 12px; margin-top: 4px;">
+          📷 Tirar Foto (Porta fechada, aviso, etc.)
+        </button>
+        <div id="fail-photo-preview-container" style="display: none;" class="photo-preview-box">
+          <img id="fail-photo-preview" class="photo-thumbnail" alt="Preview">
+          <div style="flex: 1; font-size: 11px;">
+            <div style="font-weight: 600; color: #d97706;">Foto anexada à ocorrência!</div>
+            <button type="button" id="btn-remove-fail-photo" style="background: none; border: none; color: #dc2626; cursor: pointer; padding: 0; font-size: 11px; text-decoration: underline;">
+              Remover Foto
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
         <button id="btn-cancel-reason" class="btn btn-secondary" data-i18n="btn_cancel">Cancelar</button>
-        <button id="btn-confirm-reason" class="btn btn-danger" data-i18n="btn_confirm">Confirmar</button>
+        <button id="btn-confirm-reason" class="btn btn-danger" data-i18n="btn_confirm">Confirmar Insucesso</button>
       </div>
     </div>
   </div>

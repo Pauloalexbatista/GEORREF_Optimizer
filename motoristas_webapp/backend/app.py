@@ -1,4 +1,4 @@
-﻿import os
+import os
 import shutil
 import tempfile
 from datetime import datetime
@@ -74,6 +74,9 @@ class StopUpdateRequest(BaseModel):
     driver_id: Optional[int] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    signature_data: Optional[str] = None
+    receiver_name: Optional[str] = None
+    photo_data: Optional[str] = None
 
 class GpsPingRequest(BaseModel):
     driver_id: int
@@ -289,9 +292,28 @@ async def api_update_stop(req: StopUpdateRequest):
     
     cursor.execute("""
         UPDATE route_stops 
-        SET status = ?, fail_reason = ?, driver_notes = ?, updated_at = ?, delivered_lat = ?, delivered_lng = ?
+        SET status = ?, 
+            fail_reason = ?, 
+            driver_notes = ?, 
+            updated_at = ?, 
+            delivered_lat = ?, 
+            delivered_lng = ?,
+            signature_data = COALESCE(NULLIF(?, ''), signature_data),
+            receiver_name = COALESCE(NULLIF(?, ''), receiver_name),
+            photo_data = COALESCE(NULLIF(?, ''), photo_data)
         WHERE id = ?
-    """, (req.status, req.fail_reason, req.driver_notes, now_str, req.lat, req.lng, req.stop_id))
+    """, (
+        req.status, 
+        req.fail_reason, 
+        req.driver_notes, 
+        now_str, 
+        req.lat, 
+        req.lng, 
+        req.signature_data or "",
+        req.receiver_name or "",
+        req.photo_data or "",
+        req.stop_id
+    ))
     
     # Get driver name
     driver_name = "Motorista"

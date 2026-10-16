@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 import os
 import json
 from datetime import datetime
@@ -61,9 +61,28 @@ def init_db():
         driver_notes TEXT,
         updated_at TEXT,
         delivered_lat REAL,
-        delivered_lng REAL
+        delivered_lng REAL,
+        signature_data TEXT,
+        receiver_name TEXT,
+        photo_data TEXT,
+        operation_type TEXT DEFAULT 'D',
+        par_id TEXT
     )
     """)
+
+    # Safe column migrations for existing SQLite databases
+    new_cols = [
+        ("signature_data", "TEXT"),
+        ("receiver_name", "TEXT"),
+        ("photo_data", "TEXT"),
+        ("operation_type", "TEXT DEFAULT 'D'"),
+        ("par_id", "TEXT"),
+    ]
+    for col_name, col_def in new_cols:
+        try:
+            cursor.execute(f"ALTER TABLE route_stops ADD COLUMN {col_name} {col_def}")
+        except sqlite3.OperationalError:
+            pass
     
     # Failure reasons
     cursor.execute("""

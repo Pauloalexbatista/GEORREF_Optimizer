@@ -1,4 +1,4 @@
-﻿* {
+* {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -228,6 +228,81 @@ body {
   background-color: var(--status-failed-bg);
   color: var(--status-failed-text);
   border: 1px solid var(--status-failed-border);
+}
+
+/* Operation Type Badges (D, P, From, To) */
+.badge-op {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.badge-op-d {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.badge-op-p {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-op-from {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-op-to {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: #9333ea;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+/* POD Signature & Photo Styling */
+.signature-box {
+  width: 100%;
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  margin-top: 6px;
+  touch-action: none;
+}
+
+.signature-canvas {
+  width: 100%;
+  height: 180px;
+  display: block;
+  cursor: crosshair;
+}
+
+.photo-preview-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  background-color: var(--bg-surface-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.photo-thumbnail {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
 }
 
 /* Buttons */

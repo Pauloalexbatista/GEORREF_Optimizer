@@ -1,4 +1,4 @@
-﻿import os
+import os
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -144,6 +144,8 @@ def parse_and_import_excel(file_path: str, original_filename: str) -> Dict[str, 
     col_seller = find_col(["vendedor", "comercial", "seller"])
     col_notes = find_col(["obs", "observa", "nota", "notas", "comentario"])
     col_cod = find_col(["cobranca", "cobrar", "valor", "preco", "cod", "pagamento"])
+    col_op_type = find_col(["tipo_operacao", "tipo_op", "movimento", "operacao", "tipo"])
+    col_par_id = find_col(["par_id", "par", "pair_id"])
 
     total_stops = 0
     unique_routes = set()
@@ -171,14 +173,17 @@ def parse_and_import_excel(file_path: str, original_filename: str) -> Dict[str, 
         seller = clean_str(row.get(col_seller)) if col_seller else ""
         notes = clean_str(row.get(col_notes)) if col_notes else ""
         cod = clean_float(row.get(col_cod)) if col_cod else 0.0
+        raw_op = clean_str(row.get(col_op_type)) if col_op_type else "D"
+        op_norm = "P" if raw_op.upper() in ["P", "PICKUP", "SUCATA"] else "From" if raw_op.upper() in ["FROM", "LOJA_LEV"] else "To" if raw_op.upper() in ["TO", "LOJA_ENT"] else "D"
+        par_id = clean_str(row.get(col_par_id)) if col_par_id else ""
         
         cursor.execute("""
             INSERT INTO route_stops (
                 route_id, sequence, client_name, address, postal_code, city,
                 phone, contact_person, volume, weight, packages, seller,
-                notes, cod_amount, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendente')
-        """, (route_id, seq, client, address, postal, city, phone, contact, vol, weight, packages, seller, notes, cod))
+                notes, cod_amount, status, operation_type, par_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendente', ?, ?)
+        """, (route_id, seq, client, address, postal, city, phone, contact, vol, weight, packages, seller, notes, cod, op_norm, par_id))
 
     drivers_count = 0
     if df_drivers is not None:

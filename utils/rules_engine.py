@@ -260,6 +260,11 @@ def is_vehicle_compatible(
     # 2. Avaliação da Matriz de Regras (Folha 4)
     # ---------------------------------------------------------------------
     if not rules_matrix:
+        # Sem matriz de regras, as tags explícitas da entrega (não-CP)
+        # devem ser satisfeitas diretamente pelas tags da viatura
+        non_cp_d_tags = {dt for dt in d_tags if not is_cp_rule(dt)}
+        if non_cp_d_tags:
+            return non_cp_d_tags.issubset(v_tags)
         return True
         
     prohibitions = [] # (tag_v, tag_d, is_cp)
