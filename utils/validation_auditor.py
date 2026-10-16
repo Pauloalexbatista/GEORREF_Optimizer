@@ -52,15 +52,13 @@ def parse_time_window_str(w_str: str) -> Tuple[int, int]:
                 return s_min, e_min
     return 0, 1440
 
+from utils.distance_calculator import haversine_distance as _river_haversine
+from utils.optimization_solver import get_segment_speed
+
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     if not lat1 or not lon1 or not lat2 or not lon2:
         return 0.0
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2.0) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0) ** 2
-    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-    return R * c
+    return _river_haversine(lat1, lon1, lat2, lon2)
 
 def audit_route_plan(
     routes_solution: Any,
@@ -305,7 +303,7 @@ def audit_route_plan(
                 last_lat = float(_safe_scalar(last_stop.get("Latitude", 0.0), 0.0))
                 last_lon = float(_safe_scalar(last_stop.get("Longitude", 0.0), 0.0))
                 return_dist_km = haversine_distance(last_lat, last_lon, depot_lat, depot_lon) * 1.30
-                ret_speed = 80.0 if return_dist_km > 25.0 else 65.0 if return_dist_km > 10.0 else max(v_speed, 45.0)
+                ret_speed = get_segment_speed(return_dist_km, v_speed)
                 return_travel_min = (return_dist_km / ret_speed) * 60.0
                 return_arrival_min = int(round(last_exit_min + return_travel_min))
 

@@ -27,8 +27,8 @@ import math
 # Resolve imports from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from database import get_db, get_projeto, ensure_entregas_columns
-from utils.distance_calculator import calculate_haversine_matrix
-from utils.optimization_solver import AdvancedRouteOptimizer
+from utils.distance_calculator import calculate_haversine_matrix, haversine_distance as _river_haversine
+from utils.optimization_solver import AdvancedRouteOptimizer, get_segment_speed
 from utils.persistence_manager import serialize_state, deserialize_state
 from utils.operation_types import normalize_op_type, apply_sucata_heritage, extract_pickup_delivery_pairs, calculate_dynamic_route_loads
 from backend.api.auth import get_current_user, UserResponse
@@ -138,13 +138,9 @@ class OptimizeRouteRequest(BaseModel):
     route_name: str
 
 def haversine_distance(lat1, lon1, lat2, lon2):
-    R = 6371.0
-    lat1, lon1, lat2, lon2 = map(math.radians, [float(lat1), float(lon1), float(lat2), float(lon2)])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-    c = 2 * math.asin(math.sqrt(a))
-    return R * c
+    if not lat1 or not lon1 or not lat2 or not lon2:
+        return 0.0
+    return _river_haversine(lat1, lon1, lat2, lon2)
 
 def is_pending_route(route_name: str) -> bool:
     if not route_name:
@@ -356,13 +352,7 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             travel_min = float(g_legs[idx]["duration_min"])
         else:
             dist = haversine_distance(p_lat, p_lon, c_lat, c_lon) * 1.30
-            # Realistic Highway Segment Speed Model
-            if dist > 25.0:
-                segment_speed = 80.0
-            elif dist > 10.0:
-                segment_speed = 65.0
-            else:
-                segment_speed = max(avg_speed, 45.0)
+            segment_speed = get_segment_speed(dist, avg_speed)
             travel_min = (dist / segment_speed) * 60.0
         cumul_dist += dist
         arr_min = cur_time_min + travel_min
@@ -552,8 +542,12 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         vehicle_warehouses = []
         vehicle_start_times = []
         vehicle_end_times = []
+        vehicle_speeds = []
+        vehicle_costs_per_km = []
+        multi_trip_pairs = []
         
         for vehicle_name, vehicle_data in fleet_dict.items():
+            v1_idx = len(vehicle_names)
             vehicle_capacities.append(vehicle_data["capacity"])
             vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
             wh_name = str(vehicle_data.get("warehouse", "") or "").strip()
@@ -573,21 +567,30 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             
             s_min = parse_time_to_minutes(vehicle_data.get("start_time", "09:50"), 590)
             e_min = parse_time_to_minutes(vehicle_data.get("end_time", "18:00"), 1080)
+            v_spd = float(vehicle_data.get("speed", 50.0) or 50.0)
+            v_cost = float(vehicle_data.get("cost_per_km", 0.65) or 0.65)
             vehicle_start_times.append(s_min)
             vehicle_end_times.append(e_min)
+            vehicle_speeds.append(v_spd)
+            vehicle_costs_per_km.append(v_cost)
 
             # Suporte a 2ª Volta se configurada na viatura (Sim/Não)
             is_2v = str(vehicle_data.get("segunda_volta", "Não")).strip().lower() in ["sim", "s", "yes", "true", "1", "2"]
             if is_2v:
+                v2_idx = len(vehicle_names)
                 v2_name = f"{vehicle_name} (Volta 2)"
                 vehicle_capacities.append(vehicle_data["capacity"])
                 vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
                 depot_indices.append(dep_idx)
                 vehicle_names.append(v2_name)
                 vehicle_warehouses.append(wh_name)
-                v2_start = max(s_min + 240, 780)  # A partir das 13:00 / pós-almoço
+                # O solver sincroniza matematicamente Start(v2) >= End(v1) + 30m
+                v2_start = max(s_min + 60, 600)
                 vehicle_start_times.append(v2_start)
                 vehicle_end_times.append(e_min)
+                vehicle_speeds.append(v_spd)
+                vehicle_costs_per_km.append(v_cost)
+                multi_trip_pairs.append((v1_idx, v2_idx, 30))
 
         # Parse client time windows with warehouse prefix for exact 1-to-1 index matching
         client_time_windows = [(0, 1440) for _ in range(num_warehouses)]
@@ -678,7 +681,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             client_cps=client_cps,
             vehicle_names=vehicle_names,
             operation_types=op_types,
-            pickup_delivery_pairs=pickup_delivery_pairs
+            pickup_delivery_pairs=pickup_delivery_pairs,
+            vehicle_speeds=vehicle_speeds,
+            vehicle_costs_per_km=vehicle_costs_per_km,
+            multi_trip_pairs=multi_trip_pairs
         )
         
         # 6. Convert solver output to routes list
@@ -757,7 +763,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     if base_v in vehicle_first_trip_depot_arrival:
                         arr_depot_min, _ = vehicle_first_trip_depot_arrival[base_v]
                         reload_min = 30  # 30 min reload/lunch
-                        v2_start_min = max(int(arr_depot_min + reload_min), 720)
+                        base_v2_start = vehicle_start_times[vehicle_idx] if vehicle_idx < len(vehicle_start_times) else 600
+                        v2_start_min = max(int(arr_depot_min + reload_min), base_v2_start)
                         v_start_str = minutes_to_time_str(v2_start_min)
                     elif vehicle_idx < len(vehicle_start_times):
                         v_start_str = minutes_to_time_str(vehicle_start_times[vehicle_idx])
@@ -778,7 +785,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     last_c_lat = float(last_s.get("Latitude", depot_lat))
                     last_c_lon = float(last_s.get("Longitude", depot_lon))
                     ret_km = haversine_distance(last_c_lat, last_c_lon, depot_lat, depot_lon) * 1.30
-                    ret_trav_min = (ret_km / max(v_speed, 45.0)) * 60.0
+                    ret_speed = get_segment_speed(ret_km, v_speed)
+                    ret_trav_min = (ret_km / ret_speed) * 60.0
                     arr_depot_min = last_dep_min + ret_trav_min
                     vehicle_first_trip_depot_arrival[vehicle_name] = (arr_depot_min, ret_km)
                     
@@ -2059,9 +2067,14 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         rules_mat = state_dict.get("rules_matrix", [])
 
         v_returns = []
+        v_speeds = []
+        v_costs = []
         for v in target_vehicles:
-            reg_val = str(fleet_dict.get(v, {}).get("regresso_armazem", "Sim")).strip().lower()
+            v_cfg = fleet_dict.get(v, fleet_dict.get(v.replace(" (Volta 2)", ""), {}))
+            reg_val = str(v_cfg.get("regresso_armazem", "Sim")).strip().lower()
             v_returns.append(reg_val not in ["não", "nao", "false", "0", "no"])
+            v_speeds.append(float(v_cfg.get("speed", 50.0) or 50.0))
+            v_costs.append(float(v_cfg.get("cost_per_km", 0.65) or 0.65))
 
         op_c = "Tipo_Operacao" if "Tipo_Operacao" in subset_df.columns else "tipo_operacao" if "tipo_operacao" in subset_df.columns else None
         subset_op_types = ["D" for _ in range(num_warehouses)] + (list(subset_df[op_c].apply(normalize_op_type)) if op_c else ["D" for _ in range(len(subset_df))])
@@ -2095,7 +2108,9 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             client_cps=client_cps,
             vehicle_names=target_vehicles,
             operation_types=subset_op_types,
-            pickup_delivery_pairs=pickup_delivery_pairs
+            pickup_delivery_pairs=pickup_delivery_pairs,
+            vehicle_speeds=v_speeds,
+            vehicle_costs_per_km=v_costs
         )
 
         assigned_subset_nodes = set()
