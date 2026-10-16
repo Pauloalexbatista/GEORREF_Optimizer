@@ -145,10 +145,11 @@ def init_database():
                 nivel_qualidade INTEGER DEFAULT 99,
                 fonte_match TEXT DEFAULT 'PENDENTE',
                 morada_encontrada TEXT DEFAULT '',
-                rota TEXT DEFAULT '',
                 ordem INTEGER DEFAULT 0,
                 ordem_paragem INTEGER DEFAULT 0,
                 regras TEXT DEFAULT '',
+                tipo_operacao TEXT DEFAULT 'D',
+                par_id TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (projeto_id) REFERENCES projetos (id)
             )
@@ -1162,7 +1163,9 @@ def ensure_entregas_columns():
                 ("rota", "TEXT DEFAULT ''"),
                 ("ordem", "INTEGER DEFAULT 0"),
                 ("ordem_paragem", "INTEGER DEFAULT 0"),
-                ("regras", "TEXT DEFAULT ''")
+                ("regras", "TEXT DEFAULT ''"),
+                ("tipo_operacao", "TEXT DEFAULT 'D'"),
+                ("par_id", "TEXT DEFAULT ''")
             ]:
                 if col not in cols:
                     try:

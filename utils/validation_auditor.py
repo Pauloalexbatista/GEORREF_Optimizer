@@ -14,6 +14,7 @@ Audits routes and stops against all business rules and constraints:
 import math
 from typing import List, Dict, Any, Tuple, Optional
 from utils.rules_engine import is_vehicle_compatible, extract_tags, explain_incompatibility
+from utils.operation_types import calculate_dynamic_route_loads, normalize_op_type
 
 def parse_time_to_minutes(t_val, default: int = 480) -> int:
     if t_val is None or t_val == "":
@@ -252,32 +253,38 @@ def audit_route_plan(
                     r_violations.append(v_item)
                     all_violations.append(v_item)
 
-        # 4. Check Weight Capacity (KG)
-        if total_kg > v_max_kg:
+        # 4 & 5. Check Dynamic Vehicle Loads (Curva de Carga a Bordo KG e Volume m3)
+        stops_records = df_r.to_dict(orient="records")
+        dyn_load = calculate_dynamic_route_loads(stops_records, vehicle_cap_kg=v_max_kg, vehicle_cap_vol=v_max_vol)
+        peak_kg = dyn_load.get("peak_load_kg", total_kg)
+        peak_vol = dyn_load.get("peak_load_vol", total_vol)
+
+        # 4. Check Weight Capacity (KG a Bordo)
+        if dyn_load.get("has_kg_overload", peak_kg > v_max_kg):
             v_item = {
                 "type": "capacity_kg",
                 "severity": "error",
                 "route": r_name,
-                "title": f"Excesso de Peso na Viatura {r_name}",
-                "message": f"Carga total de {total_kg:.1f} kg excede a capacidade máxima de {v_max_kg:.1f} kg (+{total_kg - v_max_kg:.1f} kg de excesso).",
-                "total_kg": total_kg,
+                "title": f"Excesso de Peso a Bordo na Viatura {r_name}",
+                "message": f"Pico de carga a bordo de {peak_kg:.1f} kg excede a capacidade máxima de {v_max_kg:.1f} kg (+{peak_kg - v_max_kg:.1f} kg de excesso).",
+                "total_kg": peak_kg,
                 "max_kg": v_max_kg,
-                "excess_kg": round(total_kg - v_max_kg, 1)
+                "excess_kg": round(peak_kg - v_max_kg, 1)
             }
             r_violations.append(v_item)
             all_violations.append(v_item)
 
-        # 5. Check Volume Capacity (m3)
-        if total_vol > v_max_vol:
+        # 5. Check Volume Capacity (m3 a Bordo)
+        if dyn_load.get("has_vol_overload", peak_vol > v_max_vol):
             v_item = {
                 "type": "capacity_vol",
                 "severity": "error",
                 "route": r_name,
-                "title": f"Excesso de Volume na Viatura {r_name}",
-                "message": f"Volume total de {total_vol:.2f} m³ excede a capacidade máxima de {v_max_vol:.2f} m³ (+{total_vol - v_max_vol:.2f} m³ de excesso).",
-                "total_vol": total_vol,
+                "title": f"Excesso de Volume a Bordo na Viatura {r_name}",
+                "message": f"Pico de volume a bordo de {peak_vol:.2f} m³ excede a capacidade máxima de {v_max_vol:.2f} m³ (+{peak_vol - v_max_vol:.2f} m³ de excesso).",
+                "total_vol": peak_vol,
                 "max_vol": v_max_vol,
-                "excess_vol": round(total_vol - v_max_vol, 2)
+                "excess_vol": round(peak_vol - v_max_vol, 2)
             }
             r_violations.append(v_item)
             all_violations.append(v_item)
@@ -323,6 +330,69 @@ def audit_route_plan(
             "violations_count": len(r_violations),
             "violations": r_violations
         }
+
+    # 7. Check Pickup & Delivery Pairs (From ➔ To) Integrity & Precedence
+    from_stops = {}
+    to_stops = {}
+    for _, row in df.iterrows():
+        op = normalize_op_type(row.get("Tipo_Operacao") or row.get("tipo_operacao"))
+        p_id = str(row.get("Par_ID") or row.get("par_id") or row.get("Doc_ID") or row.get("doc_id") or "").strip()
+        if not p_id:
+            continue
+        if op == "From":
+            from_stops[p_id] = row
+        elif op == "To":
+            to_stops[p_id] = row
+
+    for p_id, f_row in from_stops.items():
+        if p_id in to_stops:
+            t_row = to_stops[p_id]
+            f_route = str(f_row.get("Rota", ""))
+            t_route = str(t_row.get("Rota", ""))
+            f_cli = str(f_row.get("Cliente") or f_row.get("Nome_Cliente") or "Loja")
+            t_cli = str(t_row.get("Cliente") or t_row.get("Nome_Cliente") or "Cliente")
+
+            is_f_pending = f_route.lower() in ["por distribuir", "pendente", "nan", ""]
+            is_t_pending = t_route.lower() in ["por distribuir", "pendente", "nan", ""]
+
+            if is_f_pending != is_t_pending or (not is_f_pending and f_route != t_route):
+                v_item = {
+                    "type": "pickup_delivery_pair",
+                    "severity": "error",
+                    "route": f_route if not is_f_pending else t_route,
+                    "title": f"Par Casado em Viaturas Diferentes (ID: {p_id})",
+                    "message": f"O levantamento na loja '{f_cli}' está na rota '{f_route}', mas a entrega ao cliente '{t_cli}' está na rota '{t_route}'. Devem ser executados pela mesma viatura.",
+                    "par_id": p_id
+                }
+                all_violations.append(v_item)
+                if f_route in routes_status:
+                    routes_status[f_route]["violations"].append(v_item)
+                    routes_status[f_route]["violations_count"] += 1
+                    routes_status[f_route]["is_valid"] = False
+                if t_route in routes_status and t_route != f_route:
+                    routes_status[t_route]["violations"].append(v_item)
+                    routes_status[t_route]["violations_count"] += 1
+                    routes_status[t_route]["is_valid"] = False
+            elif not is_f_pending:
+                # Same active vehicle: verify precedence Ordem(From) < Ordem(To)
+                f_ord = int(_safe_scalar(f_row.get("Ordem", 0), 0))
+                t_ord = int(_safe_scalar(t_row.get("Ordem", 0), 0))
+                if f_ord >= t_ord and f_ord > 0 and t_ord > 0:
+                    v_item = {
+                        "type": "pickup_delivery_pair",
+                        "severity": "error",
+                        "route": f_route,
+                        "title": f"Precedência Invertida no Par Casado (ID: {p_id})",
+                        "message": f"Na rota '{f_route}', a entrega ao cliente '{t_cli}' (#{t_ord}) está agendada antes do levantamento na loja '{f_cli}' (#{f_ord}).",
+                        "par_id": p_id,
+                        "from_order": f_ord,
+                        "to_order": t_ord
+                    }
+                    all_violations.append(v_item)
+                    if f_route in routes_status:
+                        routes_status[f_route]["violations"].append(v_item)
+                        routes_status[f_route]["violations_count"] += 1
+                        routes_status[f_route]["is_valid"] = False
 
     return {
         "total_violations": len(all_violations),

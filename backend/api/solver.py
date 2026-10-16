@@ -30,6 +30,7 @@ from database import get_db, get_projeto, ensure_entregas_columns
 from utils.distance_calculator import calculate_haversine_matrix
 from utils.optimization_solver import AdvancedRouteOptimizer
 from utils.persistence_manager import serialize_state, deserialize_state
+from utils.operation_types import normalize_op_type, apply_sucata_heritage, extract_pickup_delivery_pairs, calculate_dynamic_route_loads
 from backend.api.auth import get_current_user, UserResponse
 
 router = APIRouter(prefix="/solver", tags=["solver"])
@@ -316,7 +317,7 @@ def get_depot_coords(warehouses_df, wh_name=None):
         print(f"Notice in get_depot_coords: {e}")
     return 38.6593, -9.1758
 
-def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 10, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False) -> list:
+def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 10, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False, vehicle_cap_kg: float = 1000.0, vehicle_cap_vol: float = 10.0) -> list:
     stops_list = list(stops_iterable)
     if not stops_list:
         return []
@@ -385,24 +386,21 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         new_row["Ordem"] = order
         new_row["Peso_KG"] = demand
         new_row["Volume_m3"] = vol_demand
-        new_row["Carga_Acum"] = round(cumul_load, 1)
-        new_row["Carga_Vol_Acum"] = round(cumul_vol, 2)
-        new_row["Volume_m3"] = vol_demand
+        new_row["Tipo_Operacao"] = normalize_op_type(stop_dict.get("Tipo_Operacao") or stop_dict.get("tipo_operacao"))
         new_row["Chegada"] = minutes_to_time_str(arr_min)
         new_row["Tempo_Espera"] = int(round(wait_min))
         new_row["Tempo_Entrega"] = serv_time
         new_row["Saida"] = minutes_to_time_str(dep_min)
         new_row["KM_Anterior"] = round(dist, 2)
         new_row["Dist_Acum"] = round(cumul_dist, 2)
-        new_row["Carga_Acum"] = round(cumul_load, 1)
-        new_row["Carga_Vol_Acum"] = round(cumul_vol, 2)
         
         updated_stops.append(new_row)
         p_lat, p_lon = c_lat, c_lon
         cur_time_min = dep_min
         order += 1
         
-    return updated_stops
+    load_metrics = calculate_dynamic_route_loads(updated_stops, vehicle_cap_kg=vehicle_cap_kg, vehicle_cap_vol=vehicle_cap_vol)
+    return load_metrics.get("stops_with_loads", updated_stops)
 
 @router.post("/solve")
 def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_current_user)):
@@ -434,10 +432,12 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             col_names = [d[0] for d in cursor.description]
             delivery_rows = [dict(zip(col_names, r)) for r in rows]
             
+            delivery_rows = apply_sucata_heritage(delivery_rows)
             df_rows = []
             for dr in delivery_rows:
                 df_rows.append({
                     "id": dr["id"],
+                    "Doc_ID": str(dr.get("codigo_cliente") or dr.get("Doc_ID") or ""),
                     "Codigo_Cliente": dr["codigo_cliente"],
                     "Nome_Cliente": dr.get("nome_cliente") or dr["codigo_cliente"],
                     "Morada": dr["morada"],
@@ -452,7 +452,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     "Longitude": float(dr["longitude"]),
                     "Nivel_Qualidade": int(dr.get("nivel_qualidade") or 0),
                     "Armazem": dr.get("armazem"),
-                    "Regras": str(dr.get("regras") or "")
+                    "Regras": str(dr.get("regras") or ""),
+                    "Tipo_Operacao": normalize_op_type(dr.get("tipo_operacao") or dr.get("Tipo_Operacao")),
+                    "Par_ID": str(dr.get("par_id") or dr.get("Par_ID") or "")
                 })
             deliveries_df = pd.DataFrame(df_rows)
             
@@ -645,6 +647,11 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         
         client_service_times = [0 for _ in range(num_warehouses)] + [int(dr.get("tempo_descarga_min") or 10) for dr in delivery_rows]
         client_priorities = [2 for _ in range(num_warehouses)] + [int(dr.get("prioridade", 1) or 1) for dr in delivery_rows]
+        
+        op_types = ["D" for _ in range(num_warehouses)] + [normalize_op_type(dr.get("Tipo_Operacao", "D")) for dr in delivery_rows]
+        pd_pairs_raw = extract_pickup_delivery_pairs(delivery_rows)
+        pickup_delivery_pairs = [(p + num_warehouses, d + num_warehouses) for p, d in pd_pairs_raw]
+
         optimizer = AdvancedRouteOptimizer()
         result = optimizer.optimize_routes(
             distance_matrix,
@@ -669,7 +676,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             client_priorities=client_priorities,
             vehicle_returns_to_depot=vehicle_returns_to_depot,
             client_cps=client_cps,
-            vehicle_names=vehicle_names
+            vehicle_names=vehicle_names,
+            operation_types=op_types,
+            pickup_delivery_pairs=pickup_delivery_pairs
         )
         
         # 6. Convert solver output to routes list
@@ -734,11 +743,15 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "Vendedor": vend_val,
                         "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
                         "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
-                        "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim")
+                        "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim"),
+                        "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao") or client_row.get("tipo_operacao")),
+                        "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or "")
                     })
                     
             if raw_stops:
                 v_speed = float(v_info.get("speed", 50.0))
+                v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+                v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
                 if "(Volta 2)" in vehicle_name:
                     base_v = vehicle_name.replace(" (Volta 2)", "")
                     if base_v in vehicle_first_trip_depot_arrival:
@@ -753,7 +766,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 else:
                     v_start_str = str(v_info.get("start_time", "08:00:00"))
 
-                processed_stops = recalculate_route_stops(raw_stops, depot_lat, depot_lon, v_start_str, v_speed)
+                processed_stops = recalculate_route_stops(
+                    raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
+                    vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+                )
                 routes_list.extend(processed_stops)
 
                 if "(Volta 2)" not in vehicle_name and processed_stops:
@@ -818,7 +834,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "Telefone": tel_val,
                 "Observacoes": obs_val,
                 "Notas_Motorista": obs_val,
-                "Vendedor": vend_val
+                "Vendedor": vend_val,
+                "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao") or client_row.get("tipo_operacao")),
+                "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or "")
             })
             pending_order += 1
             
@@ -1226,8 +1244,13 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
             v_start = str(v_info.get("start_time", "09:50"))
             v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+            v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
             
-            recalc_stops = recalculate_route_stops(route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed)
+            recalc_stops = recalculate_route_stops(
+                route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed,
+                vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+            )
             updated_rows.extend(recalc_stops)
                 
         df_new_routes = pd.DataFrame(updated_rows)
@@ -1322,8 +1345,13 @@ def reorder_stop_in_route(req: ReorderRequest, current_user: UserResponse = Depe
         depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
         v_start = str(v_info.get("start_time", "08:00"))
         v_speed = float(v_info.get("speed", 50.0))
+        v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+        v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
         
-        recalc_stops = recalculate_route_stops(reordered_records, depot_lat, depot_lon, v_start, v_speed)
+        recalc_stops = recalculate_route_stops(
+            reordered_records, depot_lat, depot_lon, v_start, v_speed,
+            vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+        )
         
         other_routes = df_routes[~route_mask].to_dict(orient="records")
         all_updated_rows = other_routes + recalc_stops
@@ -1425,8 +1453,13 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
             v_start = str(v_info.get("start_time", "09:50"))
             v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+            v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
             
-            recalc_stops = recalculate_route_stops(route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed)
+            recalc_stops = recalculate_route_stops(
+                route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed,
+                vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+            )
             updated_rows.extend(recalc_stops)
                 
         df_new_routes = pd.DataFrame(updated_rows)
@@ -1525,8 +1558,13 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
             v_start = str(v_info.get("start_time", "09:50"))
             v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+            v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
             
-            recalc_stops = recalculate_route_stops(route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed)
+            recalc_stops = recalculate_route_stops(
+                route_clients.to_dict(orient="records"), depot_lat, depot_lon, v_start, v_speed,
+                vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+            )
             updated_rows.extend(recalc_stops)
                 
         df_new_routes = pd.DataFrame(updated_rows)
@@ -2025,6 +2063,13 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             reg_val = str(fleet_dict.get(v, {}).get("regresso_armazem", "Sim")).strip().lower()
             v_returns.append(reg_val not in ["não", "nao", "false", "0", "no"])
 
+        op_c = "Tipo_Operacao" if "Tipo_Operacao" in subset_df.columns else "tipo_operacao" if "tipo_operacao" in subset_df.columns else None
+        subset_op_types = ["D" for _ in range(num_warehouses)] + (list(subset_df[op_c].apply(normalize_op_type)) if op_c else ["D" for _ in range(len(subset_df))])
+        
+        subset_dicts = subset_df.to_dict(orient="records")
+        pd_pairs_raw = extract_pickup_delivery_pairs(subset_dicts)
+        pickup_delivery_pairs = [(p + num_warehouses, d + num_warehouses) for p, d in pd_pairs_raw]
+
         opt = AdvancedRouteOptimizer()
         opt_res = opt.optimize_routes(
             distance_matrix=dist_matrix,
@@ -2048,7 +2093,9 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             optimization_params={"time_limit_seconds": 5, "respect_time_windows": req.respect_time_windows},
             vehicle_returns_to_depot=v_returns,
             client_cps=client_cps,
-            vehicle_names=target_vehicles
+            vehicle_names=target_vehicles,
+            operation_types=subset_op_types,
+            pickup_delivery_pairs=pickup_delivery_pairs
         )
 
         assigned_subset_nodes = set()
@@ -2059,6 +2106,8 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
             v_start_str = v_info.get("start_time", "06:30:00")
             v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+            v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
 
             raw_v_stops = []
             for node_idx in v_stops:
@@ -2073,7 +2122,10 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             # Recalculate timing & stop sequence for this vehicle
             if raw_v_stops:
                 stops_dicts = [s[1] for s in raw_v_stops]
-                processed_stops = recalculate_route_stops(stops_dicts, depot_lat, depot_lon, v_start_str, v_speed, default_service_time=10)
+                processed_stops = recalculate_route_stops(
+                    stops_dicts, depot_lat, depot_lon, v_start_str, v_speed,
+                    default_service_time=10, vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+                )
                 for p_idx, p_stop in enumerate(processed_stops):
                     orig_df_idx = raw_v_stops[p_idx][0]
                     for k, val in p_stop.items():

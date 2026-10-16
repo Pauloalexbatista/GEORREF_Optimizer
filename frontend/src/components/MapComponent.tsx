@@ -46,6 +46,10 @@ interface MapClient {
   Vendedor?: string;
   vendedor?: string;
   Regras?: string;
+  Tipo_Operacao?: string;
+  tipo_operacao?: string;
+  Par_ID?: string;
+  par_id?: string;
 }
 
 interface MapWarehouse {
@@ -423,14 +427,15 @@ function getWarehouseIcon(zoom: number) {
   });
 }
 
-// Marker Icon for Clients with Geometric Shapes based on Time Slot
+// Marker Icon for Clients with Geometric Shapes based on Time Slot & Operation Type (D, P, From, To)
 function createGeometricMarkerIcon(
   order: number,
   color: string,
   isPending: boolean,
   zoom: number,
   isSelected: boolean = false,
-  slot?: TimeSlotInfo
+  slot?: TimeSlotInfo,
+  opType?: string
 ) {
   const effectiveSlot = isPending
     ? { type: "any" as const, shape: "circle" as const, label: "Pendente", badge: "⚠️" }
@@ -490,6 +495,29 @@ function createGeometricMarkerIcon(
     textY = size / 2;
   }
 
+  // Mini-Badge para Operações Especiais (P = Sucata, From = Lev. Loja, To = Entrega Loja)
+  let opBadgeSvg = "";
+  if (opType && opType !== "D" && !isPending) {
+    const badgeSize = Math.max(10, Math.round(size * 0.36));
+    const bx = size - badgeSize;
+    const by = 0;
+    let bColor = "#f59e0b"; // P = Amber
+    let bLetter = "P";
+    if (opType === "From") {
+      bColor = "#a855f7"; // From = Purple
+      bLetter = "F";
+    } else if (opType === "To") {
+      bColor = "#06b6d4"; // To = Cyan
+      bLetter = "T";
+    }
+    opBadgeSvg = `
+      <g transform="translate(${bx}, ${by})">
+        <circle cx="${badgeSize/2}" cy="${badgeSize/2}" r="${badgeSize/2}" fill="${bColor}" stroke="#ffffff" stroke-width="1.2" />
+        <text x="${badgeSize/2}" y="${badgeSize/2}" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-family="sans-serif" font-weight="900" font-size="${badgeSize*0.65}px">${bLetter}</text>
+      </g>
+    `;
+  }
+
   const svgHtml = `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="filter: ${filter}; overflow: visible; cursor: grab;" xmlns="http://www.w3.org/2000/svg">
       ${shapeSvg}
@@ -506,6 +534,7 @@ function createGeometricMarkerIcon(
       >
         ${displayText}
       </text>
+      ${opBadgeSvg}
     </svg>
   `;
 
@@ -2331,7 +2360,8 @@ export default function MapComponent({
                 isPending,
                 zoomLevel,
                 selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente)),
-                slotInfo
+                slotInfo,
+                c.Tipo_Operacao || c.tipo_operacao
               )}
               draggable={true}
               eventHandlers={{
@@ -2440,6 +2470,30 @@ export default function MapComponent({
                         </a>
                       )}
                     </div>
+
+                    {/* Badge do Tipo de Operação */}
+                    <div className="mt-2">
+                      {((c.Tipo_Operacao || c.tipo_operacao) === "P") && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-xs">
+                          ♻️ <span className="font-mono">P</span> — Recolha Sucata / Retoma (para armazém)
+                        </span>
+                      )}
+                      {((c.Tipo_Operacao || c.tipo_operacao) === "From") && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shadow-xs">
+                          🏪⤴️ <span className="font-mono">From</span> — Levantamento em Loja {(c.Par_ID || c.par_id) ? `(Par #${String(c.Par_ID || c.par_id).slice(-4)})` : ""}
+                        </span>
+                      )}
+                      {((c.Tipo_Operacao || c.tipo_operacao) === "To") && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-900 border border-cyan-300 shadow-xs">
+                          🏠⤵️ <span className="font-mono">To</span> — Entrega de Loja ao Cliente {(c.Par_ID || c.par_id) ? `(Par #${String(c.Par_ID || c.par_id).slice(-4)})` : ""}
+                        </span>
+                      )}
+                      {(!(c.Tipo_Operacao || c.tipo_operacao) || (c.Tipo_Operacao || c.tipo_operacao) === "D") && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300 shadow-xs">
+                          📦 <span className="font-mono">D</span> — Entrega de Armazém
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* 3. Address */}
@@ -2483,6 +2537,15 @@ export default function MapComponent({
                       <span className="text-[9px] text-zinc-400 uppercase font-semibold block">Volume</span>
                       <span className="font-bold text-zinc-800 text-[11px]">{Number(stopVolume).toFixed(2)} m³</span>
                     </div>
+
+                    {c.Carga_Acum !== undefined && (
+                      <div className="bg-indigo-50/60 border border-indigo-200 rounded-md p-1.5 col-span-2">
+                        <span className="text-[9px] text-indigo-600 uppercase font-bold block">Carga a Bordo na Viatura</span>
+                        <span className="font-extrabold text-indigo-900 text-xs">
+                          {Math.round(c.Carga_Acum)} kg <span className="font-normal text-indigo-700">/ {Number(c.Carga_Vol_Acum || 0).toFixed(2)} m³</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* 5. Vendedor & Notas Motorista (Sempre visíveis no cartão) */}

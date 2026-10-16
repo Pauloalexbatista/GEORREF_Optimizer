@@ -40,6 +40,8 @@ interface RouteNode {
   Volume_m3?: number;
   Carga_Acum: number;
   Carga_Vol_Acum: number;
+  Tipo_Operacao?: string;
+  Par_ID?: string;
   Telefone?: string;
   Telefone_Cliente?: string;
   Observacoes?: string;
@@ -175,6 +177,51 @@ function calculateDurationString(startStr: string, endStr: string): string {
   const mins = totalMin % 60;
   if (hours === 0) return `${mins}m`;
   return `${hours}h ${mins > 0 ? `${mins}m` : ""}`;
+}
+
+function renderOperationTypeBadge(opType?: string, parId?: string) {
+  const norm = (opType || "D").trim();
+  switch (norm) {
+    case "P":
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm"
+          title="Recolha de Sucata / Retoma (P) - Carrega no cliente para entregar no armazém"
+        >
+          ♻️ <span className="font-mono">P</span>
+        </span>
+      );
+    case "From":
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 shadow-sm"
+          title={`Levantamento em Loja (From)${parId ? ` - Par Casado: ${parId}` : ""}`}
+        >
+          🏪⤴️ <span className="font-mono">From</span>
+          {parId && <span className="text-[8px] opacity-75 font-mono">#{parId.slice(-4)}</span>}
+        </span>
+      );
+    case "To":
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm"
+          title={`Entrega de Loja (To)${parId ? ` - Par Casado: ${parId}` : ""}`}
+        >
+          🏠⤵️ <span className="font-mono">To</span>
+          {parId && <span className="text-[8px] opacity-75 font-mono">#{parId.slice(-4)}</span>}
+        </span>
+      );
+    case "D":
+    default:
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30 shadow-sm"
+          title="Entrega Normal (D) - Sai do armazém e descarrega no cliente"
+        >
+          📦 <span className="font-mono">D</span>
+        </span>
+      );
+  }
 }
 
 function extractTags(raw: string): string[] {
@@ -2179,7 +2226,7 @@ export default function TacticalPage() {
                           {/* EXPANDED SUB-TABLE (STOPS / CLIENTS) */}
                           {isExpanded && (
                             <tr className="bg-zinc-950">
-                              <td colSpan={11} className="p-3 bg-zinc-950/90 border-b border-zinc-800">
+                              <td colSpan={12} className="p-3 bg-zinc-950/90 border-b border-zinc-800">
                                 <div className="border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-900/50 shadow-inner">
                                   {allStops.length === 0 ? (
                                     <div className="p-6 text-center text-zinc-500 text-xs">
@@ -2191,12 +2238,13 @@ export default function TacticalPage() {
                                         <thead>
                                           <tr className="bg-zinc-950 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                                             <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-950 z-10"># Ordem</th>
+                                            <th className="py-2 px-2 text-center w-20 sticky top-0 bg-zinc-950 z-10">Tipo</th>
                                             <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-950 z-10">Doc ID / Cliente</th>
                                             <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-950 z-10">Morada & Localidade</th>
                                             <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-10">Contacto / Vend.</th>
                                             <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-950 z-10">Janela Horária</th>
                                             <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-10">Previsão Chegada</th>
-                                            <th className="py-2 px-2 w-[100px] text-center sticky top-0 bg-zinc-950 z-10">Peso / Volume</th>
+                                            <th className="py-2 px-2 w-[115px] text-center sticky top-0 bg-zinc-950 z-10">Carga / A Bordo</th>
                                             <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-950 z-10">Distância</th>
                                             <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-950 z-10">Mover / Reatribuir</th>
                                           </tr>
@@ -2208,6 +2256,11 @@ export default function TacticalPage() {
                                               <td className="py-2 px-3 text-center">
                                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-indigo-900/90 text-indigo-300 border border-indigo-700/60 shadow-sm">
                                                   Partida
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <span className="font-mono text-[9px] font-bold text-indigo-400 bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-800/50">
+                                                  DEPOT
                                                 </span>
                                               </td>
                                               <td className="py-2 px-3">
@@ -2231,8 +2284,11 @@ export default function TacticalPage() {
                                                   {startTimeStr}
                                                 </div>
                                               </td>
-                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
-                                                0 kg / 0 m³
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-350">
+                                                <div className="font-semibold text-zinc-200">
+                                                  {allStops.filter((s) => (s.Tipo_Operacao || "D") === "D").reduce((acc, s) => acc + (s.Peso_KG || 0), 0).toFixed(0)} kg
+                                                </div>
+                                                <div className="text-[9px] text-indigo-300 font-bold">Carga Inicial</div>
                                               </td>
                                               <td className="py-2 px-2 text-center font-mono text-zinc-450">
                                                 0.0 km
@@ -2347,6 +2403,11 @@ export default function TacticalPage() {
                                                   </div>
                                                 </td>
 
+                                                {/* Tipo de Operação (D, P, From, To) */}
+                                                <td className="py-2 px-2 text-center whitespace-nowrap">
+                                                  {renderOperationTypeBadge(stop.Tipo_Operacao, stop.Par_ID)}
+                                                </td>
+
                                                 {/* Doc ID / Cliente */}
                                                 <td className="py-2 px-3">
                                                   <div className="font-bold text-zinc-100">{stop.Doc_ID || stop.Cliente || "S/ Doc"}</div>
@@ -2399,10 +2460,13 @@ export default function TacticalPage() {
                                                   </div>
                                                 </td>
 
-                                                {/* Peso / Volume */}
+                                                {/* Carga / A Bordo */}
                                                 <td className="py-2 px-2 text-center font-mono text-zinc-300">
-                                                  <div>{stop.Peso_KG || 0} kg</div>
-                                                  <div className="text-[9px] text-zinc-500">{(stop.Volume_m3 || 0).toFixed(2)} m³</div>
+                                                  <div className="font-semibold text-zinc-100">{stop.Peso_KG || 0} kg</div>
+                                                  <div className="text-[9px] text-indigo-300 font-bold" title="Carga física restante a bordo da viatura após esta paragem">
+                                                    A Bordo: {stop.Carga_Acum !== undefined ? Math.round(stop.Carga_Acum) : Math.round(stop.Peso_KG || 0)} kg
+                                                  </div>
+                                                  <div className="text-[8px] text-zinc-500">{(stop.Volume_m3 || 0).toFixed(2)} m³</div>
                                                 </td>
 
                                                 {/* Distância */}
@@ -2445,6 +2509,11 @@ export default function TacticalPage() {
                                                   Regresso
                                                 </span>
                                               </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <span className="font-mono text-[9px] font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/50">
+                                                  RECOLHAS
+                                                </span>
+                                              </td>
                                               <td className="py-2 px-3">
                                                 <div className="font-bold text-emerald-300">{whData.name}</div>
                                                 <div className="text-[9px] text-emerald-400/80 font-mono">Regresso ao Armazém</div>
@@ -2466,8 +2535,13 @@ export default function TacticalPage() {
                                                   {returnArrivalTimeStr}
                                                 </div>
                                               </td>
-                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
-                                                --
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-350">
+                                                <div className="font-semibold text-zinc-200">
+                                                  {allStops.length > 0 && allStops[allStops.length - 1].Carga_Acum !== undefined
+                                                    ? Math.round(allStops[allStops.length - 1].Carga_Acum)
+                                                    : allStops.filter((s) => s.Tipo_Operacao === "P").reduce((acc, s) => acc + (s.Peso_KG || 0), 0)} kg
+                                                </div>
+                                                <div className="text-[9px] text-emerald-300 font-bold">Retorno / Sucata</div>
                                               </td>
                                               <td className="py-2 px-2 text-center font-mono text-zinc-450">
                                                 Acum: {totalRouteKm.toFixed(1)} km
@@ -2483,6 +2557,7 @@ export default function TacticalPage() {
                                                   Término
                                                 </span>
                                               </td>
+                                              <td className="py-2 px-2 text-center text-zinc-500 font-mono text-[9px]">--</td>
                                               <td className="py-2 px-3">
                                                 <div className="font-bold text-sky-300">Última Paragem</div>
                                                 <div className="text-[9px] text-sky-400/80 font-mono">Sem Regresso ao Armazém</div>

@@ -16,6 +16,7 @@ import time
 from typing import List, Dict, Any, Tuple, Optional
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from utils.rules_engine import is_vehicle_compatible, extract_tags
+from utils.operation_types import calculate_dynamic_route_loads, normalize_op_type
 
 ROAD_FACTOR = 1.30
 
@@ -64,6 +65,8 @@ class AdvancedRouteOptimizer:
         vehicle_returns_to_depot: Optional[List[bool]] = None,
         client_cps: Optional[List[str]] = None,
         vehicle_names: Optional[List[str]] = None,
+        operation_types: Optional[List[str]] = None,
+        pickup_delivery_pairs: Optional[List[Tuple[int, int]]] = None,
     ) -> Dict[str, Any]:
         params = optimization_params or {}
         time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 25.0)
@@ -98,7 +101,9 @@ class AdvancedRouteOptimizer:
             strategy=strategy,
             vehicle_returns_to_depot=vehicle_returns_to_depot,
             client_cps=client_cps,
-            vehicle_names=vehicle_names
+            vehicle_names=vehicle_names,
+            operation_types=operation_types,
+            pickup_delivery_pairs=pickup_delivery_pairs
         )
 
         if not initial_solution.get("routes"):
@@ -128,7 +133,9 @@ class AdvancedRouteOptimizer:
             balance_load=balance_load,
             vehicle_returns_to_depot=vehicle_returns_to_depot,
             client_cps=client_cps,
-            vehicle_names=vehicle_names
+            vehicle_names=vehicle_names,
+            operation_types=operation_types,
+            pickup_delivery_pairs=pickup_delivery_pairs
         )
 
         return squeezed_solution
@@ -160,7 +167,9 @@ class AdvancedRouteOptimizer:
         strategy: str = "clusters",
         vehicle_returns_to_depot: Optional[List[bool]] = None,
         client_cps: Optional[List[str]] = None,
-        vehicle_names: Optional[List[str]] = None
+        vehicle_names: Optional[List[str]] = None,
+        operation_types: Optional[List[str]] = None,
+        pickup_delivery_pairs: Optional[List[Tuple[int, int]]] = None
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_nodes = len(distance_matrix)
@@ -354,6 +363,16 @@ class AdvancedRouteOptimizer:
                     penalty = int(BASE_DROP_PENALTY * dist_priority_factor * prio_multiplier)
                 routing.AddDisjunction([index], penalty)
 
+        # 7.5 Pickup and Delivery Pairs (From -> To com mesmo veículo e precedência estrita)
+        if pickup_delivery_pairs:
+            for p_node, d_node in pickup_delivery_pairs:
+                p_idx = manager.NodeToIndex(p_node)
+                d_idx = manager.NodeToIndex(d_node)
+                if p_idx != -1 and d_idx != -1:
+                    routing.AddPickupAndDelivery(p_idx, d_idx)
+                    routing.solver().Add(routing.VehicleVar(p_idx) == routing.VehicleVar(d_idx))
+                    routing.solver().Add(time_dimension.CumulVar(p_idx) <= time_dimension.CumulVar(d_idx))
+
         # 8. Business Rules & Multi-Tag Matrix Compatibility (VehicleVar)
         for node in range(num_warehouses, num_nodes):
             index = manager.NodeToIndex(node)
@@ -450,7 +469,9 @@ class AdvancedRouteOptimizer:
         balance_load: bool = False,
         vehicle_returns_to_depot: Optional[List[bool]] = None,
         client_cps: Optional[List[str]] = None,
-        vehicle_names: Optional[List[str]] = None
+        vehicle_names: Optional[List[str]] = None,
+        operation_types: Optional[List[str]] = None,
+        pickup_delivery_pairs: Optional[List[Tuple[int, int]]] = None
     ) -> Dict[str, Any]:
         """
         Multi-Pass Route Squeeze & Pairwise Fusion Engine:
@@ -476,14 +497,36 @@ class AdvancedRouteOptimizer:
             if len(stop_nodes) > v_max_s:
                 return False, 0.0
 
-            tot_kg = sum(demands[n] for n in stop_nodes)
-            if tot_kg > v_cap:
-                return False, 0.0
+            # 1. Precedência e integridade estrita de pares casados (From -> To)
+            if pickup_delivery_pairs:
+                for p_node, d_node in pickup_delivery_pairs:
+                    has_p = p_node in stop_nodes
+                    has_d = d_node in stop_nodes
+                    if has_p != has_d:
+                        return False, 0.0
+                    if has_p and has_d:
+                        if stop_nodes.index(p_node) > stop_nodes.index(d_node):
+                            return False, 0.0
 
-            if volume_demands:
-                tot_vol = sum(volume_demands[n] for n in stop_nodes)
-                if tot_vol > v_vol_cap:
+            # 2. Avaliação de Carga Dinâmica Física (D, P, From, To)
+            if operation_types:
+                stops_load_data = []
+                for n in stop_nodes:
+                    op_n = operation_types[n] if n < len(operation_types) else "D"
+                    w_kg = demands[n] if n < len(demands) else 50.0
+                    w_vol = volume_demands[n] if volume_demands and n < len(volume_demands) else 0.1
+                    stops_load_data.append({"Tipo_Operacao": op_n, "Peso_KG": w_kg, "Volume_m3": w_vol})
+                load_res = calculate_dynamic_route_loads(stops_load_data, vehicle_cap_kg=v_cap, vehicle_cap_vol=v_vol_cap)
+                if load_res["has_overload"]:
                     return False, 0.0
+            else:
+                tot_kg = sum(demands[n] for n in stop_nodes)
+                if tot_kg > v_cap:
+                    return False, 0.0
+                if volume_demands:
+                    tot_vol = sum(volume_demands[n] for n in stop_nodes)
+                    if tot_vol > v_vol_cap:
+                        return False, 0.0
 
             cur_t = v_start
             p_node = depot_indices[v_idx]
