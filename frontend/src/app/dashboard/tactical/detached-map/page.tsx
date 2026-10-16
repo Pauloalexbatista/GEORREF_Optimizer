@@ -47,6 +47,7 @@ export default function DetachedMapPage() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
   const [fleet, setFleet] = useState<any[]>([]);
+  const [rulesMatrix, setRulesMatrix] = useState<any[]>([]);
   const [statusMsg, setStatusMsg] = useState("A aguardar sincronização...");
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [modalSelectedRoutes, setModalSelectedRoutes] = useState<string[]>([]);
@@ -134,6 +135,11 @@ export default function DetachedMapPage() {
         if (parsed.warehouses) setWarehouses(parsed.warehouses);
         if (parsed.vehicles) setVehicles(parsed.vehicles);
         if (parsed.fleet) setFleet(parsed.fleet);
+        if (parsed.rulesMatrix && parsed.rulesMatrix.length > 0) {
+          setRulesMatrix(parsed.rulesMatrix);
+        } else if (parsed.rules_matrix && parsed.rules_matrix.length > 0) {
+          setRulesMatrix(parsed.rules_matrix);
+        }
         setStatusMsg(`Atualizado às ${new Date().toLocaleTimeString()}`);
       } catch (e) {}
     }
@@ -166,6 +172,11 @@ export default function DetachedMapPage() {
             setFleet(fleetRes.fleet);
             setVehicles(fleetRes.fleet.map((f: any) => f.veiculo));
           }
+          if (fleetRes.rules_matrix && fleetRes.rules_matrix.length > 0) {
+            setRulesMatrix(fleetRes.rules_matrix);
+          } else if (fleetRes.rules && fleetRes.rules.length > 0) {
+            setRulesMatrix(fleetRes.rules);
+          }
         }
         setStatusMsg(`Sincronizado da base de dados (${new Date().toLocaleTimeString()})`);
       } catch (e) {
@@ -186,11 +197,13 @@ export default function DetachedMapPage() {
     channel.onmessage = (event) => {
       if (event.data?.type === "MAP_UPDATE") {
         if (event.data.timestamp && event.data.timestamp < lastMutationTimeRef.current) return;
-        const { clients: c, warehouses: w, vehicles: v, fleet: f } = event.data;
+        const { clients: c, warehouses: w, vehicles: v, fleet: f, rulesMatrix: rm, rules_matrix: rm2 } = event.data;
         if (c) setClients(c);
         if (w) setWarehouses(w);
         if (v) setVehicles(v);
         if (f) setFleet(f);
+        if (rm && rm.length > 0) setRulesMatrix(rm);
+        else if (rm2 && rm2.length > 0) setRulesMatrix(rm2);
         setStatusMsg(`Sincronizado em tempo real (${new Date().toLocaleTimeString()})`);
       } else if (event.data?.type === "FILTER_SYNC" && event.data?.sender !== "DETACHED_MAP") {
         if (event.data?.filters) {
@@ -209,6 +222,8 @@ export default function DetachedMapPage() {
           if (parsed.warehouses) setWarehouses(parsed.warehouses);
           if (parsed.vehicles) setVehicles(parsed.vehicles);
           if (parsed.fleet) setFleet(parsed.fleet);
+          if (parsed.rulesMatrix && parsed.rulesMatrix.length > 0) setRulesMatrix(parsed.rulesMatrix);
+          else if (parsed.rules_matrix && parsed.rules_matrix.length > 0) setRulesMatrix(parsed.rules_matrix);
           setStatusMsg(`Sincronizado às ${new Date().toLocaleTimeString()}`);
         } catch (err) {}
       } else if (e.key === "georoute_active_filters" && e.newValue) {
@@ -609,6 +624,7 @@ export default function DetachedMapPage() {
           warehouses={warehouses}
           vehicles={vehicles}
           fleet={fleet}
+          rulesMatrix={rulesMatrix}
           filterState={filters}
           onFilterChange={handleFilterChange}
           onMoveClientRoute={handleMoveClientRoute}

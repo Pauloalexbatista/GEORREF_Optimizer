@@ -74,6 +74,7 @@ export interface MapComponentProps {
   filterState?: MapFilterState;
   onFilterChange?: (filters: MapFilterState) => void;
   onReoptimizeSubset?: (selectedRoutes: string[]) => void;
+  rulesMatrix?: any[];
 }
 
 function formatTimeWindow(winStr?: string): string {
@@ -319,6 +320,178 @@ export function normalizeLocality(locStr?: string, cpStr?: string): string {
   return "GERAL";
 }
 
+function extractTags(raw: string): string[] {
+  if (!raw) return [];
+  const bracketed = raw.match(/\[([^\]]+)\]/g);
+  if (bracketed && bracketed.length > 0) {
+    const res: string[] = [];
+    bracketed.forEach((b) => {
+      const inner = b.slice(1, -1).trim();
+      inner.split(/[,;|\s]+/).forEach((t) => {
+        if (t.trim()) res.push(t.trim().toUpperCase());
+      });
+    });
+    return res;
+  }
+  return raw.split(/[,;|]+/).map((t) => t.trim().toUpperCase()).filter(Boolean);
+}
+
+export function checkVehicleClientCompatibility(
+  vRulesStr: string,
+  cRulesStr: string,
+  rulesMatrix?: any[]
+): { isCompatible: boolean; reason?: string } {
+  const cTags = extractTags(cRulesStr);
+  if (cTags.length === 0) return { isCompatible: true };
+  const vTags = extractTags(vRulesStr);
+
+  if (rulesMatrix && rulesMatrix.length > 0) {
+    const prohibitions = new Set<string>();
+    const permissions = new Set<string>();
+    const configuredDeliveryTags = new Set<string>();
+
+    rulesMatrix.forEach((r) => {
+      const tv = String(r.Tag_Veiculo || r.tag_veiculo || "").trim().toUpperCase();
+      const perm = String(r.Permissao || r.permissao || "SIM").trim().toUpperCase();
+      const td = String(r.Tag_Entrega || r.tag_entrega || "").trim().toUpperCase();
+      if (!tv || !td) return;
+
+      configuredDeliveryTags.add(td);
+      if (["NAO", "NÃO", "NO", "PROIBIR", "FALSE", "0"].includes(perm)) {
+        prohibitions.add(`${tv}|${td}`);
+      } else {
+        permissions.add(`${tv}|${td}`);
+      }
+    });
+
+    // 1. Proibições Rígidas (NAO)
+    for (const vt of vTags) {
+      for (const dt of cTags) {
+        if (prohibitions.has(`${vt}|${dt}`)) {
+          return {
+            isCompatible: false,
+            reason: `A viatura [${vt}] tem proibição na matriz de regras para entregas com [${dt}].`
+          };
+        }
+      }
+    }
+
+    // 2. Obrigatoriedades para tags configuradas na matriz de regras
+    for (const dt of cTags) {
+      if (!configuredDeliveryTags.has(dt)) continue;
+      let matched = vTags.includes(dt);
+      if (!matched) {
+        for (const vt of vTags) {
+          if (permissions.has(`${vt}|${dt}`)) {
+            matched = true;
+            break;
+          }
+        }
+      }
+      if (!matched) {
+        return {
+          isCompatible: false,
+          reason: `A entrega exige a característica [${dt}], não permitida para esta viatura.`
+        };
+      }
+    }
+  } else {
+    // Validação direta por tags informativas
+    for (const dt of cTags) {
+      if (dt.includes("FRIO") && !vTags.some(vt => vt.includes("FRIO"))) {
+        return { isCompatible: false, reason: `A entrega exige refrigeração [${dt}], mas a viatura não possui frio.` };
+      }
+      if (dt.includes("ONEMAN") && !vTags.some(vt => vt.includes("ONEMAN"))) {
+        return { isCompatible: false, reason: `A entrega exige tripulação [${dt}], não configurada nesta viatura.` };
+      }
+    }
+  }
+
+  return { isCompatible: true };
+}
+
+export interface GuardianViolation {
+  type: "rule_incompatibility" | "capacity_kg" | "capacity_vol" | "max_stops";
+  severity: "error" | "warning";
+  title: string;
+  message: string;
+  clientName?: string;
+}
+
+export function checkGuardianViolations(
+  items: { clientName: string; weight?: number; vol?: number; rules?: string }[],
+  targetRoute: string,
+  fleet: any[],
+  rulesMatrix?: any[],
+  vehicleMetricsMap?: Record<string, any>
+): GuardianViolation[] {
+  if (!targetRoute || isPendingRoute(targetRoute)) return [];
+
+  const violations: GuardianViolation[] = [];
+  const vConfig = fleet.find(f => routesMatch(f.veiculo, targetRoute));
+  const vRulesStr = vConfig?.regras || "";
+  const capKg = Number(vConfig?.capacidade_kg) || 0;
+  const capVol = Number(vConfig?.capacidade_vol) || 0;
+  const maxStops = Number(vConfig?.max_entregas) || 0;
+
+  const currentMetrics = vehicleMetricsMap?.[targetRoute] || {
+    count: 0,
+    totalKg: 0,
+    totalVol: 0,
+  };
+
+  let additionalKg = 0;
+  let additionalVol = 0;
+  const additionalStops = items.length;
+
+  items.forEach(it => {
+    additionalKg += Number(it.weight) || 0;
+    additionalVol += Number(it.vol) || 0;
+
+    const comp = checkVehicleClientCompatibility(vRulesStr, it.rules || "", rulesMatrix);
+    if (!comp.isCompatible) {
+      violations.push({
+        type: "rule_incompatibility",
+        severity: "error",
+        title: "Incompatibilidade de Regra / Equipamento",
+        message: `${it.clientName}: ${comp.reason}`,
+        clientName: it.clientName,
+      });
+    }
+  });
+
+  if (capKg > 0 && (currentMetrics.totalKg + additionalKg) > capKg) {
+    const excess = Math.round((currentMetrics.totalKg + additionalKg) - capKg);
+    violations.push({
+      type: "capacity_kg",
+      severity: "warning",
+      title: "Sobrecarga de Peso",
+      message: `A viatura "${targetRoute}" vai exceder a capacidade máxima em +${excess.toLocaleString("pt-PT")} kg (Total: ${Math.round(currentMetrics.totalKg + additionalKg).toLocaleString("pt-PT")} kg / Máx: ${capKg.toLocaleString("pt-PT")} kg).`,
+    });
+  }
+
+  if (capVol > 0 && (currentMetrics.totalVol + additionalVol) > capVol) {
+    const excessVol = Number(((currentMetrics.totalVol + additionalVol) - capVol).toFixed(1));
+    violations.push({
+      type: "capacity_vol",
+      severity: "warning",
+      title: "Sobrecarga de Volume",
+      message: `A viatura "${targetRoute}" vai exceder a capacidade de volume em +${excessVol} m³ (Total: ${Number((currentMetrics.totalVol + additionalVol).toFixed(1))} m³ / Máx: ${capVol} m³).`,
+    });
+  }
+
+  if (maxStops > 0 && (currentMetrics.count + additionalStops) > maxStops) {
+    violations.push({
+      type: "max_stops",
+      severity: "warning",
+      title: "Limite de Paragens Excedido",
+      message: `A viatura "${targetRoute}" vai ficar com ${currentMetrics.count + additionalStops} paragens (limite contratual: ${maxStops}).`,
+    });
+  }
+
+  return violations;
+}
+
 function getRouteColor(routeName: string, vehicleList: string[], customColors?: Record<string, string>) {
   if (!routeName || isPendingRoute(routeName)) return "#f59e0b"; // Amber for pending
   if (customColors) {
@@ -534,6 +707,7 @@ export default function MapComponent({
   filterState,
   onFilterChange,
   onReoptimizeSubset,
+  rulesMatrix = [],
 }: MapComponentProps) {
   const { t } = useI18n();
 
@@ -553,6 +727,23 @@ export default function MapComponent({
   const [showRoads, setShowRoads] = useState(true);
   const [mapLayer, setMapLayer] = useState<"standard" | "google_sat" | "google_hybrid">("standard");
   const [fitTrigger, setFitTrigger] = useState("");
+
+  // Guardião de Regras e Capacidades no Drag & Drop
+  const [guardianPendingAction, setGuardianPendingAction] = useState<{
+    items: {
+      clientName: string;
+      deliveryId?: number;
+      address?: string;
+      lat?: number;
+      lon?: number;
+      weight?: number;
+      vol?: number;
+      rules?: string;
+    }[];
+    targetRoute: string;
+    violations: GuardianViolation[];
+    sourceType: "marker_drag" | "popup_select" | "bulk_area";
+  } | null>(null);
 
   // Territorial Focus Mode (Dividir para Conquistar)
   const [selectedZoneId, setSelectedZoneId] = useState<string>("all");
@@ -769,31 +960,25 @@ export default function MapComponent({
     setSelectedClientKeys(keys);
   };
 
-  const handleApplyBulkReassign = async () => {
-    if (selectedClientKeys.length === 0) return;
-    const selectedStops = visibleClients.filter((c) =>
-      selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente))
-    );
-    if (selectedStops.length === 0) return;
-
+  const executeBulkReassignAction = async (items: any[], targetRoute: string) => {
     setIsBulkLoading(true);
     try {
       if (onBulkReassign) {
         await onBulkReassign(
-          selectedStops.map((c: any) => ({
-            clientName: String(c.Cliente || c.Nome_Cliente || c.Doc_ID || ""),
-            deliveryId: c.id || c.ID_Original,
-            address: String(c.Morada || ""),
-            lat: c.Latitude !== undefined ? Number(c.Latitude) : (c.lat !== undefined ? Number(c.lat) : undefined),
-            lon: c.Longitude !== undefined ? Number(c.Longitude) : (c.lon !== undefined ? Number(c.lon) : (c.lng !== undefined ? Number(c.lng) : undefined)),
+          items.map((c: any) => ({
+            clientName: String(c.clientName || c.Cliente || c.Nome_Cliente || c.Doc_ID || ""),
+            deliveryId: c.deliveryId !== undefined ? c.deliveryId : (c.id || c.ID_Original),
+            address: String(c.address || c.Morada || ""),
+            lat: c.lat !== undefined ? Number(c.lat) : (c.Latitude !== undefined ? Number(c.Latitude) : undefined),
+            lon: c.lon !== undefined ? Number(c.lon) : (c.Longitude !== undefined ? Number(c.Longitude) : (c.lon !== undefined ? Number(c.lon) : (c.lng !== undefined ? Number(c.lng) : undefined))),
           })),
-          bulkTargetRoute
+          targetRoute
         );
       } else if (onMoveClientRoute) {
-        for (const s of selectedStops) {
-          const sLat = (s as any).Latitude !== undefined ? Number((s as any).Latitude) : ((s as any).lat !== undefined ? Number((s as any).lat) : undefined);
-          const sLon = (s as any).Longitude !== undefined ? Number((s as any).Longitude) : ((s as any).lon !== undefined ? Number((s as any).lon) : undefined);
-          onMoveClientRoute(s.Cliente || (s as any).Nome_Cliente || "", bulkTargetRoute, s.id || s.ID_Original, s.Morada, sLat, sLon);
+        for (const s of items) {
+          const sLat = s.lat !== undefined ? Number(s.lat) : (s.Latitude !== undefined ? Number(s.Latitude) : undefined);
+          const sLon = s.lon !== undefined ? Number(s.lon) : (s.Longitude !== undefined ? Number(s.Longitude) : undefined);
+          onMoveClientRoute(s.clientName || s.Cliente || "", targetRoute, s.deliveryId || s.id || s.ID_Original, s.address || s.Morada, sLat, sLon);
         }
       }
       setSelectedClientKeys([]);
@@ -801,6 +986,107 @@ export default function MapComponent({
       alert("Erro ao transferir paragens em massa: " + (e.message || "Erro"));
     } finally {
       setIsBulkLoading(false);
+    }
+  };
+
+  const requestMoveClientRoute = (
+    client: MapClient,
+    targetRoute: string,
+    dropLat?: number,
+    dropLng?: number,
+    sourceType: "marker_drag" | "popup_select" = "popup_select"
+  ) => {
+    const clientName = client.Nome_Cliente || client.Cliente || "Cliente";
+    const stopWeight = client.Peso_KG !== undefined && client.Peso_KG !== null ? client.Peso_KG : (client.Carga_Acum || 0);
+    const stopVol = client.Volume_m3 !== undefined && client.Volume_m3 !== null ? client.Volume_m3 : (client.Volume_M3 || 0);
+    const clientRules = client.Regras || (client as any).regras || (client as any).Restricoes || (client as any).restricoes || "";
+
+    const items = [{
+      clientName: client.Cliente || client.Nome_Cliente || "",
+      deliveryId: client.id || client.ID_Original,
+      address: client.Morada,
+      lat: dropLat !== undefined ? dropLat : client.Latitude,
+      lon: dropLng !== undefined ? dropLng : client.Longitude,
+      weight: stopWeight,
+      vol: stopVol,
+      rules: clientRules,
+    }];
+
+    const violations = checkGuardianViolations(items, targetRoute, fleet, rulesMatrix, vehicleMetricsMap);
+
+    if (violations.length > 0) {
+      setGuardianPendingAction({
+        items,
+        targetRoute,
+        violations,
+        sourceType,
+      });
+      return;
+    }
+
+    if (onMoveClientRoute) {
+      onMoveClientRoute(
+        items[0].clientName,
+        targetRoute,
+        items[0].deliveryId,
+        items[0].address,
+        items[0].lat,
+        items[0].lon
+      );
+    }
+  };
+
+  const handleApplyBulkReassign = async () => {
+    if (selectedClientKeys.length === 0) return;
+    const selectedStops = visibleClients.filter((c) =>
+      selectedClientKeys.includes(String(c.id || c.ID_Original || c.Cliente))
+    );
+    if (selectedStops.length === 0) return;
+
+    const items = selectedStops.map((c) => ({
+      clientName: String(c.Cliente || c.Nome_Cliente || c.Doc_ID || ""),
+      deliveryId: c.id || c.ID_Original,
+      address: String(c.Morada || ""),
+      lat: c.Latitude !== undefined ? Number(c.Latitude) : undefined,
+      lon: c.Longitude !== undefined ? Number(c.Longitude) : undefined,
+      weight: c.Peso_KG !== undefined ? c.Peso_KG : (c.Carga_Acum || 0),
+      vol: c.Volume_m3 !== undefined ? c.Volume_m3 : (c.Volume_M3 || 0),
+      rules: c.Regras || (c as any).regras || "",
+    }));
+
+    const violations = checkGuardianViolations(items, bulkTargetRoute, fleet, rulesMatrix, vehicleMetricsMap);
+
+    if (violations.length > 0) {
+      setGuardianPendingAction({
+        items,
+        targetRoute: bulkTargetRoute,
+        violations,
+        sourceType: "bulk_area",
+      });
+      return;
+    }
+
+    await executeBulkReassignAction(items, bulkTargetRoute);
+  };
+
+  const handleConfirmGuardianAction = async () => {
+    if (!guardianPendingAction) return;
+    const { items, targetRoute, sourceType } = guardianPendingAction;
+    setGuardianPendingAction(null);
+
+    if (sourceType === "bulk_area") {
+      await executeBulkReassignAction(items, targetRoute);
+    } else {
+      if (onMoveClientRoute && items.length > 0) {
+        onMoveClientRoute(
+          items[0].clientName,
+          targetRoute,
+          items[0].deliveryId,
+          items[0].address,
+          items[0].lat,
+          items[0].lon
+        );
+      }
     }
   };
 
@@ -2170,16 +2456,7 @@ export default function MapComponent({
                     );
 
                     if (willTransfer) {
-                      if (onMoveClientRoute) {
-                        onMoveClientRoute(
-                          c.Cliente || (c as any).Nome_Cliente || "",
-                          targetRoute,
-                          c.id || c.ID_Original,
-                          c.Morada,
-                          position.lat,
-                          position.lng
-                        );
-                      }
+                      requestMoveClientRoute(c, targetRoute, position.lat, position.lng, "marker_drag");
                       return;
                     }
                   }
@@ -2369,7 +2646,12 @@ export default function MapComponent({
                       <label className="text-[10px] font-bold text-zinc-600 shrink-0">Mover para:</label>
                       <select
                         value={isPending ? "Por Distribuir" : c.Rota}
-                        onChange={(e) => onMoveClientRoute(c.Cliente || (c as any).Nome_Cliente || "", e.target.value, c.id || c.ID_Original, c.Morada, (c as any).Latitude || (c as any).lat, (c as any).Longitude || (c as any).lon)}
+                        onChange={(e) => {
+                          const target = e.target.value;
+                          const cLat = (c as any).Latitude !== undefined ? Number((c as any).Latitude) : ((c as any).lat !== undefined ? Number((c as any).lat) : undefined);
+                          const cLon = (c as any).Longitude !== undefined ? Number((c as any).Longitude) : ((c as any).lon !== undefined ? Number((c as any).lon) : undefined);
+                          requestMoveClientRoute(c, target, cLat, cLon, "popup_select");
+                        }}
                         className="w-full text-[11px] bg-white border border-zinc-300 rounded-lg px-2 py-1 font-semibold text-zinc-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
                       >
                         <option value="Por Distribuir">
@@ -2554,6 +2836,93 @@ export default function MapComponent({
             >
               ✕
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Modal Guardião de Regras e Capacidades */}
+      {guardianPendingAction && (
+        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-700/80 rounded-2xl max-w-lg w-full shadow-2xl p-6 text-zinc-100 flex flex-col space-y-4">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-zinc-800 pb-3">
+              <div className="flex items-center space-x-3">
+                <span className="text-2xl p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl">🛡️</span>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">
+                    Guardião Operacional de Rotas
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Aviso ao transferir para <span className="font-semibold text-amber-400">{guardianPendingAction.targetRoute}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setGuardianPendingAction(null)}
+                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Violations List */}
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {guardianPendingAction.violations.map((violation, idx) => {
+                const isError = violation.severity === "error";
+                return (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-xl border text-xs flex items-start space-x-2.5 ${
+                      isError
+                        ? "bg-rose-950/40 border-rose-800/60 text-rose-200"
+                        : "bg-amber-950/40 border-amber-800/60 text-amber-200"
+                    }`}
+                  >
+                    <span className="text-sm shrink-0 mt-0.5">
+                      {isError ? "⛔" : "⚠️"}
+                    </span>
+                    <div className="space-y-0.5">
+                      <div className="font-bold">{violation.title}</div>
+                      <div className="text-[11px] opacity-90 leading-relaxed">{violation.message}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Impact Details */}
+            <div className="bg-zinc-950/60 rounded-xl p-3 border border-zinc-800/80 text-xs space-y-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                Resumo do Impacto ({guardianPendingAction.items.length} {guardianPendingAction.items.length === 1 ? "entrega" : "entregas"})
+              </div>
+              <div className="flex items-center justify-between text-zinc-300">
+                <span>Carga a Adicionar:</span>
+                <span className="font-semibold text-white">
+                  {guardianPendingAction.items.reduce((acc, it) => acc + (it.weight || 0), 0).toFixed(1)} kg · {guardianPendingAction.items.reduce((acc, it) => acc + (it.vol || 0), 0).toFixed(2)} m³
+                </span>
+              </div>
+              <div className="text-[11px] text-zinc-400 truncate">
+                Clientes: {guardianPendingAction.items.map(it => it.clientName).join(", ")}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setGuardianPendingAction(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition cursor-pointer"
+              >
+                Cancelar Transferência
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmGuardianAction}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition cursor-pointer flex items-center space-x-1.5"
+              >
+                <span>Forçar Transferência Excecional ⚠️</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

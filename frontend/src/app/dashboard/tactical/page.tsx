@@ -540,7 +540,14 @@ export default function TacticalPage() {
       Vendedor: r.Vendedor || (r as any).vendedor || "",
     }));
 
-    const payload = { type: "MAP_UPDATE", clients: mappedClients, warehouses: wList, vehicles: vList, fleet: fList || fleetList };
+    const payload = {
+      type: "MAP_UPDATE",
+      clients: mappedClients,
+      warehouses: wList,
+      vehicles: vList,
+      fleet: fList || fleetList,
+      rulesMatrix: rulesMatrix || [],
+    };
     try {
       channelRef.current?.postMessage(payload);
       localStorage.setItem("georoute_map_state", JSON.stringify(payload));
