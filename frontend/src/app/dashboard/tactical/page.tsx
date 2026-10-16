@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import AuditModal, { ViolationItem } from "@/components/AuditModal";
 import AgentChatDrawer from "@/components/AgentChatDrawer";
+import AgentCopilotModal from "@/components/AgentCopilotModal";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPictureModal";
 
@@ -323,6 +324,7 @@ export default function TacticalPage() {
   });
   const [auditModalOpen, setAuditModalOpen] = useState(false);
   const [agentModalOpen, setAgentModalOpen] = useState(false);
+  const [copilotModalOpen, setCopilotModalOpen] = useState(false);
   const [selectedRouteNames, setSelectedRouteNames] = useState<string[]>([]);
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
@@ -677,24 +679,29 @@ export default function TacticalPage() {
     setExpandedRoutes(allState);
   };
 
-  const handleSolveRoutes = async () => {
+  const handleSolveRoutes = async (overrideParams?: Record<string, any>, modeLabel?: string) => {
     if (!selectedProject) return;
     setSolving(true);
     setError(null);
     const startTimestamp = Date.now();
     try {
+      const baseParams = {
+        strategy: strategy,
+        balance_load: loadMode === "balanced",
+        max_route_duration: maxTravelTime,
+        respect_time_windows: respectWindows,
+        solving_depth: solvingDepth,
+        time_limit_seconds: solvingDepth === "deep" ? 240 : solvingDepth === "fast" ? 30 : 90,
+      };
+      const mergedParams = overrideParams && typeof overrideParams === "object" && !("nativeEvent" in overrideParams)
+        ? { ...baseParams, ...overrideParams }
+        : baseParams;
+
       const res = await apiRequest("/api/solver/solve", {
         method: "POST",
         body: JSON.stringify({
           project_id: selectedProject.id,
-          params: {
-            strategy: strategy,
-            balance_load: loadMode === "balanced",
-            max_route_duration: maxTravelTime,
-            respect_time_windows: respectWindows,
-            solving_depth: solvingDepth,
-            time_limit_seconds: solvingDepth === "deep" ? 240 : solvingDepth === "fast" ? 30 : 90,
-          },
+          params: mergedParams,
         }),
       });
 
@@ -1425,6 +1432,19 @@ export default function TacticalPage() {
                       (Viável)
                     </span>
                   )}
+                </button>
+              )}
+
+              {/* Botão Copiloto IA & Negociador Tático (100% Opt-In pelo utilizador) */}
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCopilotModalOpen(true)}
+                  className="cursor-pointer px-2.5 py-1.5 rounded-md font-semibold transition-all flex items-center space-x-1.5 border text-xs shadow-sm bg-indigo-950/80 hover:bg-indigo-900 border-indigo-500/40 text-indigo-200"
+                  title="Copiloto IA & Negociador Tático: Resgate de Janelas, Trocas entre Rotas Vizinhas, Notas Ocultas e Modos de Planeamento (Tu decides o que aplicar)"
+                >
+                  <span>✨</span>
+                  <span>Copiloto IA</span>
                 </button>
               )}
 
@@ -2621,6 +2641,17 @@ export default function TacticalPage() {
           isOpen={agentModalOpen}
           onClose={() => setAgentModalOpen(false)}
           projectId={Number(selectedProject?.id || 0)}
+          onRefreshData={loadTacticalData}
+        />
+
+        <AgentCopilotModal
+          isOpen={copilotModalOpen}
+          onClose={() => setCopilotModalOpen(false)}
+          projectId={Number(selectedProject?.id || 0)}
+          onApplyAction={async (deliveryId, targetVehicle, clientCode) => {
+            await handleReassign(clientCode || String(deliveryId), targetVehicle, deliveryId);
+          }}
+          onRunSolverWithParams={handleSolveRoutes}
           onRefreshData={loadTacticalData}
         />
 
