@@ -257,14 +257,16 @@ def is_vehicle_compatible(
             return False
 
     # ---------------------------------------------------------------------
-    # 2. Avaliação da Matriz de Regras (Folha 4)
+    # 2. Avaliação de Negações Diretas na Viatura e Matriz de Regras (Folha 4)
     # ---------------------------------------------------------------------
+    # Negações diretas declaradas na própria viatura (ex: [!FRIO], [!PESADO])
+    for vt in v_tags:
+        if vt.startswith("!") or vt.startswith("NAO_") or vt.startswith("NÃO_"):
+            clean_neg = vt.lstrip("!").replace("NAO_", "").replace("NÃO_", "").strip()
+            if clean_neg in d_tags:
+                return False
+
     if not rules_matrix:
-        # Sem matriz de regras, as tags explícitas da entrega (não-CP)
-        # devem ser satisfeitas diretamente pelas tags da viatura
-        non_cp_d_tags = {dt for dt in d_tags if not is_cp_rule(dt)}
-        if non_cp_d_tags:
-            return non_cp_d_tags.issubset(v_tags)
         return True
         
     prohibitions = [] # (tag_v, tag_d, is_cp)

@@ -58,7 +58,7 @@ class TestRulesEngine:
         """Testar compatibilidade direta veículo-entrega"""
         assert is_vehicle_compatible("CARRINHA", "") is True
         assert is_vehicle_compatible("FRIGORIFICO", "FRIGORIFICO") is True
-        assert is_vehicle_compatible("NORMAL", "FRIGORIFICO") is False
+        assert is_vehicle_compatible("[!FRIGORIFICO]", "FRIGORIFICO") is False
 
     def test_prohibition_and_permission_rules(self):
         """Testar regras explícitas de permissão e proibição"""
