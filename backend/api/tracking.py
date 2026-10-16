@@ -7,6 +7,13 @@ import pandas as pd
 import numpy as np
 import sys
 import os
+import unicodedata
+
+def _norm_tracking_key(s: str) -> str:
+    if not s:
+        return ""
+    s_clean = unicodedata.normalize("NFKD", str(s).strip().lower())
+    return "".join(c for c in s_clean if not unicodedata.combining(c))
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from database import get_db, get_projeto
@@ -126,6 +133,7 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                     wh_obj = {"name": w_name, "address": w_addr, "lat": w_lat, "lng": w_lng}
                     warehouses_dict[w_name] = wh_obj
                     warehouses_dict[w_name.lower()] = wh_obj
+                    warehouses_dict[_norm_tracking_key(w_name)] = wh_obj
                     warehouses_list.append(wh_obj)
         elif isinstance(wh_raw, list):
             for idx, w in enumerate(wh_raw):
@@ -138,15 +146,18 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                         wh_obj = {"name": w_name, "address": w_addr, "lat": w_lat, "lng": w_lng}
                         warehouses_dict[w_name] = wh_obj
                         warehouses_dict[w_name.lower()] = wh_obj
+                        warehouses_dict[_norm_tracking_key(w_name)] = wh_obj
                         warehouses_list.append(wh_obj)
 
-        # Fallback de Armazém se não existir
-        default_wh = warehouses_list[0] if warehouses_list else {
-            "name": "Armazém Central",
-            "address": "Hub de Distribuição",
-            "lat": 38.7500,
-            "lng": -9.1500
-        }
+        # Fallback de Armazém se não existir: apenas o Armazém de Loures tem viaturas ativas na frota
+        loures_wh = next((w for w in warehouses_list if "loures" in _norm_tracking_key(w["name"])), None)
+        continental_whs = [w for w in warehouses_list if w.get("lng", 0.0) > -15.0]
+        default_wh = loures_wh or (continental_whs[0] if continental_whs else (warehouses_list[0] if warehouses_list else {
+            "name": "Armazém Loures 19",
+            "address": "Zona Industrial de Frielas - Rua Cidade do Porto lote 2 C/D",
+            "lat": 38.81866861,
+            "lng": -9.148433703
+        }))
         if not warehouses_list:
             warehouses_list.append(default_wh)
 
@@ -221,9 +232,40 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                 r_pendentes = max(0, r_total - r_entregues - r_falhadas)
                 r_percent = round((r_entregues / r_total * 100)) if r_total > 0 else 0
                 
-                # Armazém de Origem da Rota
+                # Armazém de Origem da Rota com resolução inteligente (matching normalizado e salvaguarda geográfica)
                 route_wh_name = str(df_r.iloc[0].get("Armazem", df_r.iloc[0].get("armazem", "ARM_1"))).strip()
-                route_wh = warehouses_dict.get(route_wh_name) or warehouses_dict.get(route_wh_name.lower()) or default_wh
+                norm_rwh = _norm_tracking_key(route_wh_name)
+                route_wh = warehouses_dict.get(route_wh_name) or warehouses_dict.get(route_wh_name.lower()) or warehouses_dict.get(norm_rwh)
+                
+                if not route_wh and warehouses_list:
+                    # Tentar correspondência parcial por tokens
+                    for w in warehouses_list:
+                        w_norm = _norm_tracking_key(w["name"])
+                        if (norm_rwh and (norm_rwh in w_norm or w_norm in norm_rwh)) or (norm_rwh.split() and any(t in w_norm for t in norm_rwh.split() if len(t) > 3)):
+                            route_wh = w
+                            break
+
+                # Coordenadas da primeira paragem válida
+                first_lat, first_lng = 0.0, 0.0
+                for _, s_cand in df_r.iterrows():
+                    c_lat = float(s_cand.get("Latitude", s_cand.get("Lat", s_cand.get("lat", 0.0)))) if pd.notna(s_cand.get("Latitude", s_cand.get("Lat", s_cand.get("lat", 0.0)))) else 0.0
+                    c_lng = float(s_cand.get("Longitude", s_cand.get("Lon", s_cand.get("lng", 0.0)))) if pd.notna(s_cand.get("Longitude", s_cand.get("Lon", s_cand.get("lng", 0.0)))) else 0.0
+                    if c_lat != 0.0 and c_lng != 0.0:
+                        first_lat, first_lng = c_lat, c_lng
+                        break
+
+                # Salvaguarda Geográfica: Se a rota tem paragens no Continente (lng > -15),
+                # nunca permitir que um armazém de ilhas (lng < -15, ex: Açores) seja atribuído por defeito.
+                # E se não houver armazém correspondente, selecionar o armazém fisicamente mais próximo das entregas.
+                if warehouses_list and first_lat != 0.0 and first_lng != 0.0:
+                    route_is_continental = first_lng > -15.0
+                    wh_is_island = route_wh and route_wh.get("lng", 0.0) < -15.0
+                    if not route_wh or (route_is_continental and wh_is_island):
+                        candidates = continental_whs if (route_is_continental and continental_whs) else warehouses_list
+                        route_wh = min(candidates, key=lambda w: (w["lat"] - first_lat)**2 + (w["lng"] - first_lng)**2)
+
+                if not route_wh:
+                    route_wh = default_wh
                 
                 stops = []
                 for idx_s, (_, s_row) in enumerate(df_r.iterrows()):

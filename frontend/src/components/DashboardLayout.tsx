@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProjects } from "@/context/ProjectContext";
 import { useI18n, languageOptions } from "@/context/I18nContext";
 import { useTheme } from "@/context/ThemeContext";
+import { api } from "@/utils/api";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -49,35 +50,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     setIsBackingUp(true);
     try {
-      const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`/api/solver/export-full/${selectedProject.id}`, {
-        headers,
-      });
-
-      if (!res.ok) {
-        let errorMsg = "Não existem dados disponíveis para exportar no projeto.";
-        try {
-          const errJson = await res.json();
-          if (errJson.detail) errorMsg = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
-        } catch (_) {}
-        throw new Error(errorMsg);
-      }
-
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
       const now = new Date();
       const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "") + "_" + String(now.getHours()).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0");
       const cleanProjName = (selectedProject.nome || `Projeto_${selectedProject.id}`).replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
-      a.download = `GeoRoutePlan_${cleanProjName}_${dateStr}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      const filename = `GeoRoutePlan_${cleanProjName}_${dateStr}.xlsx`;
+
+      await api.download(`/api/solver/export-full/${selectedProject.id}`, filename);
     } catch (err: any) {
       alert("Erro ao descarregar backup: " + (err.message || "Erro desconhecido"));
     } finally {

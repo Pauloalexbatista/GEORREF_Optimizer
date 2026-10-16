@@ -10,7 +10,7 @@ import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPic
 import CargoLoading3DModal from "@/components/CargoLoading3DModal";
 
 import { useProjects } from "@/context/ProjectContext";
-import { apiRequest } from "@/utils/api";
+import { apiRequest, api } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
 
 interface RouteNode {
@@ -936,22 +936,7 @@ export default function TacticalPage() {
 
   const handleDownloadFile = async (endpoint: string, filename: string) => {
     try {
-      const token = localStorage.getItem("georoute_token") || localStorage.getItem("token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(endpoint, { headers });
-      if (!res.ok) throw new Error("Erro ao descarregar ficheiro.");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await api.download(endpoint, filename);
     } catch (e: any) {
       alert(e.message || "Erro ao descarregar");
     }

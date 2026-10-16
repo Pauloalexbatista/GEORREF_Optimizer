@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 const UnifiedGeocodingModal = dynamic(() => import("@/components/UnifiedGeocodingModal"), { ssr: false });
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
-import { apiRequest } from "@/utils/api";
+import { apiRequest, api } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
 
 interface Delivery {
@@ -264,24 +264,7 @@ export default function GeoreferencingPage() {
 
   const handleDownloadFile = async (endpoint: string, filename: string) => {
     try {
-      const token = localStorage.getItem("georoute_token");
-      const headers = new Headers();
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`);
-      }
-      const response = await fetch(`${endpoint}`, { headers });
-      if (!response.ok) {
-        throw new Error("Erro ao descarregar ficheiro.");
-      }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      await api.download(endpoint, filename);
     } catch (e: any) {
       alert(e.message || "Erro ao efetuar o download.");
     }

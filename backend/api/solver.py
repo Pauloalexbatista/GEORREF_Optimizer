@@ -219,7 +219,16 @@ def parse_time_window_str(win_str: str) -> tuple:
 
 def extract_fleet_dict(fleet_config, warehouses_df=None):
     fleet_dict = {}
-    default_wh = warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "Armazém Central"
+    default_wh = "Armazém Loures 19"
+    if warehouses_df is not None and not warehouses_df.empty:
+        # Apenas o Armazém de Loures tem viaturas na frota ativa
+        name_c = "Nome_Armazem" if "Nome_Armazem" in warehouses_df.columns else "Nome" if "Nome" in warehouses_df.columns else None
+        if name_c:
+            loures_m = warehouses_df[warehouses_df[name_c].astype(str).str.lower().str.contains("loures", na=False)]
+            if not loures_m.empty:
+                default_wh = str(loures_m.iloc[0][name_c])
+            else:
+                default_wh = str(warehouses_df.iloc[0][name_c])
     
     if isinstance(fleet_config, pd.DataFrame):
         for _, row in fleet_config.iterrows():
@@ -308,6 +317,15 @@ def get_depot_coords(warehouses_df, wh_name=None):
                             w_n = str(w_row[name_col]).strip().lower()
                             if w_n in wh_str or wh_str in w_n:
                                 return float(w_row[lat_col]), float(w_row[lon_col])
+                    # Se não encontrou correspondência específica, priorizar o Armazém de Loures onde a frota está sediada
+                    if name_col:
+                        loures_row = warehouses_df[warehouses_df[name_col].astype(str).str.lower().str.contains("loures", na=False)]
+                        if not loures_row.empty:
+                            return float(loures_row.iloc[0][lat_col]), float(loures_row.iloc[0][lon_col])
+                    # Fallback continental
+                    cont_df = warehouses_df[warehouses_df[lon_col].astype(float) > -15.0]
+                    if not cont_df.empty:
+                        return float(cont_df.iloc[0][lat_col]), float(cont_df.iloc[0][lon_col])
                     return float(warehouses_df.iloc[0][lat_col]), float(warehouses_df.iloc[0][lon_col])
     except Exception as e:
         print(f"Notice in get_depot_coords: {e}")
@@ -551,16 +569,22 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_capacities.append(vehicle_data["capacity"])
             vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
             wh_name = str(vehicle_data.get("warehouse", "") or "").strip()
-            dep_idx = 0
+            # O Armazém de Loures é o centro operacional onde a frota está sediada
+            loures_dep_idx = next((idx_val for k, idx_val in warehouse_indices.items() if "loures" in k.lower()), 0)
+            dep_idx = loures_dep_idx
             if wh_name:
                 wh_norm = wh_name.lower()
                 if wh_norm in warehouse_indices:
                     dep_idx = warehouse_indices[wh_norm]
                 else:
+                    found_dep = False
                     for k, idx_val in warehouse_indices.items():
                         if k in wh_norm or wh_norm in k:
                             dep_idx = idx_val
+                            found_dep = True
                             break
+                    if not found_dep:
+                        dep_idx = loures_dep_idx
             depot_indices.append(dep_idx)
             vehicle_names.append(vehicle_name)
             vehicle_warehouses.append(wh_name)
@@ -1610,7 +1634,14 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
             row = cursor.fetchone()
             
             if not row:
-                raise HTTPException(status_code=400, detail="Não existem dados exportáveis.")
+                from utils.template_manager import create_unified_project_template
+                from fastapi.responses import Response
+                template_data = create_unified_project_template()
+                return Response(
+                    content=template_data,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=GeoRoutePlan_{project_id}.xlsx"}
+                )
                 
             state_dict = deserialize_state(row["payload_json"])
             
@@ -2035,7 +2066,8 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
 
         v_caps = [fleet_dict[v]["capacity"] for v in target_vehicles]
         v_vol_caps = [fleet_dict[v]["capacity_volume"] for v in target_vehicles]
-        v_depots = [warehouse_indices.get(str(fleet_dict[v].get("warehouse", "")).strip().lower(), 0) for v in target_vehicles]
+        loures_idx = next((idx_v for k, idx_v in warehouse_indices.items() if "loures" in k.lower()), 0)
+        v_depots = [warehouse_indices.get(str(fleet_dict[v].get("warehouse", "")).strip().lower(), loures_idx) for v in target_vehicles]
         v_starts = [parse_time_to_minutes(fleet_dict[v].get("start_time", "06:30"), 390) for v in target_vehicles]
         v_ends = [parse_time_to_minutes(fleet_dict[v].get("end_time", "14:00"), 840) for v in target_vehicles]
         

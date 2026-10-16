@@ -132,12 +132,26 @@ def export_project_final_report(project_id: int):
         cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
         row = cursor.fetchone()
         if not row:
-            raise HTTPException(status_code=400, detail="Sem dados para exportar.")
+            from utils.template_manager import create_unified_project_template
+            from fastapi.responses import Response
+            template_data = create_unified_project_template()
+            return Response(
+                content=template_data,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename=GeoRoutePlan_Modelo_{project_id}.xlsx"}
+            )
             
         state_dict = deserialize_state(row["payload_json"])
         raw_routes = state_dict.get("routes_solution")
         if raw_routes is None:
-            raise HTTPException(status_code=400, detail="Sem rotas para exportar.")
+            from utils.template_manager import create_unified_project_template
+            from fastapi.responses import Response
+            template_data = create_unified_project_template()
+            return Response(
+                content=template_data,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename=GeoRoutePlan_Modelo_{project_id}.xlsx"}
+            )
             
         df_routes = raw_routes if isinstance(raw_routes, pd.DataFrame) else pd.DataFrame(raw_routes)
         df_deliveries = (
