@@ -7,6 +7,7 @@ import AgentChatDrawer from "@/components/AgentChatDrawer";
 import AgentCopilotModal from "@/components/AgentCopilotModal";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPictureModal";
+import CargoLoading3DModal from "@/components/CargoLoading3DModal";
 
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest } from "@/utils/api";
@@ -329,6 +330,8 @@ export default function TacticalPage() {
   const [reoptimizeModalOpen, setReoptimizeModalOpen] = useState(false);
   const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
   const [selectedBigPictureZone, setSelectedBigPictureZone] = useState<string>("all");
+  const [cargoLoadingModalOpen, setCargoLoadingModalOpen] = useState(false);
+  const [selectedCargoRouteIdx, setSelectedCargoRouteIdx] = useState(0);
   const [draggedStopKey, setDraggedStopKey] = useState<string | null>(null);
   const [dragOverStopKey, setDragOverStopKey] = useState<string | null>(null);
 
@@ -993,6 +996,30 @@ export default function TacticalPage() {
     return groups;
   }, [routes]);
 
+  // Rotas estruturadas para o Simulador de Carregamento 3D da Viatura (LIFO & Gravidade)
+  const cargo3DRoutes = useMemo(() => {
+    return Object.entries(groupedRoutes)
+      .filter(([rKey, stops]) => !isPendingRoute(rKey) && stops.length > 0)
+      .map(([rKey, stops]) => {
+        const vCfg = vehicleMap[rKey];
+        return {
+          vehicle: rKey,
+          veiculo: rKey,
+          max_volume: vCfg?.capacidade_vol || 14,
+          max_weight: vCfg?.capacidade_kg || 1500,
+          stops: stops.map((s, idx) => ({
+            id: s.id || s.ID_Original || idx,
+            client_name: s.Nome_Cliente || s.Cliente || `Cliente ${s.Ordem || idx + 1}`,
+            address: `${s.Morada || ""} ${s.CP || ""} ${s.Localidade || ""}`.trim(),
+            seq: s.Ordem || idx + 1,
+            weight: Number(s.Peso_KG) || 15,
+            volume: Number(s.Volume_m3) || 0.15,
+            packages: Math.max(1, Math.round((Number(s.Volume_m3) || 0.15) / 0.1) || 1),
+          })),
+        };
+      });
+  }, [groupedRoutes, vehicleMap]);
+
 
   // Real-time compliance & quality audit calculation
   useEffect(() => {
@@ -1445,6 +1472,22 @@ export default function TacticalPage() {
                 >
                   <span>✨</span>
                   <span>Copiloto IA</span>
+                </button>
+              )}
+
+              {/* Botão Simulador de Carregamento 3D da Viatura */}
+              {cargo3DRoutes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCargoRouteIdx(0);
+                    setCargoLoadingModalOpen(true);
+                  }}
+                  className="cursor-pointer px-2.5 py-1.5 rounded-md font-semibold transition-all flex items-center space-x-1.5 border text-xs shadow-sm bg-blue-950/80 hover:bg-blue-900 border-blue-500/40 text-blue-200"
+                  title="Simulador de Carregamento 3D da Viatura (Arrumação LIFO, Distribuição de Peso e Caixas Interativas)"
+                >
+                  <span>📦</span>
+                  <span>Carga 3D</span>
                 </button>
               )}
 
@@ -2199,6 +2242,21 @@ export default function TacticalPage() {
                                   </button>
                                 )}
 
+                                {!isPending && allStops.length > 0 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const idx = cargo3DRoutes.findIndex(r => r.vehicle === routeName);
+                                      setSelectedCargoRouteIdx(idx >= 0 ? idx : 0);
+                                      setCargoLoadingModalOpen(true);
+                                    }}
+                                    className="bg-blue-950 hover:bg-blue-900 border border-blue-700/80 text-blue-300 hover:text-white px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center space-x-1 cursor-pointer shadow-sm"
+                                    title="Visualizar arrumação 3D do baú desta viatura"
+                                  >
+                                    <span>📦 3D</span>
+                                  </button>
+                                )}
+
                                 {allStops.length > 0 && (
                                   <select
                                     defaultValue=""
@@ -2693,6 +2751,15 @@ export default function TacticalPage() {
           stopsCount={routes.filter(r => selectedRouteNames.includes(r.Rota)).length}
           totalKg={routes.filter(r => selectedRouteNames.includes(r.Rota)).reduce((sum, r) => sum + (Number(r.Peso_KG) || 0), 0)}
           onConfirm={handleReoptimizeSelected}
+        />
+
+        {/* Simulador de Carregamento 3D da Viatura (LIFO & Gravidade) */}
+        <CargoLoading3DModal
+          isOpen={cargoLoadingModalOpen}
+          onClose={() => setCargoLoadingModalOpen(false)}
+          routes={cargo3DRoutes}
+          initialRouteIndex={selectedCargoRouteIdx}
+          vehiclesData={fleetList}
         />
 
         {/* Floating Status Toast Notification (Sóbrio, alto contraste, sem piscar) */}
