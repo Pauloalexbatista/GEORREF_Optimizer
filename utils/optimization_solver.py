@@ -61,6 +61,7 @@ class AdvancedRouteOptimizer:
         vehicle_max_stops: Optional[List[int]] = None,
         client_service_times: Optional[List[int]] = None,
         client_priorities: Optional[List[int]] = None,
+        vehicle_returns_to_depot: Optional[List[bool]] = None,
     ) -> Dict[str, Any]:
         params = optimization_params or {}
         time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 25.0)
@@ -92,7 +93,8 @@ class AdvancedRouteOptimizer:
             client_service_times=client_service_times,
             client_priorities=client_priorities,
             balance_load=balance_load,
-            strategy=strategy
+            strategy=strategy,
+            vehicle_returns_to_depot=vehicle_returns_to_depot
         )
 
         if not initial_solution.get("routes"):
@@ -119,7 +121,8 @@ class AdvancedRouteOptimizer:
             vehicle_max_stops=vehicle_max_stops,
             client_service_times=client_service_times,
             respect_time_windows=respect_tw,
-            balance_load=balance_load
+            balance_load=balance_load,
+            vehicle_returns_to_depot=vehicle_returns_to_depot
         )
 
         return squeezed_solution
@@ -148,7 +151,8 @@ class AdvancedRouteOptimizer:
         client_service_times=None,
         client_priorities=None,
         balance_load: bool = False,
-        strategy: str = "clusters"
+        strategy: str = "clusters",
+        vehicle_returns_to_depot: Optional[List[bool]] = None
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_nodes = len(distance_matrix)
@@ -159,16 +163,28 @@ class AdvancedRouteOptimizer:
 
         t0 = time.time()
 
-        starts = [depot_indices[v] if v < len(depot_indices) else 0 for v in range(num_vehicles)]
-        ends = [depot_indices[v] if v < len(depot_indices) else 0 for v in range(num_vehicles)]
+        has_open_routes = vehicle_returns_to_depot is not None and any(not r for r in vehicle_returns_to_depot)
+        dummy_end_node = num_nodes if has_open_routes else None
+        num_nodes_manager = (num_nodes + 1) if has_open_routes else num_nodes
 
-        manager = pywrapcp.RoutingIndexManager(num_nodes, num_vehicles, starts, ends)
+        starts = [depot_indices[v] if v < len(depot_indices) else 0 for v in range(num_vehicles)]
+        ends = []
+        for v in range(num_vehicles):
+            ret = vehicle_returns_to_depot[v] if (vehicle_returns_to_depot and v < len(vehicle_returns_to_depot)) else True
+            if ret or dummy_end_node is None:
+                ends.append(depot_indices[v] if v < len(depot_indices) else 0)
+            else:
+                ends.append(dummy_end_node)
+
+        manager = pywrapcp.RoutingIndexManager(num_nodes_manager, num_vehicles, starts, ends)
         routing = pywrapcp.RoutingModel(manager)
 
         # 1. Distance & Arc Cost (in meters) com suporte a agrupamento por zonas (centro de gravidade por distancia)
         def distance_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
+            if dummy_end_node is not None and (to_node == dummy_end_node or from_node == dummy_end_node):
+                return 0
             dist_km = distance_matrix[from_node][to_node] * ROAD_FACTOR
 
             # Em modo 'clusters' (rotas agrupadas por zonas):
@@ -200,6 +216,8 @@ class AdvancedRouteOptimizer:
         # 3. Weight Capacity Dimension (KG)
         def demand_callback(from_index):
             from_node = manager.IndexToNode(from_index)
+            if dummy_end_node is not None and from_node == dummy_end_node:
+                return 0
             return int(round(demands[from_node] * 10)) if from_node < len(demands) else 0
 
         demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
@@ -221,6 +239,8 @@ class AdvancedRouteOptimizer:
         if volume_demands and vehicle_volume_capacities:
             def volume_callback(from_index):
                 from_node = manager.IndexToNode(from_index)
+                if dummy_end_node is not None and from_node == dummy_end_node:
+                    return 0
                 return int(round((volume_demands[from_node] if from_node < len(volume_demands) else 0.0) * 100))
 
             volume_callback_index = routing.RegisterUnaryTransitCallback(volume_callback)
@@ -245,6 +265,8 @@ class AdvancedRouteOptimizer:
         if effective_max_stops:
             def stop_callback(from_index):
                 from_node = manager.IndexToNode(from_index)
+                if dummy_end_node is not None and from_node == dummy_end_node:
+                    return 0
                 return 1 if from_node >= num_warehouses else 0
 
             stop_callback_index = routing.RegisterUnaryTransitCallback(stop_callback)
@@ -267,6 +289,8 @@ class AdvancedRouteOptimizer:
         def time_seconds_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
+            if dummy_end_node is not None and (to_node == dummy_end_node or from_node == dummy_end_node):
+                return 0
             dist_km = distance_matrix[from_node][to_node] * ROAD_FACTOR
             travel_sec = travel_time_seconds(dist_km)
             serv_sec = (client_service_times[from_node] * 60) if (client_service_times and from_node < len(client_service_times)) else (600 if from_node >= num_warehouses else 0)
@@ -376,7 +400,7 @@ class AdvancedRouteOptimizer:
                 v_route = []
                 while not routing.IsEnd(idx):
                     node = manager.IndexToNode(idx)
-                    if node >= num_warehouses:
+                    if node >= num_warehouses and (dummy_end_node is None or node != dummy_end_node):
                         v_route.append(node)
                         assigned_nodes.add(node)
                     idx = solution.Value(routing.NextVar(idx))
@@ -413,7 +437,8 @@ class AdvancedRouteOptimizer:
         vehicle_max_stops: Optional[List[int]],
         client_service_times: Optional[List[int]],
         respect_time_windows: bool = True,
-        balance_load: bool = False
+        balance_load: bool = False,
+        vehicle_returns_to_depot: Optional[List[bool]] = None
     ) -> Dict[str, Any]:
         """
         Multi-Pass Route Squeeze & Pairwise Fusion Engine:
@@ -476,11 +501,17 @@ class AdvancedRouteOptimizer:
                 p_node = n
 
             # Return to depot check
-            d_ret = distance_matrix[p_node][depot_indices[v_idx]] * ROAD_FACTOR
-            tot_dist += d_ret
-            ret_arr = cur_t + travel_time_minutes(d_ret)
-            if ret_arr > (v_end + 1):
-                return False, 0.0
+            v_returns = vehicle_returns_to_depot[v_idx] if (vehicle_returns_to_depot and v_idx < len(vehicle_returns_to_depot)) else True
+            if v_returns:
+                d_ret = distance_matrix[p_node][depot_indices[v_idx]] * ROAD_FACTOR
+                tot_dist += d_ret
+                ret_arr = cur_t + travel_time_minutes(d_ret)
+                if ret_arr > (v_end + 1):
+                    return False, 0.0
+            else:
+                # Open route - vehicle finishes shift at last stop
+                if cur_t > (v_end + 1):
+                    return False, 0.0
 
             return True, tot_dist
 

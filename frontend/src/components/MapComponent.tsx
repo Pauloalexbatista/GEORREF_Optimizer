@@ -1017,7 +1017,12 @@ export default function MapComponent({
           waypoints.push([originWh.lon, originWh.lat]);
         }
         stops.forEach(s => waypoints.push([s.Longitude, s.Latitude]));
-        if (originWh) {
+
+        const vCfg = fleet.find((f: any) => routesMatch(f.veiculo, rName));
+        const regVal = vCfg?.regresso_armazem ?? (stops[0] as any)?.Regresso_Armazem ?? "Sim";
+        const returnsToDepot = !["não", "nao", "false", "0", "no"].includes(String(regVal).trim().toLowerCase());
+
+        if (originWh && returnsToDepot) {
           waypoints.push([originWh.lon, originWh.lat]);
         }
 
@@ -1044,7 +1049,7 @@ export default function MapComponent({
     };
 
     fetchRoads();
-  }, [clients, warehouses, isMounted]);
+  }, [clients, warehouses, isMounted, fleet]);
 
   // Helper: check if a vehicle belongs to target warehouse
   const isVehicleInWarehouse = (v: string, targetWh: string): boolean => {
@@ -1361,17 +1366,25 @@ export default function MapComponent({
       let totalRouteKm = 0.0;
       let returnArrivalTimeStr = startTimeStr;
 
+      const regressoVal = vConfig?.regresso_armazem ?? (vClients[0] as any)?.Regresso_Armazem ?? "Sim";
+      const returnsToDepot = !["não", "nao", "false", "0", "no"].includes(String(regressoVal).trim().toLowerCase());
+
       if (sortedStops.length > 0) {
         const lastStop = sortedStops[sortedStops.length - 1];
-        const whName = lastStop.Armazem || vConfig?.armazem;
-        const whObj = warehouses.find((w) => w.name === whName) || warehouses[0];
-        let returnDist = 0.0;
-        if (whObj && lastStop.Latitude && lastStop.Longitude && whObj.lat && whObj.lon) {
-          returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whObj.lat, whObj.lon);
+        if (returnsToDepot) {
+          const whName = lastStop.Armazem || vConfig?.armazem;
+          const whObj = warehouses.find((w) => w.name === whName) || warehouses[0];
+          let returnDist = 0.0;
+          if (whObj && lastStop.Latitude && lastStop.Longitude && whObj.lat && whObj.lon) {
+            returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whObj.lat, whObj.lon);
+          }
+          totalRouteKm = (Number(lastStop.Dist_Acum) || 0) + returnDist;
+          const returnTravelMin = (returnDist / speed) * 60.0;
+          returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || lastStop.Chegada || "12:00", returnTravelMin);
+        } else {
+          totalRouteKm = Number(lastStop.Dist_Acum) || 0;
+          returnArrivalTimeStr = lastStop.Saida || lastStop.Chegada || startTimeStr;
         }
-        totalRouteKm = (Number(lastStop.Dist_Acum) || 0) + returnDist;
-        const returnTravelMin = (returnDist / speed) * 60.0;
-        returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || lastStop.Chegada || "12:00", returnTravelMin);
       }
 
       const isOverStops = count > 0 && maxStops > 0 && count > maxStops;

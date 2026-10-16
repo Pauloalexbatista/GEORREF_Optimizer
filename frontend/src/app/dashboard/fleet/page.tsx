@@ -39,6 +39,7 @@ interface Vehicle {
   motorista_telemovel: string;
   is_active: number;
   segunda_volta?: string;
+  regresso_armazem?: string;
 }
 
 interface RuleItem {
@@ -311,6 +312,7 @@ export default function FleetPage() {
       motorista_telemovel: "",
       is_active: 1,
       segunda_volta: "Não",
+      regresso_armazem: "Sim",
     };
     setFleet((prev) => [...prev, newVeh]);
   };
@@ -838,13 +840,14 @@ export default function FleetPage() {
                     <th className="py-2 px-1 text-center border-r border-zinc-800 w-16">Máx. Ent.</th>
                     <th className="py-2 px-2 border-r border-zinc-800">Regras</th>
                     <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">2ª Volta</th>
+                    <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Regresso</th>
                     <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredFleet.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="py-8 text-center text-zinc-500">
+                      <td colSpan={15} className="py-8 text-center text-zinc-500">
                         Nenhuma viatura encontrada. Clique em "+ Adicionar Viatura".
                       </td>
                     </tr>
@@ -972,6 +975,21 @@ export default function FleetPage() {
                             >
                               <option value="Não" className="bg-zinc-900 text-zinc-300">Não</option>
                               <option value="Sim" className="bg-zinc-900 text-emerald-400 font-bold">Sim</option>
+                            </select>
+                          </td>
+                          <td className="py-1 px-1 text-center border-r border-zinc-800">
+                            <select
+                              value={v.regresso_armazem || "Sim"}
+                              onChange={(e) => updateVehicle(idx, "regresso_armazem", e.target.value)}
+                              className={`px-1.5 py-0.5 rounded text-[11px] font-bold border outline-none cursor-pointer transition-colors ${
+                                (v.regresso_armazem === "Não")
+                                  ? "bg-amber-950/80 text-amber-400 border-amber-600"
+                                  : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700"
+                              }`}
+                              title={v.regresso_armazem === "Não" ? "Rota Aberta: término na última paragem (sem regresso à base)" : "Regresso obrigatório à base central"}
+                            >
+                              <option value="Sim" className="bg-zinc-900 text-zinc-300">Sim</option>
+                              <option value="Não" className="bg-zinc-900 text-amber-400 font-bold">Não</option>
                             </select>
                           </td>
                           <td className="py-1 px-2 text-center">

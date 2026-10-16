@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import os
 import io
 from io import BytesIO
@@ -106,18 +106,18 @@ def build_sheet_2_frota(wb):
         ("Armazem", COLOR_REQ), ("Veiculo", COLOR_REQ), ("Capacidade_KG", COLOR_REQ),
         ("Capacidade_Vol", COLOR_REC), ("Velocidade_Media", COLOR_REC), ("Hora_Inicio_Turno", COLOR_REQ),
         ("Hora_Fim_Turno", COLOR_REQ), ("Custo_KM", COLOR_REC), ("Custo_Hora", COLOR_REC),
-        ("Max_Entregas", COLOR_REC), ("Regras", COLOR_OPT), ("Motorista_Nome", COLOR_REC),
-        ("Motorista_Telemovel", COLOR_REC)
+        ("Max_Entregas", COLOR_REC), ("Regras", COLOR_OPT), ("Regresso_Armazem", COLOR_OPT),
+        ("Motorista_Nome", COLOR_REC), ("Motorista_Telemovel", COLOR_REC)
     ]
     apply_sheet_headers_tiered(ws, headers_spec)
     data = [
-        ["Armazém Lisboa Central", "Carrinha Pequena 01", 800, 6.0, 45, "08:00", "18:00", 0.65, 12.50, 30, "[PEQUENO]", "Manuel Silva", "910000001"],
-        ["Armazém Lisboa Central", "Carrinha Longo Curso 02", 1200, 12.0, 55, "07:00", "19:30", 0.75, 14.00, 35, "[ALARGADO]", "António Santos", "910000002"]
+        ["Armazém Lisboa Central", "Carrinha Pequena 01", 800, 6.0, 45, "08:00", "18:00", 0.65, 12.50, 30, "[PEQUENO]", "Sim", "Manuel Silva", "910000001"],
+        ["Armazém Lisboa Central", "Carrinha Longo Curso 02", 1200, 12.0, 55, "07:00", "19:30", 0.75, 14.00, 35, "[ALARGADO]", "Não", "António Santos", "910000002"]
     ]
     for r_idx, row_vals in enumerate(data, start=2):
         for c_idx, val in enumerate(row_vals, start=1):
             ws.cell(row=r_idx, column=c_idx, value=val)
-    format_data_rows(ws, 2, 1 + len(data), len(headers_spec), center_cols=(6, 7, 10, 11, 13), right_cols=(3, 4, 5, 8, 9))
+    format_data_rows(ws, 2, 1 + len(data), len(headers_spec), center_cols=(6, 7, 10, 11, 12, 14), right_cols=(3, 4, 5, 8, 9))
     autofit_columns(ws, len(headers_spec))
 
 # 3. ENTREGAS

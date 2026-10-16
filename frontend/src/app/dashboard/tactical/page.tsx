@@ -77,6 +77,7 @@ interface VehicleData {
   horario_inicio: string;
   horario_fim: string;
   regras?: string;
+  regresso_armazem?: string;
 }
 
 const routeColors = [
@@ -1029,14 +1030,19 @@ export default function TacticalPage() {
       // 5. Shift return overtime check (tolerância zero)
       if (stops.length > 0) {
         const lastStop = stops[stops.length - 1];
-        const whData = warehouseMap[vConfig?.armazem || ""] || Object.values(warehouseMap)[0];
-        let returnDist = 0.0;
-        if (whData && whData.lat && whData.lon) {
-          returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon) * 1.28;
+        const returnsToDepot = !["não", "nao", "false", "0", "no"].includes(String(vConfig?.regresso_armazem || "Sim").trim().toLowerCase());
+        let returnArrStr = lastStop.Saida || lastStop.Chegada || "12:00";
+
+        if (returnsToDepot) {
+          const whData = warehouseMap[vConfig?.armazem || ""] || Object.values(warehouseMap)[0];
+          let returnDist = 0.0;
+          if (whData && whData.lat && whData.lon) {
+            returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon) * 1.28;
+          }
+          const speed = vConfig?.velocidade_media || 50.0;
+          const returnTravelMin = (returnDist / speed) * 60.0;
+          returnArrStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
         }
-        const speed = vConfig?.velocidade_media || 50.0;
-        const returnTravelMin = (returnDist / speed) * 60.0;
-        const returnArrStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
 
         const [rArrH, rArrM] = returnArrStr.split(":").map(Number);
         const [vEndH, vEndM] = vEnd.split(":").map(Number);
@@ -1050,7 +1056,9 @@ export default function TacticalPage() {
             severity: "error",
             route: rName,
             title: `Atraso no Fim de Turno (${rName})`,
-            message: `A viatura regressa às ${returnArrStr}, ultrapassando o fim de turno das ${vEnd} (${overtimeMin} min de horas extra).`,
+            message: returnsToDepot
+              ? `A viatura regressa às ${returnArrStr}, ultrapassando o fim de turno das ${vEnd} (${overtimeMin} min de horas extra).`
+              : `A viatura conclui a última entrega às ${returnArrStr}, ultrapassando o fim de turno das ${vEnd} (${overtimeMin} min de horas extra).`,
           };
           rViolations.push(vItem);
           allViolations.push(vItem);
@@ -1922,18 +1930,27 @@ export default function TacticalPage() {
                       const kgPct = Math.round((totalKg / maxKg) * 100);
                       const volPct = Math.round((totalVol / maxVol) * 100);
 
+                      const vObj = fleetList.find((f) => f.veiculo === routeName);
+                      const returnsToDepot = vObj ? !["não", "nao", "false", "0", "no"].includes(String(vObj.regresso_armazem || "Sim").trim().toLowerCase()) : true;
+
                       let returnDist = 0.0;
                       let returnArrivalTimeStr = startTimeStr;
                       let totalRouteKm = 0.0;
 
                       if (allStops.length > 0) {
                         const lastStop = allStops[allStops.length - 1];
-                        if (whData && whData.lat && whData.lon) {
-                          returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
+                        if (returnsToDepot) {
+                          if (whData && whData.lat && whData.lon) {
+                            returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
+                          }
+                          const returnTravelMin = (returnDist / speed) * 60.0;
+                          returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
+                          totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
+                        } else {
+                          returnDist = 0.0;
+                          returnArrivalTimeStr = lastStop.Saida || lastStop.Chegada || startTimeStr;
+                          totalRouteKm = lastStop.Dist_Acum || 0;
                         }
-                        const returnTravelMin = (returnDist / speed) * 60.0;
-                        returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
-                        totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
                       }
 
                       const totalDurationStr = allStops.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
@@ -2421,7 +2438,7 @@ export default function TacticalPage() {
                                           })}
 
                                           {/* ÚLTIMA LINHA: REGRESSO AO ARMAZÉM */}
-                                          {!isPending && (
+                                          {!isPending && (returnsToDepot ? (
                                             <tr className="bg-emerald-950/20 border-t border-emerald-800/40 text-emerald-200 font-medium">
                                               <td className="py-2 px-3 text-center">
                                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 shadow-sm">
@@ -2459,7 +2476,44 @@ export default function TacticalPage() {
                                                 Fim de Turno
                                               </td>
                                             </tr>
-                                          )}
+                                          ) : (
+                                            <tr className="bg-sky-950/20 border-t border-sky-800/40 text-sky-200 font-medium">
+                                              <td className="py-2 px-3 text-center">
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-bold bg-sky-900/90 text-sky-300 border border-sky-700/60 shadow-sm">
+                                                  Término
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-3">
+                                                <div className="font-bold text-sky-300">Última Paragem</div>
+                                                <div className="text-[9px] text-sky-400/80 font-mono">Sem Regresso ao Armazém</div>
+                                              </td>
+                                              <td className="py-2 px-3">
+                                                <div className="text-zinc-400 text-xs italic">A viatura pernoita fora / rota aberta</div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center text-zinc-500 text-[10px] font-mono">
+                                                --
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <span className="font-mono text-sky-400 bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800 text-[9px]">
+                                                  Fim Turno
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                <div className="font-mono text-xs font-bold text-sky-400">
+                                                  {returnArrivalTimeStr}
+                                                </div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                                --
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-zinc-450">
+                                                Acum: {totalRouteKm.toFixed(1)} km
+                                              </td>
+                                              <td className="py-2 px-3 text-center text-[10px] text-sky-400 font-semibold">
+                                                Rota Aberta
+                                              </td>
+                                            </tr>
+                                          ))}
                                         </tbody>
                                       </table>
                                     </div>

@@ -634,6 +634,11 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         client_rules = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Regras"].fillna("")) if "Regras" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
         vehicle_rules = [str(fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {})).get("regras", "")) for v_name in vehicle_names]
         vehicle_max_stops = [int(fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {})).get("max_entregas", 30) or 30) for v_name in vehicle_names]
+        vehicle_returns_to_depot = []
+        for v_name in vehicle_names:
+            v_cfg = fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {}))
+            reg_val = str(v_cfg.get("regresso_armazem", "Sim")).strip().lower()
+            vehicle_returns_to_depot.append(reg_val not in ["não", "nao", "false", "0", "no"])
         rules_matrix = state_dict.get("rules_matrix", [])
         
         client_service_times = [0 for _ in range(num_warehouses)] + [int(dr.get("tempo_descarga_min") or 10) for dr in delivery_rows]
@@ -659,7 +664,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             rules_matrix=rules_matrix,
             vehicle_max_stops=vehicle_max_stops,
             client_service_times=client_service_times,
-            client_priorities=client_priorities
+            client_priorities=client_priorities,
+            vehicle_returns_to_depot=vehicle_returns_to_depot
         )
         
         # 6. Convert solver output to routes list
@@ -723,7 +729,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "Notas_Motorista": obs_val,
                         "Vendedor": vend_val,
                         "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
-                        "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0))
+                        "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
+                        "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim")
                     })
                     
             if raw_stops:
@@ -2006,6 +2013,11 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         client_r = ["" for _ in range(num_warehouses)] + (list(subset_df[rg_c].fillna("").astype(str)) if rg_c else ["" for _ in range(len(subset_df))])
         v_r = [str(fleet_dict[v].get("regras", "")) for v in target_vehicles]
 
+        v_returns = []
+        for v in target_vehicles:
+            reg_val = str(fleet_dict.get(v, {}).get("regresso_armazem", "Sim")).strip().lower()
+            v_returns.append(reg_val not in ["não", "nao", "false", "0", "no"])
+
         opt = AdvancedRouteOptimizer()
         opt_res = opt.optimize_routes(
             distance_matrix=dist_matrix,
@@ -2026,7 +2038,8 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             rules_matrix=[],
             vehicle_max_stops=v_max_stops,
             client_service_times=service_times,
-            optimization_params={"time_limit_seconds": 5, "respect_time_windows": req.respect_time_windows}
+            optimization_params={"time_limit_seconds": 5, "respect_time_windows": req.respect_time_windows},
+            vehicle_returns_to_depot=v_returns
         )
 
         assigned_subset_nodes = set()

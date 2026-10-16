@@ -32,6 +32,7 @@ class FleetVehicle:
     motorista_telemovel: str = ""
     is_active: int = 1
     segunda_volta: str = "Não"
+    regresso_armazem: str = "Sim"
     codigo_veiculo: str = ""
     codigo_motorista: str = ""
 

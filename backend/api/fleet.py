@@ -139,6 +139,7 @@ class VehicleItem(BaseModel):
     motorista_telemovel: Optional[str] = ""
     is_active: Optional[int] = 1
     segunda_volta: Optional[str] = "Não"
+    regresso_armazem: Optional[str] = "Sim"
 
 class DriverItem(BaseModel):
     name: str
@@ -413,7 +414,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "motorista_nome": str(getattr(veh, "motorista_nome", "") or ""),
                                 "motorista_telemovel": str(getattr(veh, "motorista_telemovel", "") or ""),
                                 "is_active": int(getattr(veh, "is_active", 1) if getattr(veh, "is_active", None) is not None else 1),
-                                "segunda_volta": str(getattr(veh, "segunda_volta", "Não") or "Não")
+                                "segunda_volta": str(getattr(veh, "segunda_volta", "Não") or "Não"),
+                                "regresso_armazem": str(getattr(veh, "regresso_armazem", "Sim") or "Sim")
                             })
                         elif isinstance(veh, dict):
                             fleet_res.append({
@@ -431,7 +433,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "motorista_nome": str(veh.get("motorista_nome", veh.get("motorista", "")) or ""),
                                 "motorista_telemovel": str(veh.get("motorista_telemovel", "") or ""),
                                 "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1),
-                                "segunda_volta": str(veh.get("segunda_volta", veh.get("2ª Volta", "Não")) or "Não")
+                                "segunda_volta": str(veh.get("segunda_volta", veh.get("2ª Volta", "Não")) or "Não"),
+                                "regresso_armazem": str(veh.get("regresso_armazem", veh.get("Regresso_Armazem", veh.get("Regresso ao Armazem", "Sim"))) or "Sim")
                             })
                 elif isinstance(raw_fleet, pd.DataFrame):
                     for _, veh in raw_fleet.iterrows():
@@ -452,7 +455,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "motorista_nome": str(veh.get("motorista_nome", veh.get("Motorista_Nome", veh.get("motorista", ""))) or ""),
                                 "motorista_telemovel": str(veh.get("motorista_telemovel", veh.get("Motorista_Telemovel", "")) or ""),
                                 "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1),
-                                "segunda_volta": str(veh.get("segunda_volta", veh.get("2ª Volta", veh.get("2a Volta", "Não"))) or "Não")
+                                "segunda_volta": str(veh.get("segunda_volta", veh.get("2ª Volta", veh.get("2a Volta", "Não"))) or "Não"),
+                                "regresso_armazem": str(veh.get("regresso_armazem", veh.get("Regresso_Armazem", veh.get("Regresso ao Armazem", "Sim"))) or "Sim")
                             })
                 elif isinstance(raw_fleet, list):
                     for veh in raw_fleet:
@@ -472,7 +476,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "motorista_nome": str(veh.get("motorista_nome", veh.get("motorista", "")) or ""),
                                 "motorista_telemovel": str(veh.get("motorista_telemovel", "") or ""),
                                 "is_active": int(veh.get("is_active", 1) if veh.get("is_active", None) is not None else 1),
-                                "segunda_volta": str(veh.get("segunda_volta", veh.get("2ª Volta", "Não")) or "Não")
+                                "segunda_volta": str(veh.get("segunda_volta", veh.get("2ª Volta", "Não")) or "Não"),
+                                "regresso_armazem": str(veh.get("regresso_armazem", veh.get("Regresso_Armazem", veh.get("Regresso ao Armazem", "Sim"))) or "Sim")
                             })
 
             # If snapshot has no fleet, fallback to SQLite frota table
@@ -490,7 +495,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                         "horario_inicio": str(f["horario_inicio"] or "08:00"),
                         "horario_fim": str(f["horario_fim"] or "18:00"),
                         "is_active": int(f["is_active"] if f.get("is_active") is not None else 1),
-                        "segunda_volta": str(f["segunda_volta"]) if "segunda_volta" in f.keys() and f["segunda_volta"] else "Não"
+                        "segunda_volta": str(f["segunda_volta"]) if "segunda_volta" in f.keys() and f["segunda_volta"] else "Não",
+                        "regresso_armazem": str(f["regresso_armazem"]) if "regresso_armazem" in f.keys() and f["regresso_armazem"] else "Sim"
                     })
 
             # Extract DRIVERS
@@ -658,7 +664,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "motorista_nome": str(veh.motorista_nome or ""),
                 "motorista_telemovel": str(veh.motorista_telemovel or ""),
                 "is_active": int(veh.is_active if veh.is_active is not None else 1),
-                "segunda_volta": str(veh.segunda_volta or "Não")
+                "segunda_volta": str(veh.segunda_volta or "Não"),
+                "regresso_armazem": str(veh.regresso_armazem or "Sim")
             }
             fleet_rows_for_db.append({
                 "veiculo": veh.veiculo,
@@ -671,7 +678,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "armazem": str(veh.armazem or ""),
                 "regras": str(veh.regras or ""),
                 "is_active": int(veh.is_active if veh.is_active is not None else 1),
-                "segunda_volta": str(veh.segunda_volta or "Não")
+                "segunda_volta": str(veh.segunda_volta or "Não"),
+                "regresso_armazem": str(veh.regresso_armazem or "Sim")
             })
 
         state_dict["fleet_config"] = fleet_dict
@@ -927,6 +935,7 @@ async def import_fleet_warehouses(
                 col_f_max_deliv = _match_col(df_fleet_raw.columns, ['Max_Entregas', 'Max_Paragens', 'Max Deliveries'])
                 col_f_rules = _match_col(df_fleet_raw.columns, ['Regras', 'Tags', 'Restricoes', 'Rules'])
                 col_f_2v = _match_col(df_fleet_raw.columns, ['2ª Volta', '2a Volta', '2ª_Volta', '2a_Volta', '2 Volta', 'Segunda_Volta', 'Segunda Volta'])
+                col_f_regresso = _match_col(df_fleet_raw.columns, ['Regresso_Armazem', 'Regresso_Armazém', 'Regresso ao Armazem', 'Regresso ao Armazém', 'Retorno_Armazem', 'Retorno ao Deposito', 'Regresso', 'Retorno'])
                 col_f_driver = _match_col(df_fleet_raw.columns, ['Motorista_Nome', 'Motorista', 'Driver_Name', 'Driver'])
                 col_f_driver_tel = _match_col(df_fleet_raw.columns, ['Motorista_Telemovel', 'Telemovel_Motorista', 'Driver_Phone', 'Contacto_Motorista'])
                 
@@ -947,6 +956,8 @@ async def import_fleet_warehouses(
                     regras_str = str(row[col_f_rules]).strip() if col_f_rules and pd.notna(row[col_f_rules]) else ""
                     val_2v = str(row[col_f_2v]).strip().lower() if col_f_2v and pd.notna(row[col_f_2v]) else "não"
                     is_2v = "Sim" if val_2v in ['sim', 's', 'yes', 'y', 'true', '1', '2'] else "Não"
+                    val_regresso = str(row[col_f_regresso]).strip().lower() if col_f_regresso and pd.notna(row[col_f_regresso]) else "sim"
+                    is_regresso = "Não" if val_regresso in ['não', 'nao', 'n', 'no', 'false', '0'] else "Sim"
                     
                     v_obj = FleetVehicle(
                         capacidade_kg=cap_kg,
@@ -961,6 +972,7 @@ async def import_fleet_warehouses(
                     v_obj.max_entregas = max_deliv
                     v_obj.regras = regras_str
                     v_obj.segunda_volta = is_2v
+                    v_obj.regresso_armazem = is_regresso
                     if col_f_driver and pd.notna(row[col_f_driver]):
                         v_obj.motorista_nome = str(row[col_f_driver]).strip()
                     if col_f_driver_tel and pd.notna(row[col_f_driver_tel]):
