@@ -225,6 +225,18 @@ export interface TimeSlotInfo {
   count?: number;
 }
 
+export interface TerritorialZone {
+  id: string;
+  name: string;
+  dominantLocality: string;
+  vehicles: string[];
+  stopsCount: number;
+  totalKg: number;
+  centerLat: number;
+  centerLon: number;
+  bounds: [[number, number], [number, number]];
+}
+
 export function parseWindowStartEnd(winStr?: string): { start: number; end: number; formatted: string } | null {
   if (!winStr || winStr === "Qualquer" || winStr === "--" || winStr === "None" || String(winStr).trim() === "") {
     return null;
@@ -265,6 +277,46 @@ function parseTimeToMinutes(t?: string): number {
   const h = parseInt(parts[0], 10) || 0;
   const m = parseInt(parts[1], 10) || 0;
   return h * 60 + m;
+}
+
+export function normalizeLocality(locStr?: string, cpStr?: string): string {
+  if (locStr && String(locStr).trim() !== "") {
+    const clean = String(locStr)
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Z\s]/g, " ")
+      .trim();
+    if (clean) {
+      const known = [
+        "LISBOA", "SINTRA", "CASCAIS", "OEIRAS", "AMADORA", "LOURES", "ODIVELAS", 
+        "ALMADA", "SEIXAL", "SETUBAL", "BARREIRO", "MAFRA", "VILA FRANCA", "ALVERCA",
+        "PORTO", "GAIA", "MATOSINHOS", "MAIA", "COIMBRA", "BRAGA", "FARO", "LEIRIA", "SANTAREM"
+      ];
+      for (const k of known) {
+        if (clean.includes(k)) return k;
+      }
+      const parts = clean.split(/\s+/).filter(Boolean);
+      if (parts.length > 0 && parts[0].length >= 3) return parts[0];
+    }
+  }
+
+  if (cpStr) {
+    const cpDigits = String(cpStr).replace(/\D/g, "").slice(0, 4);
+    const cpNum = parseInt(cpDigits, 10);
+    if (!isNaN(cpNum)) {
+      if (cpNum >= 1000 && cpNum <= 1999) return "LISBOA";
+      if (cpNum >= 2600 && cpNum <= 2699) return "LOURES / ODIVELAS";
+      if (cpNum >= 2700 && cpNum <= 2729) return "AMADORA";
+      if (cpNum >= 2730 && cpNum <= 2749) return "OEIRAS";
+      if (cpNum >= 2710 && cpNum <= 2725) return "SINTRA";
+      if (cpNum >= 2750 && cpNum <= 2775) return "CASCAIS";
+      if (cpNum >= 2800 && cpNum <= 2899) return "MARGEM SUL";
+      if (cpNum >= 2900 && cpNum <= 2999) return "SETUBAL";
+      if (cpNum >= 4000 && cpNum <= 4499) return "PORTO";
+    }
+  }
+  return "GERAL";
 }
 
 function getRouteColor(routeName: string, vehicleList: string[], customColors?: Record<string, string>) {
@@ -501,6 +553,18 @@ export default function MapComponent({
   const [showRoads, setShowRoads] = useState(true);
   const [mapLayer, setMapLayer] = useState<"standard" | "google_sat" | "google_hybrid">("standard");
   const [fitTrigger, setFitTrigger] = useState("");
+
+  // Territorial Focus Mode (Dividir para Conquistar)
+  const [selectedZoneId, setSelectedZoneId] = useState<string>("all");
+  const [validatedZones, setValidatedZones] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("georoute_validated_zones");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+    }
+    return {};
+  });
 
   // Area Selection & Bulk Transfer State
   const [isBoxSelecting, setIsBoxSelecting] = useState(false);
@@ -922,6 +986,168 @@ export default function MapComponent({
     };
   }, [warehouseVehicles, clients, selectedWarehouse]);
 
+  // Deteção Automática e Clustering de Zonas Territoriais ("Dividir para Conquistar")
+  const territorialZones = useMemo<TerritorialZone[]>(() => {
+    const vehicleDataMap = new Map<string, {
+      dominantLocality: string;
+      stopsCount: number;
+      totalKg: number;
+      latSum: number;
+      lonSum: number;
+      coordsCount: number;
+      minLat: number;
+      maxLat: number;
+      minLon: number;
+      maxLon: number;
+    }>();
+
+    warehouseVehicles.forEach((v) => {
+      const vClients = clients.filter(c => routesMatch(c.Rota, v));
+      if (vClients.length === 0) return;
+
+      const locCounts: Record<string, number> = {};
+      let latSum = 0;
+      let lonSum = 0;
+      let coordsCount = 0;
+      let totalKg = 0;
+      let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+
+      vClients.forEach(c => {
+        totalKg += Number(c.Peso_KG) || 0;
+        const norm = normalizeLocality(c.Localidade, c.CP);
+        locCounts[norm] = (locCounts[norm] || 0) + 1;
+
+        if (c.Latitude && c.Longitude && c.Latitude !== 0 && c.Longitude !== 0) {
+          latSum += c.Latitude;
+          lonSum += c.Longitude;
+          coordsCount++;
+          if (c.Latitude < minLat) minLat = c.Latitude;
+          if (c.Latitude > maxLat) maxLat = c.Latitude;
+          if (c.Longitude < minLon) minLon = c.Longitude;
+          if (c.Longitude > maxLon) maxLon = c.Longitude;
+        }
+      });
+
+      let dominant = "GERAL";
+      let maxCount = -1;
+      Object.entries(locCounts).forEach(([loc, cnt]) => {
+        if (cnt > maxCount) {
+          maxCount = cnt;
+          dominant = loc;
+        }
+      });
+
+      vehicleDataMap.set(v, {
+        dominantLocality: dominant,
+        stopsCount: vClients.length,
+        totalKg: Math.round(totalKg),
+        latSum,
+        lonSum,
+        coordsCount,
+        minLat: coordsCount > 0 ? minLat : 38.7,
+        maxLat: coordsCount > 0 ? maxLat : 38.8,
+        minLon: coordsCount > 0 ? minLon : -9.2,
+        maxLon: coordsCount > 0 ? maxLon : -9.1,
+      });
+    });
+
+    if (vehicleDataMap.size === 0) return [];
+
+    const groups = new Map<string, {
+      name: string;
+      vehicles: string[];
+      stopsCount: number;
+      totalKg: number;
+      latSum: number;
+      lonSum: number;
+      coordsCount: number;
+      minLat: number;
+      maxLat: number;
+      minLon: number;
+      maxLon: number;
+    }>();
+
+    vehicleDataMap.forEach((vData, vName) => {
+      const locKey = vData.dominantLocality;
+      const existing = groups.get(locKey);
+      if (existing) {
+        existing.vehicles.push(vName);
+        existing.stopsCount += vData.stopsCount;
+        existing.totalKg += vData.totalKg;
+        existing.latSum += vData.latSum;
+        existing.lonSum += vData.lonSum;
+        existing.coordsCount += vData.coordsCount;
+        existing.minLat = Math.min(existing.minLat, vData.minLat);
+        existing.maxLat = Math.max(existing.maxLat, vData.maxLat);
+        existing.minLon = Math.min(existing.minLon, vData.minLon);
+        existing.maxLon = Math.max(existing.maxLon, vData.maxLon);
+      } else {
+        const displayName = locKey === "GERAL" 
+          ? "Geral / Mista" 
+          : `Zona ${locKey.charAt(0) + locKey.slice(1).toLowerCase()}`;
+        groups.set(locKey, {
+          name: displayName,
+          vehicles: [vName],
+          stopsCount: vData.stopsCount,
+          totalKg: vData.totalKg,
+          latSum: vData.latSum,
+          lonSum: vData.lonSum,
+          coordsCount: vData.coordsCount,
+          minLat: vData.minLat,
+          maxLat: vData.maxLat,
+          minLon: vData.minLon,
+          maxLon: vData.maxLon,
+        });
+      }
+    });
+
+    const zones: TerritorialZone[] = [];
+    groups.forEach((grp, key) => {
+      const cLat = grp.coordsCount > 0 ? grp.latSum / grp.coordsCount : 38.74;
+      const cLon = grp.coordsCount > 0 ? grp.lonSum / grp.coordsCount : -9.16;
+      const padLat = Math.max(0.015, (grp.maxLat - grp.minLat) * 0.1);
+      const padLon = Math.max(0.015, (grp.maxLon - grp.minLon) * 0.1);
+
+      zones.push({
+        id: `zone_${key.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
+        name: grp.name,
+        dominantLocality: key,
+        vehicles: grp.vehicles,
+        stopsCount: grp.stopsCount,
+        totalKg: grp.totalKg,
+        centerLat: cLat,
+        centerLon: cLon,
+        bounds: [
+          [grp.minLat - padLat, grp.minLon - padLon],
+          [grp.maxLat + padLat, grp.maxLon + padLon]
+        ],
+      });
+    });
+
+    return zones.sort((a, b) => b.stopsCount - a.stopsCount);
+  }, [warehouseVehicles, clients]);
+
+  const handleSelectZone = (zoneId: string) => {
+    setSelectedZoneId(zoneId);
+    if (zoneId === "all") {
+      setFitTrigger(`zone_all_${Date.now()}`);
+    } else {
+      setFitTrigger(`zone_${zoneId}_${Date.now()}`);
+    }
+  };
+
+  const toggleValidateZone = (zoneId: string) => {
+    setValidatedZones(prev => {
+      const updated = { ...prev, [zoneId]: !prev[zoneId] };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("georoute_validated_zones", JSON.stringify(updated));
+        } catch (e) {}
+      }
+      return updated;
+    });
+  };
+
   // Comprehensive Vehicle Metrics Map (paragens, peso, volume, km, horários e alertas de excesso)
   const vehicleMetricsMap = useMemo<Record<string, {
     vehicle: string;
@@ -1017,6 +1243,14 @@ export default function MapComponent({
       list = []; // In pending status, only pending chip is shown
     }
 
+    // Territorial Zone Focus Filter
+    if (selectedZoneId !== "all") {
+      const activeZone = territorialZones.find(z => z.id === selectedZoneId);
+      if (activeZone) {
+        list = list.filter((v) => activeZone.vehicles.some(zv => routesMatch(zv, v)));
+      }
+    }
+
     // Dynamic Column Sorting
     return list.sort((a, b) => {
       const mA = vehicleMetricsMap[a];
@@ -1044,7 +1278,7 @@ export default function MapComponent({
 
       return routeSortAsc ? comp : -comp;
     });
-  }, [warehouseVehicles, statusFilter, vehicleMetricsMap, routeSortField, routeSortAsc]);
+  }, [warehouseVehicles, statusFilter, selectedZoneId, territorialZones, vehicleMetricsMap, routeSortField, routeSortAsc]);
 
   // Table Totals Summary
   const tableTotals = useMemo(() => {
@@ -1103,6 +1337,23 @@ export default function MapComponent({
         return false;
       }
 
+      // 2.5 Territorial Zone Focus Filter
+      if (selectedZoneId !== "all") {
+        const activeZone = territorialZones.find(z => z.id === selectedZoneId);
+        if (activeZone) {
+          const isPending = isPendingRoute(c.Rota);
+          if (isPending) {
+            const cNorm = normalizeLocality(c.Localidade, c.CP);
+            if (cNorm !== activeZone.dominantLocality && activeZone.dominantLocality !== "GERAL") {
+              return false;
+            }
+          } else {
+            const inZone = activeZone.vehicles.some(zv => routesMatch(zv, c.Rota));
+            if (!inZone) return false;
+          }
+        }
+      }
+
       // 3 & 4. Status Filter & Route Selection (Explicit selection takes absolute priority)
       const isPending = isPendingRoute(c.Rota);
       if (selectedRoutes.length > 0) {
@@ -1118,7 +1369,7 @@ export default function MapComponent({
       if (statusFilter === "empty" && isPending) return false;
       return true;
     });
-  }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedRoutes, fleet]);
+  }, [clients, searchQuery, selectedWarehouse, statusFilter, selectedZoneId, territorialZones, selectedRoutes, fleet]);
 
   // Scoped routes set for strictly cleaning road geometry polylines
   const visibleRouteNames = useMemo(() => {
@@ -1422,7 +1673,58 @@ export default function MapComponent({
             </div>
 
             {/* Quick Actions & Special Filters */}
-            <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/50 space-y-1">
+            <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/50 space-y-1.5">
+              {/* Seletor de Foco por Zona Territorial (Dividir para Conquistar) */}
+              {territorialZones.length > 0 && (
+                <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center space-x-1">
+                      <span>🗺️</span>
+                      <span>Foco por Território / Zona</span>
+                    </span>
+                    {selectedZoneId !== "all" && (
+                      <button
+                        onClick={() => handleSelectZone("all")}
+                        className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                        title="Ver todas as zonas"
+                      >
+                        ✕ Limpar Foco
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    <select
+                      value={selectedZoneId}
+                      onChange={(e) => handleSelectZone(e.target.value)}
+                      className="flex-1 bg-zinc-50 dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-800 dark:text-zinc-100 font-bold outline-none cursor-pointer"
+                    >
+                      <option value="all">🌐 Todas as Zonas ({activeVehiclesCount} viaturas)</option>
+                      {territorialZones.map((z) => (
+                        <option key={z.id} value={z.id}>
+                          {validatedZones[z.id] ? "✅ " : "📍 "}
+                          {z.name} ({z.vehicles.length} vts · {z.stopsCount}p · {z.totalKg.toLocaleString()}kg)
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedZoneId !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => toggleValidateZone(selectedZoneId)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer shrink-0 ${
+                          validatedZones[selectedZoneId]
+                            ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                            : "bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700"
+                        }`}
+                        title={validatedZones[selectedZoneId] ? "Zona Fechada e Validada" : "Marcar zona como afinada e validada"}
+                      >
+                        {validatedZones[selectedZoneId] ? "Validada ✅" : "Validar ✅"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {(() => {
                 const totalGeocoded = clients.filter(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0).length;
                 const isAllSelected = selectedRoutes.length === 0;
