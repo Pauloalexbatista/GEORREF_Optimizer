@@ -13,7 +13,7 @@ Audits routes and stops against all business rules and constraints:
 
 import math
 from typing import List, Dict, Any, Tuple, Optional
-from utils.rules_engine import is_vehicle_compatible, extract_tags
+from utils.rules_engine import is_vehicle_compatible, extract_tags, explain_incompatibility
 
 def parse_time_to_minutes(t_val, default: int = 480) -> int:
     if t_val is None or t_val == "":
@@ -212,19 +212,22 @@ def audit_route_plan(
             total_kg += c_kg
             total_vol += c_vol
 
-            # 2. Check Tags / Rules Compatibility (Apenas quando existem regras na Matriz de Regras)
-            if rules_matrix and (c_rules or v_rules):
-                if not is_vehicle_compatible(v_rules, c_rules, rules_matrix):
+            # 2. Check Tags / Rules & Postal Code Compatibility
+            c_cp = str(_safe_scalar(row.get("CP", row.get("Codigo_Postal", "")), "") or "")
+            if rules_matrix or v_rules or c_rules or c_cp:
+                if not is_vehicle_compatible(v_rules, c_rules, rules_matrix, delivery_cp=c_cp, vehicle_name=r_name):
+                    explanation = explain_incompatibility(v_rules, c_rules, rules_matrix, delivery_cp=c_cp, vehicle_name=r_name)
                     v_item = {
                         "type": "tag_rule",
                         "severity": "error",
                         "route": r_name,
                         "client": client_name,
                         "order": c_order,
-                        "title": f"Incompatibilidade de Regra/Tag ({client_name})",
-                        "message": f"A viatura '{r_name}' (Tag: '{v_rules or 'Geral'}') não está autorizada a realizar a entrega '{client_name}' (Tag: '{c_rules}').",
+                        "title": f"Incompatibilidade de Regra/Zona ({client_name})",
+                        "message": explanation or f"A viatura '{r_name}' não está autorizada a realizar a entrega '{client_name}' (CP: {c_cp}).",
                         "required_tag": c_rules,
-                        "vehicle_tag": v_rules
+                        "vehicle_tag": v_rules,
+                        "cp": c_cp
                     }
                     r_violations.append(v_item)
                     all_violations.append(v_item)

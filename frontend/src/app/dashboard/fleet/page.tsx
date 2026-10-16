@@ -960,7 +960,8 @@ export default function FleetPage() {
                               value={v.regras}
                               onChange={(e) => updateVehicle(idx, "regras", e.target.value)}
                               className="bg-transparent border-none outline-none text-zinc-300 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
-                              placeholder="Regras / Tags..."
+                              placeholder="ex: [FRIO], [CP:1000..1999]..."
+                              title="Tags ou restrições de CP (ex: [CP:1000..1999] para zona permitida, [!CP:1100..1200] para proibição)"
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -1232,8 +1233,15 @@ export default function FleetPage() {
                   <span>⚖️</span> Matriz de Regras & Compatibilidade de Acesso ({rules.length})
                 </h2>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Configure a compatibilidade entre as etiquetas da frota e as restrições das encomendas (ex: Lisboa, Pequeno, Frigorífico).
+                  Configure restrições por etiquetas operacionais (ex: Lisboa, Pequeno) ou regras canónicas de Código Postal (ex: CP:1000..1999).
                 </p>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px]">
+                  <span className="font-semibold text-zinc-400">Padrões CP:</span>
+                  <span className="bg-zinc-800 text-indigo-300 px-1.5 py-0.5 rounded font-mono border border-zinc-700/60" title="Intervalo numérico de CP4">CP:1000..1999 (Faixa)</span>
+                  <span className="bg-zinc-800 text-indigo-300 px-1.5 py-0.5 rounded font-mono border border-zinc-700/60" title="Prefixo de Código Postal">CP:27* (Prefixo)</span>
+                  <span className="bg-zinc-800 text-indigo-300 px-1.5 py-0.5 rounded font-mono border border-zinc-700/60" title="Código postal exato">CP:1050-023 (Exato)</span>
+                  <span className="text-zinc-500 italic ml-1">Filtro automático no Solver pelo CP da encomenda</span>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1259,7 +1267,7 @@ export default function FleetPage() {
                   <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
                     <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Veículo / Frota</th>
-                    <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Entrega / Cliente</th>
+                    <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Entrega / Código Postal</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-36 text-center">Permissão</th>
                     <th className="py-2 px-3">Descrição / Restrição</th>
                   </tr>
@@ -1290,7 +1298,7 @@ export default function FleetPage() {
                               type="text"
                               value={r.tag_veiculo}
                               onChange={(e) => updateRule(idx, "tag_veiculo", e.target.value)}
-                              placeholder="Ex: Lisboa, Pequeno..."
+                              placeholder="Ex: PESADO, CARRINHA_01..."
                               className="bg-transparent border-none outline-none text-zinc-100 font-bold text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>
@@ -1299,8 +1307,8 @@ export default function FleetPage() {
                               type="text"
                               value={r.tag_entrega}
                               onChange={(e) => updateRule(idx, "tag_entrega", e.target.value)}
-                              placeholder="Ex: Lisboa, Centro..."
-                              className="bg-transparent border-none outline-none text-zinc-200 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                              placeholder="Ex: CP:1100..1299, CP:27*, FRIO..."
+                              className="bg-transparent border-none outline-none text-zinc-200 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full font-mono"
                             />
                           </td>
                           <td className="py-1 px-2 text-center border-r border-zinc-800">
@@ -1320,7 +1328,7 @@ export default function FleetPage() {
                               type="text"
                               value={r.descricao}
                               onChange={(e) => updateRule(idx, "descricao", e.target.value)}
-                              placeholder="Ex: Restrições de acesso ou circulação."
+                              placeholder="Ex: Pesados proibidos na Baixa ou centro histórico."
                               className="bg-transparent border-none outline-none text-zinc-400 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             />
                           </td>

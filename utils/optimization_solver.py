@@ -62,6 +62,8 @@ class AdvancedRouteOptimizer:
         client_service_times: Optional[List[int]] = None,
         client_priorities: Optional[List[int]] = None,
         vehicle_returns_to_depot: Optional[List[bool]] = None,
+        client_cps: Optional[List[str]] = None,
+        vehicle_names: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         params = optimization_params or {}
         time_limit = float(params.get("time_limit_seconds") or params.get("time_limit") or 25.0)
@@ -94,7 +96,9 @@ class AdvancedRouteOptimizer:
             client_priorities=client_priorities,
             balance_load=balance_load,
             strategy=strategy,
-            vehicle_returns_to_depot=vehicle_returns_to_depot
+            vehicle_returns_to_depot=vehicle_returns_to_depot,
+            client_cps=client_cps,
+            vehicle_names=vehicle_names
         )
 
         if not initial_solution.get("routes"):
@@ -122,7 +126,9 @@ class AdvancedRouteOptimizer:
             client_service_times=client_service_times,
             respect_time_windows=respect_tw,
             balance_load=balance_load,
-            vehicle_returns_to_depot=vehicle_returns_to_depot
+            vehicle_returns_to_depot=vehicle_returns_to_depot,
+            client_cps=client_cps,
+            vehicle_names=vehicle_names
         )
 
         return squeezed_solution
@@ -152,7 +158,9 @@ class AdvancedRouteOptimizer:
         client_priorities=None,
         balance_load: bool = False,
         strategy: str = "clusters",
-        vehicle_returns_to_depot: Optional[List[bool]] = None
+        vehicle_returns_to_depot: Optional[List[bool]] = None,
+        client_cps: Optional[List[str]] = None,
+        vehicle_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         num_vehicles = len(vehicle_capacities)
         num_nodes = len(distance_matrix)
@@ -352,18 +360,20 @@ class AdvancedRouteOptimizer:
             if index == -1:
                 continue
             c_rules = client_rules[node] if client_rules and node < len(client_rules) else ""
+            c_cp = client_cps[node] if client_cps and node < len(client_cps) else ""
             c_wh = str(client_warehouses[node] if client_warehouses and node < len(client_warehouses) else "").strip().lower()
 
             allowed_vehicles = []
             for v in range(num_vehicles):
                 v_rules = vehicle_rules[v] if vehicle_rules and v < len(vehicle_rules) else ""
+                v_name = vehicle_names[v] if vehicle_names and v < len(vehicle_names) else ""
                 v_wh = str(vehicle_warehouses[v] if vehicle_warehouses and v < len(vehicle_warehouses) else "").strip().lower()
 
                 if num_warehouses > 1 and c_wh and v_wh and c_wh not in ["armazém principal", "armazem principal", "n/a", "none", ""]:
                     if c_wh != v_wh and c_wh not in v_wh and v_wh not in c_wh:
                         continue
 
-                if is_vehicle_compatible(v_rules, c_rules, rules_matrix):
+                if is_vehicle_compatible(v_rules, c_rules, rules_matrix, delivery_cp=c_cp, vehicle_name=v_name):
                     allowed_vehicles.append(v)
 
             if allowed_vehicles and len(allowed_vehicles) < num_vehicles:
@@ -438,7 +448,9 @@ class AdvancedRouteOptimizer:
         client_service_times: Optional[List[int]],
         respect_time_windows: bool = True,
         balance_load: bool = False,
-        vehicle_returns_to_depot: Optional[List[bool]] = None
+        vehicle_returns_to_depot: Optional[List[bool]] = None,
+        client_cps: Optional[List[str]] = None,
+        vehicle_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Multi-Pass Route Squeeze & Pairwise Fusion Engine:
@@ -459,6 +471,7 @@ class AdvancedRouteOptimizer:
             v_end = vehicle_end_times[v_idx] if vehicle_end_times else 1080
             v_r = vehicle_rules[v_idx] if vehicle_rules else ""
             v_wh = str(vehicle_warehouses[v_idx] if vehicle_warehouses else "").strip().lower()
+            v_name = vehicle_names[v_idx] if vehicle_names and v_idx < len(vehicle_names) else ""
 
             if len(stop_nodes) > v_max_s:
                 return False, 0.0
@@ -478,11 +491,12 @@ class AdvancedRouteOptimizer:
 
             for n in stop_nodes:
                 c_r = client_rules[n] if client_rules and n < len(client_rules) else ""
+                c_cp = client_cps[n] if client_cps and n < len(client_cps) else ""
                 c_wh = str(client_warehouses[n] if client_warehouses and n < len(client_warehouses) else "").strip().lower()
                 if num_warehouses > 1 and c_wh and v_wh and c_wh not in ["armazém principal", "armazem principal", "n/a", "none", ""]:
                     if c_wh != v_wh and c_wh not in v_wh and v_wh not in c_wh:
                         return False, 0.0
-                if not is_vehicle_compatible(v_r, c_r, rules_matrix):
+                if not is_vehicle_compatible(v_r, c_r, rules_matrix, delivery_cp=c_cp, vehicle_name=v_name):
                     return False, 0.0
 
                 d = distance_matrix[p_node][n] * ROAD_FACTOR

@@ -632,6 +632,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             
         client_warehouses = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Armazem"].fillna("")) if "Armazem" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
         client_rules = ["" for _ in range(num_warehouses)] + (list(deliveries_df["Regras"].fillna("")) if "Regras" in deliveries_df.columns else ["" for _ in range(len(deliveries_df))])
+        cp_col_name = "CP" if "CP" in deliveries_df.columns else "Codigo_Postal" if "Codigo_Postal" in deliveries_df.columns else None
+        client_cps = ["" for _ in range(num_warehouses)] + (list(deliveries_df[cp_col_name].fillna("").astype(str)) if cp_col_name else ["" for _ in range(len(deliveries_df))])
         vehicle_rules = [str(fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {})).get("regras", "")) for v_name in vehicle_names]
         vehicle_max_stops = [int(fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {})).get("max_entregas", 30) or 30) for v_name in vehicle_names]
         vehicle_returns_to_depot = []
@@ -665,7 +667,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_max_stops=vehicle_max_stops,
             client_service_times=client_service_times,
             client_priorities=client_priorities,
-            vehicle_returns_to_depot=vehicle_returns_to_depot
+            vehicle_returns_to_depot=vehicle_returns_to_depot,
+            client_cps=client_cps,
+            vehicle_names=vehicle_names
         )
         
         # 6. Convert solver output to routes list
@@ -2011,7 +2015,10 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         
         rg_c = "Regras" if "Regras" in subset_df.columns else "regras" if "regras" in subset_df.columns else None
         client_r = ["" for _ in range(num_warehouses)] + (list(subset_df[rg_c].fillna("").astype(str)) if rg_c else ["" for _ in range(len(subset_df))])
+        cp_c = "CP" if "CP" in subset_df.columns else "cp" if "cp" in subset_df.columns else "Codigo_Postal" if "Codigo_Postal" in subset_df.columns else None
+        client_cps = ["" for _ in range(num_warehouses)] + (list(subset_df[cp_c].fillna("").astype(str)) if cp_c else ["" for _ in range(len(subset_df))])
         v_r = [str(fleet_dict[v].get("regras", "")) for v in target_vehicles]
+        rules_mat = state_dict.get("rules_matrix", [])
 
         v_returns = []
         for v in target_vehicles:
@@ -2035,11 +2042,13 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
             locations=locations,
             client_rules=client_r,
             vehicle_rules=v_r,
-            rules_matrix=[],
+            rules_matrix=rules_mat,
             vehicle_max_stops=v_max_stops,
             client_service_times=service_times,
             optimization_params={"time_limit_seconds": 5, "respect_time_windows": req.respect_time_windows},
-            vehicle_returns_to_depot=v_returns
+            vehicle_returns_to_depot=v_returns,
+            client_cps=client_cps,
+            vehicle_names=target_vehicles
         )
 
         assigned_subset_nodes = set()

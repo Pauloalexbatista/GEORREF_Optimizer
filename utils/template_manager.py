@@ -151,7 +151,9 @@ def build_sheet_4_regras(wb):
     apply_sheet_headers_tiered(ws, headers_spec)
     data = [
         ["PEQUENO", "SIM", "PEQUENO", "Veículo pequeno acede a centros históricos e ruas estreitas"],
-        ["ALARGADO", "NAO", "PEQUENO", "Veículo de longo curso proibido em ruas estreitas"]
+        ["ALARGADO", "NAO", "PEQUENO", "Veículo de longo curso proibido em ruas estreitas"],
+        ["PESADO", "NAO", "CP:1100..1299", "Veículos pesados proibidos no centro histórico (Baixa/Chiado)"],
+        ["CARRINHA_01", "SIM", "CP:1000..1999", "Viatura dedicada à zona postal de Lisboa (1000 a 1999)"]
     ]
     for r_idx, row_vals in enumerate(data, start=2):
         for c_idx, val in enumerate(row_vals, start=1):
