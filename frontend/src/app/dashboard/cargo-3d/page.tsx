@@ -8,6 +8,8 @@ import * as THREE from "three";
 import {
   calculateCargoLoadingPlan,
   estimateVehicleDimensions,
+  normalizeVehicleVolume,
+  normalizeStopVolume,
   CargoBox,
   VehicleContainerDimensions,
 } from "@/utils/cargoPacking";
@@ -72,17 +74,28 @@ export default function Cargo3DPage() {
           return {
             vehicle: rKey,
             veiculo: rKey,
-            max_volume: vCfg?.capacidade_vol || 14,
+            max_volume: normalizeVehicleVolume(vCfg?.capacidade_vol || 14),
             max_weight: vCfg?.capacidade_kg || 1500,
-            stops: stops.sort((a, b) => (a.Ordem || 0) - (b.Ordem || 0)).map((s, idx) => ({
-              id: s.id || s.ID_Original || idx,
-              client_name: s.Nome_Cliente || s.Cliente || `Cliente ${s.Ordem || idx + 1}`,
-              address: `${s.Morada || ""} ${s.CP || ""} ${s.Localidade || ""}`.trim(),
-              seq: s.Ordem || idx + 1,
-              weight: Number(s.Peso_KG) || 15,
-              volume: Number(s.Volume_m3) || 0.15,
-              packages: Math.max(1, Math.round((Number(s.Volume_m3) || 0.15) / 0.1) || 1),
-            })),
+            stops: stops.sort((a, b) => (a.Ordem || 0) - (b.Ordem || 0)).map((s, idx) => {
+              const rawVol = Number(s.Volume_m3 || s.volume_m3 || s.volume || 0);
+              const cleanVol = normalizeStopVolume(rawVol);
+              const rawWeight = Number(s.Peso_KG || s.peso_kg || s.peso || 0);
+              const cleanWeight = rawWeight > 0 ? rawWeight : 15;
+              const rawPackages = Number(s.Volumes || s.bultos || s.volumes || 0);
+              const cleanPackages = rawPackages > 0 && rawPackages <= 20
+                ? rawPackages
+                : Math.max(1, Math.min(10, Math.round(cleanVol / 0.08) || 1));
+
+              return {
+                id: s.id || s.ID_Original || idx,
+                client_name: s.Nome_Cliente || s.Cliente || `Cliente ${s.Ordem || idx + 1}`,
+                address: `${s.Morada || ""} ${s.CP || ""} ${s.Localidade || ""}`.trim(),
+                seq: s.Ordem || idx + 1,
+                weight: cleanWeight,
+                volume: cleanVol,
+                packages: cleanPackages,
+              };
+            }),
           };
         });
 
@@ -176,13 +189,16 @@ export default function Cargo3DPage() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x090d16);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.setSize(width, height);
+    renderer.setSize(width, height, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambientLight);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x1e293b, 0.8);
+    scene.add(hemiLight);
 
     const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight1.position.set(10, 15, 10);
@@ -199,7 +215,7 @@ export default function Cargo3DPage() {
 
     const target = new THREE.Vector3(0, vehicleConfig.height / 2, 0);
     const spherical = {
-      radius: Math.max(vehicleConfig.length * 1.8, 6.5),
+      radius: Math.max(vehicleConfig.length * 1.6, vehicleConfig.height * 2.2, 5.5),
       theta: Math.PI / 4,
       phi: Math.PI / 3,
     };
@@ -236,18 +252,30 @@ export default function Cargo3DPage() {
       threeStateRef.current.animationFrameId = animId;
     }
 
-    const handleResize = () => {
-      if (!canvas) return;
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+    const updateSize = () => {
+      if (!canvas || !threeStateRef.current) return;
+      const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 800;
+      const h = canvas.clientHeight || canvas.parentElement?.clientHeight || 600;
+      if (w > 0 && h > 0) {
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h, false);
+      }
     };
-    window.addEventListener("resize", handleResize);
+    updateSize();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && canvas.parentElement) {
+      resizeObserver = new ResizeObserver(() => {
+        updateSize();
+      });
+      resizeObserver.observe(canvas.parentElement);
+    }
+    window.addEventListener("resize", updateSize);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", updateSize);
+      resizeObserver?.disconnect();
       cancelAnimationFrame(animId);
       renderer.dispose();
       threeStateRef.current = null;

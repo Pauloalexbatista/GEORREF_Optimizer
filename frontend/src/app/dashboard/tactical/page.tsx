@@ -8,6 +8,7 @@ import AgentCopilotModal from "@/components/AgentCopilotModal";
 import ReoptimizeModal from "@/components/ReoptimizeModal";
 import BigPictureModal, { computeBigPictureAnalytics } from "@/components/BigPictureModal";
 import CargoLoading3DModal from "@/components/CargoLoading3DModal";
+import { normalizeVehicleVolume, normalizeStopVolume } from "@/utils/cargoPacking";
 
 import { useProjects } from "@/context/ProjectContext";
 import { apiRequest, api } from "@/utils/api";
@@ -990,17 +991,29 @@ export default function TacticalPage() {
         return {
           vehicle: rKey,
           veiculo: rKey,
-          max_volume: vCfg?.capacidade_vol || 14,
+          max_volume: normalizeVehicleVolume(vCfg?.capacidade_vol || 14),
           max_weight: vCfg?.capacidade_kg || 1500,
-          stops: stops.map((s, idx) => ({
-            id: s.id || s.ID_Original || idx,
-            client_name: s.Nome_Cliente || s.Cliente || `Cliente ${s.Ordem || idx + 1}`,
-            address: `${s.Morada || ""} ${s.CP || ""} ${s.Localidade || ""}`.trim(),
-            seq: s.Ordem || idx + 1,
-            weight: Number(s.Peso_KG) || 15,
-            volume: Number(s.Volume_m3) || 0.15,
-            packages: Math.max(1, Math.round((Number(s.Volume_m3) || 0.15) / 0.1) || 1),
-          })),
+          stops: stops.map((s, idx) => {
+            const anyS = s as any;
+            const rawVol = Number(s.Volume_m3 || anyS.volume_m3 || anyS.volume || 0);
+            const cleanVol = normalizeStopVolume(rawVol);
+            const rawWeight = Number(s.Peso_KG || anyS.peso_kg || anyS.peso || 0);
+            const cleanWeight = rawWeight > 0 ? rawWeight : 15;
+            const rawPackages = Number(anyS.Volumes || anyS.bultos || anyS.volumes || 0);
+            const cleanPackages = rawPackages > 0 && rawPackages <= 20
+              ? rawPackages
+              : Math.max(1, Math.min(10, Math.round(cleanVol / 0.08) || 1));
+
+            return {
+              id: (s as any).id || s.ID_Original || idx,
+              client_name: s.Nome_Cliente || (s as any).Cliente || `Cliente ${s.Ordem || idx + 1}`,
+              address: `${s.Morada || ""} ${s.CP || ""} ${s.Localidade || ""}`.trim(),
+              seq: s.Ordem || idx + 1,
+              weight: cleanWeight,
+              volume: cleanVol,
+              packages: cleanPackages,
+            };
+          }),
         };
       });
   }, [groupedRoutes, vehicleMap]);

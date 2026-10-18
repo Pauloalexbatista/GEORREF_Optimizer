@@ -136,14 +136,17 @@ export default function CargoLoading3DModal({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x090d16); // Fundo escuro executivo
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.setSize(width, height);
+    renderer.setSize(width, height, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     // Luzes
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambientLight);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x1e293b, 0.8);
+    scene.add(hemiLight);
 
     const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight1.position.set(10, 15, 10);
@@ -162,7 +165,7 @@ export default function CargoLoading3DModal({
     // Controlo de câmara esférica (Orbit simples e suave)
     const target = new THREE.Vector3(0, vehicleConfig.height / 2, 0);
     const spherical = {
-      radius: Math.max(vehicleConfig.length * 1.8, 6.5),
+      radius: Math.max(vehicleConfig.length * 1.6, vehicleConfig.height * 2.2, 5.5),
       theta: Math.PI / 4, // 45 graus
       phi: Math.PI / 3,   // 60 graus de elevação
     };
@@ -201,19 +204,31 @@ export default function CargoLoading3DModal({
       threeStateRef.current.animationFrameId = animId;
     }
 
-    // Redimensionamento
-    const handleResize = () => {
-      if (!canvas) return;
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+    // Redimensionamento com ResizeObserver
+    const updateSize = () => {
+      if (!canvas || !threeStateRef.current) return;
+      const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 600;
+      const h = canvas.clientHeight || canvas.parentElement?.clientHeight || 500;
+      if (w > 0 && h > 0) {
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h, false);
+      }
     };
-    window.addEventListener("resize", handleResize);
+    updateSize();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && canvas.parentElement) {
+      resizeObserver = new ResizeObserver(() => {
+        updateSize();
+      });
+      resizeObserver.observe(canvas.parentElement);
+    }
+    window.addEventListener("resize", updateSize);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", updateSize);
+      resizeObserver?.disconnect();
       cancelAnimationFrame(animId);
       renderer.dispose();
       threeStateRef.current = null;

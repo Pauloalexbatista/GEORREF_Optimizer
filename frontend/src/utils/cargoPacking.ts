@@ -62,18 +62,41 @@ const PALETTE = [
 ];
 
 /**
+ * Normaliza o volume de uma viatura.
+ * Se o valor for superior a 120, o utilizador ou ficheiro inseriu o volume em Litros ou dm³ (ex: 6000 L = 6.0 m³).
+ * O maior semi-reboque rodoviário TIR tem cerca de 90 m³. Logo, qualquer valor > 120 está em Litros.
+ */
+export function normalizeVehicleVolume(val: number): number {
+  if (!val || val <= 0) return 12;
+  if (val > 120) return Number((val / 1000).toFixed(2));
+  return Number(val.toFixed(2));
+}
+
+/**
+ * Normaliza o volume de uma paragem/entrega individual.
+ * Uma entrega de carrinha/camião raramente ultrapassa 20 m³.
+ * Se o volume for superior a 20, está garantidamente em Litros ou dm³ (ex: 242 L = 0.242 m³).
+ */
+export function normalizeStopVolume(val: number): number {
+  if (!val || val <= 0) return 0.15;
+  if (val > 20) return Number((val / 1000).toFixed(3));
+  return Number(val.toFixed(3));
+}
+
+/**
  * Estima as dimensões realistas do baú da viatura com base no volume máximo registado.
  * Mantém rácios de carrinha/furgão de mercadorias típico (ex: Renault Master, Mercedes Sprinter, Iveco Daily).
  */
 export function estimateVehicleDimensions(volumeM3: number, maxWeightKg: number): VehicleContainerDimensions {
-  const vol = Math.max(volumeM3 > 0 ? volumeM3 : 12, 6);
+  const normVol = normalizeVehicleVolume(volumeM3);
+  const vol = Math.max(normVol > 0 ? normVol : 12, 4);
   
-  // Altura útil interior típica de furgão: entre 1.80m e 2.10m
-  const height = Math.min(Math.max(1.75, Math.pow(vol * 0.15, 0.4)), 2.15);
-  // Largura útil interior: 1.80m a 2.10m
-  const width = Math.min(Math.max(1.75, Math.pow(vol * 0.15, 0.4)), 2.05);
+  // Altura útil interior típica de furgão: entre 1.65m e 2.20m
+  const height = Math.min(Math.max(1.65, Math.pow(vol * 0.12, 0.38)), 2.20);
+  // Largura útil interior: 1.60m a 2.10m
+  const width = Math.min(Math.max(1.60, Math.pow(vol * 0.12, 0.38)), 2.10);
   // Comprimento resultante do volume restante com folga de embalamento
-  const length = Math.max(2.4, (vol / (width * height)));
+  const length = Math.max(2.2, Number((vol / (width * height)).toFixed(2)));
 
   return {
     length: Number(length.toFixed(2)),
@@ -96,19 +119,32 @@ export function calculateCargoLoadingPlan(
   // Filtrar apenas paragens reais (excluir armazém de partida e regresso)
   const validStops = stops
     .filter(s => {
-      const name = (s.client_name || s.Nome || "").toUpperCase();
+      const name = (s.client_name || s.Nome || s.Cliente || "").toUpperCase();
       return !name.includes("ARMAZÉM") && !name.includes("ARMAZEM") && !name.includes("DEPÓSITO");
     })
     .map((s, index) => {
       const seq = s.seq || s.sequence || (index + 1);
-      const weight = Number(s.weight || s.peso || 15);
-      const vol = Number(s.volume || s.vol || 0.15);
-      const packages = Math.max(1, Number(s.packages || s.bultos || 1));
+      const rawWeight = Number(s.weight || s.peso || s.Peso_KG || 15);
+      const rawVol = Number(s.volume || s.vol || s.Volume_m3 || 0.15);
+      const cleanWeight = rawWeight > 0 ? rawWeight : 15;
+      const cleanVol = normalizeStopVolume(rawVol);
+      
+      const rawPackages = Number(s.packages || s.bultos || s.volumes || s.Volumes || 0);
+      let packages = 1;
+      if (rawPackages > 0 && rawPackages <= 20) {
+        packages = Math.round(rawPackages);
+      } else {
+        // Estima caixas modulares logísticas (uma caixa média de ~0.06m³ a 0.12m³)
+        packages = Math.max(1, Math.min(10, Math.round(cleanVol / 0.08) || 1));
+      }
+      // Teto máximo de segurança por paragem para garantir 60 FPS no Three.js
+      packages = Math.min(packages, 12);
+
       return {
         ...s,
         cleanSeq: seq,
-        cleanWeight: weight > 0 ? weight : 15,
-        cleanVol: vol > 0 ? vol : 0.15,
+        cleanWeight,
+        cleanVol,
         cleanPackages: packages,
       };
     });
@@ -151,15 +187,15 @@ export function calculateCargoLoadingPlan(
       // Estima dimensões tridimensionais proporcionais ao volume unitário
       // Rácio modular tipo caixa de cartão logística (ex: 50x40x35cm)
       const baseSide = Math.pow(unitVol, 1 / 3);
-      const l = Number(Math.max(0.25, Math.min(1.0, baseSide * 1.15)).toFixed(2));
-      const w = Number(Math.max(0.25, Math.min(0.9, baseSide * 0.95)).toFixed(2));
-      const h = Number(Math.max(0.20, Math.min(1.1, unitVol / (l * w))).toFixed(2));
+      const l = Number(Math.max(0.20, Math.min(0.9, baseSide * 1.15)).toFixed(2));
+      const w = Number(Math.max(0.20, Math.min(0.8, baseSide * 0.95)).toFixed(2));
+      const h = Number(Math.max(0.18, Math.min(0.9, unitVol / (l * w))).toFixed(2));
 
       rawBoxes.push({
         stopId: stop.id || stop.cliente_id || `stop-${stop.cleanSeq}`,
         stopSeq: stop.cleanSeq,
-        clientName: stop.client_name || stop.Nome || `Cliente ${stop.cleanSeq}`,
-        address: stop.address || stop.morada || "",
+        clientName: stop.client_name || stop.Nome || stop.Cliente || `Cliente ${stop.cleanSeq}`,
+        address: stop.address || stop.morada || stop.Morada || "",
         boxIndex: b,
         totalBoxesForStop: nPackages,
         weightKg: Number(unitWeight.toFixed(1)),
