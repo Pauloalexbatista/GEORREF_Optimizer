@@ -55,6 +55,16 @@ export default function DetachedMapPage() {
   const [bigPictureModalOpen, setBigPictureModalOpen] = useState(false);
   const [selectedBigPictureZone, setSelectedBigPictureZone] = useState<string>("all");
   const [isMounted, setIsMounted] = useState(false);
+  const [appAlert, setAppAlert] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: "success" | "warning" | "error" | "info";
+  } | null>(null);
+
+  const showAlert = (title: string, message: string, type: "success" | "warning" | "error" | "info" = "info") => {
+    setAppAlert({ isOpen: true, title, message, type });
+  };
 
   const bigPictureAnalytics = useMemo(() => {
     return computeBigPictureAnalytics(clients, fleet);
@@ -71,7 +81,7 @@ export default function DetachedMapPage() {
       ? options.selectedRoutes 
       : modalSelectedRoutes;
     if (!projId || !targetRoutes || targetRoutes.length === 0) {
-      alert("Nenhum projeto ou rotas selecionadas.");
+      showAlert("Aviso", "Nenhum projeto ou rotas selecionadas.", "warning");
       return;
     }
     setStatusMsg("A re-otimizar rotas selecionadas...");
@@ -104,7 +114,7 @@ export default function DetachedMapPage() {
         } catch (e) {}
       }
     } catch (err: any) {
-      alert("Erro ao re-otimizar: " + (err.message || "Erro desconhecido"));
+      showAlert("Erro", "Erro ao re-otimizar: " + (err.message || "Erro desconhecido"), "error");
     }
   };
 
@@ -520,7 +530,7 @@ export default function DetachedMapPage() {
       }
     } catch (err: any) {
       console.error("Erro ao gravar georreferenciação:", err);
-      alert(`Erro ao guardar georreferenciação: ${err.message || "Erro desconhecido"}`);
+      showAlert("Erro", `Erro ao guardar georreferenciação: ${err.message || "Erro desconhecido"}`, "error");
     }
   };
 
@@ -683,6 +693,52 @@ export default function DetachedMapPage() {
             setBigPictureModalOpen(false);
           }}
         />
+
+        {/* Modal de Mensagens do Sistema (Substitui os alerts nativos do browser) */}
+        {appAlert && appAlert.isOpen && (
+          <div className="fixed inset-0 z-[100000] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-zinc-900 border border-zinc-700/90 rounded-2xl p-6 shadow-2xl max-w-md w-full text-zinc-100 flex flex-col space-y-4">
+              <div className="flex items-start space-x-3.5">
+                <div className={`p-2.5 rounded-xl border shrink-0 text-xl ${
+                  appAlert.type === "success"
+                    ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                    : appAlert.type === "warning"
+                    ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                    : appAlert.type === "error"
+                    ? "bg-rose-500/15 border-rose-500/30 text-rose-400"
+                    : "bg-blue-500/15 border-blue-500/30 text-blue-400"
+                }`}>
+                  {appAlert.type === "success" && "🚀"}
+                  {appAlert.type === "warning" && "⚠️"}
+                  {appAlert.type === "error" && "❌"}
+                  {appAlert.type === "info" && "ℹ️"}
+                </div>
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <h3 className="text-base font-bold text-white tracking-wide">
+                    {appAlert.title}
+                  </h3>
+                  <p className="text-xs text-zinc-300 mt-1.5 leading-relaxed whitespace-pre-line">
+                    {appAlert.message}
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end pt-2 border-t border-zinc-800">
+                <button
+                  onClick={() => setAppAlert(null)}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold shadow-lg transition-all cursor-pointer ${
+                    appAlert.type === "success"
+                      ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
+                      : appAlert.type === "error"
+                      ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30"
+                  }`}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

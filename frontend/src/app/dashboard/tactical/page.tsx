@@ -335,6 +335,16 @@ export default function TacticalPage() {
   const [selectedCargoRouteIdx, setSelectedCargoRouteIdx] = useState(0);
   const [draggedStopKey, setDraggedStopKey] = useState<string | null>(null);
   const [dragOverStopKey, setDragOverStopKey] = useState<string | null>(null);
+  const [appAlert, setAppAlert] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: "success" | "warning" | "error" | "info";
+  } | null>(null);
+
+  const showAlert = (title: string, message: string, type: "success" | "warning" | "error" | "info" = "info") => {
+    setAppAlert({ isOpen: true, title, message, type });
+  };
 
   const toggleRouteSelection = (routeName: string) => {
     setSelectedRouteNames((prev) =>
@@ -354,11 +364,11 @@ export default function TacticalPage() {
       : selectedRouteNames;
 
     if (!projId) {
-      alert("Nenhum projeto ativo selecionado. Por favor recarregue a página.");
+      showAlert("Aviso", "Nenhum projeto ativo selecionado. Por favor recarregue a página.", "warning");
       return;
     }
     if (!targetRoutes || targetRoutes.length === 0) {
-      alert("Selecione pelo menos 2 rotas para re-otimizar.");
+      showAlert("Aviso", "Selecione pelo menos 2 rotas para re-otimizar.", "warning");
       return;
     }
 
@@ -386,10 +396,10 @@ export default function TacticalPage() {
         setTimeout(() => setStatusMsg(""), 5000);
         setSelectedRouteNames([]);
       } else {
-        alert("O solver não devolveu rotas atualizadas.");
+        showAlert("Erro", "O solver não devolveu rotas atualizadas.", "error");
       }
     } catch (err: any) {
-      alert("Erro ao re-otimizar rotas selecionadas: " + (err.message || "Erro desconhecido"));
+      showAlert("Erro", "Erro ao re-otimizar rotas selecionadas: " + (err.message || "Erro desconhecido"), "error");
       throw err;
     } finally {
       setActionLoading(null);
@@ -748,10 +758,10 @@ export default function TacticalPage() {
         ? `Otimização concluída em ${timeDisplay}: ${assignedCount} paragens atribuídas à frota. ${pendingCount} encomendas ficaram na rota "Por Distribuir" para gestão manual.`
         : `Otimização concluída com sucesso em ${timeDisplay}: Todas as ${assignedCount} paragens foram distribuídas pelas ${numVehicles} viaturas.`;
 
-      alert(alertMsg);
+      showAlert("Otimização Concluída", alertMsg, pendingCount > 0 ? "warning" : "success");
     } catch (e: any) {
       console.error("Solver error:", e);
-      alert(e.message || "Erro ao calcular otimização de rotas.");
+      showAlert("Erro", e.message || "Erro ao calcular otimização de rotas.", "error");
     } finally {
       setSolving(false);
     }
@@ -771,9 +781,9 @@ export default function TacticalPage() {
       }));
       setRoutes(updatedRoutes);
       broadcastUpdate(updatedRoutes, vehicles, warehouses, fleetList);
-      alert("Sequência de todas as rotas otimizada com sucesso!");
+      showAlert("Sucesso", "Sequência de todas as rotas otimizada com sucesso!", "success");
     } catch (e: any) {
-      alert("Erro ao otimizar sequências: " + (e.message || "Erro desconhecido"));
+      showAlert("Erro", "Erro ao otimizar sequências: " + (e.message || "Erro desconhecido"), "error");
     } finally {
       setReorderingAll(false);
     }
@@ -798,7 +808,7 @@ export default function TacticalPage() {
       setRoutes(updatedRoutes);
       broadcastUpdate(updatedRoutes, vehicles, warehouses, fleetList);
     } catch (e: any) {
-      alert("Erro ao ordenar trajeto: " + (e.message || "Erro desconhecido"));
+      showAlert("Erro", "Erro ao ordenar trajeto: " + (e.message || "Erro desconhecido"), "error");
     } finally {
       setActionLoading(null);
     }
@@ -830,7 +840,7 @@ export default function TacticalPage() {
       setRoutes(updated);
       broadcastUpdate(updated, vehicles, warehouses);
     } catch (err: any) {
-      alert("Erro ao transferir rota: " + (err.message || "Erro"));
+      showAlert("Erro", "Erro ao transferir rota: " + (err.message || "Erro"), "error");
     } finally {
       setActionLoading(null);
     }
@@ -859,7 +869,7 @@ export default function TacticalPage() {
       setRoutes(updated);
       broadcastUpdate(updated, vehicles, warehouses);
     } catch (err: any) {
-      alert("Erro ao reatribuir: " + (err.message || "Erro"));
+      showAlert("Erro", "Erro ao reatribuir: " + (err.message || "Erro"), "error");
     } finally {
       setActionLoading(null);
     }
@@ -929,7 +939,7 @@ export default function TacticalPage() {
     } catch (err: any) {
       setRoutes(prevRoutes);
       broadcastUpdate(prevRoutes, vehicles, warehouses);
-      alert("Erro ao reordenar: " + (err.message || "Erro"));
+      showAlert("Erro", "Erro ao reordenar: " + (err.message || "Erro"), "error");
     } finally {
       setActionLoading(null);
     }
@@ -939,7 +949,7 @@ export default function TacticalPage() {
     try {
       await api.download(endpoint, filename);
     } catch (e: any) {
-      alert(e.message || "Erro ao descarregar");
+      showAlert("Erro", e.message || "Erro ao descarregar", "error");
     }
   };
 
@@ -2782,6 +2792,52 @@ export default function TacticalPage() {
               <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
               <h4 className="font-bold text-sm text-white">A Re-Otimizar Rotas Selecionadas</h4>
               <p className="text-xs text-zinc-400">O solver OR-Tools está a calcular o melhor trajeto conjunto e a re-equilibrar as entregas...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Mensagens do Sistema (Substitui os alerts nativos do browser) */}
+        {appAlert && appAlert.isOpen && (
+          <div className="fixed inset-0 z-[100000] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-zinc-900 border border-zinc-700/90 rounded-2xl p-6 shadow-2xl max-w-md w-full text-zinc-100 flex flex-col space-y-4">
+              <div className="flex items-start space-x-3.5">
+                <div className={`p-2.5 rounded-xl border shrink-0 text-xl ${
+                  appAlert.type === "success"
+                    ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                    : appAlert.type === "warning"
+                    ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                    : appAlert.type === "error"
+                    ? "bg-rose-500/15 border-rose-500/30 text-rose-400"
+                    : "bg-blue-500/15 border-blue-500/30 text-blue-400"
+                }`}>
+                  {appAlert.type === "success" && "🚀"}
+                  {appAlert.type === "warning" && "⚠️"}
+                  {appAlert.type === "error" && "❌"}
+                  {appAlert.type === "info" && "ℹ️"}
+                </div>
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <h3 className="text-base font-bold text-white tracking-wide">
+                    {appAlert.title}
+                  </h3>
+                  <p className="text-xs text-zinc-300 mt-1.5 leading-relaxed whitespace-pre-line">
+                    {appAlert.message}
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end pt-2 border-t border-zinc-800">
+                <button
+                  onClick={() => setAppAlert(null)}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold shadow-lg transition-all cursor-pointer ${
+                    appAlert.type === "success"
+                      ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
+                      : appAlert.type === "error"
+                      ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30"
+                  }`}
+                >
+                  OK
+                </button>
+              </div>
             </div>
           </div>
         )}

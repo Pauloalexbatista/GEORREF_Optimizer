@@ -139,17 +139,33 @@ function routesMatch(r1?: string, r2?: string): boolean {
   return n1 === n2 || n1.includes(n2) || n2.includes(n1);
 }
 
-// Controller that centers map only once on initial mount/data load, avoiding resetting view on zoom/pan
-function MapInitialController({ coords }: { coords: [number, number] }) {
+// Controller that centers or fits map bounds on initial mount to the active distribution region
+function MapInitialController({
+  coords,
+  initialPoints,
+}: {
+  coords: [number, number];
+  initialPoints?: [number, number][];
+}) {
   const map = useMap();
   const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!initializedRef.current && coords[0] !== 0 && coords[1] !== 0) {
+    if (initializedRef.current) return;
+    const valid = (initialPoints || []).filter(p => p[0] !== 0 && p[1] !== 0);
+    if (valid.length > 0) {
+      try {
+        const bounds = L.latLngBounds(valid.map(p => L.latLng(p[0], p[1])));
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14, animate: false });
+        initializedRef.current = true;
+        return;
+      } catch (e) {}
+    }
+    if (coords[0] !== 0 && coords[1] !== 0) {
       map.setView(coords, map.getZoom() || 11);
       initializedRef.current = true;
     }
-  }, [coords, map]);
+  }, [coords, initialPoints, map]);
 
   return null;
 }
@@ -1009,12 +1025,87 @@ export default function MapComponent({
     setIsMounted(true);
   }, []);
 
-  const center: [number, number] = useMemo(() => {
-    if (warehouses && warehouses.length > 0 && warehouses[0].lat && warehouses[0].lon) {
-      return [warehouses[0].lat, warehouses[0].lon];
+  // Set of warehouses that currently have cargo / assigned routes or deliveries
+  const warehousesWithCargo = useMemo(() => {
+    const set = new Set<string>();
+    clients.forEach(c => {
+      const arm = (c.Armazem || (c as any).armazem || "").trim();
+      if (arm && arm !== "N/A" && arm !== "None") {
+        set.add(arm);
+      }
+    });
+    fleet.forEach(f => {
+      const fArm = (f.armazem || (f as any).Armazem || "").trim();
+      if (fArm && fArm !== "N/A" && clients.some(c => routesMatch(c.Rota, f.veiculo))) {
+        set.add(fArm);
+      }
+    });
+    return set;
+  }, [clients, fleet]);
+
+  // Identify the active warehouse that actually has cargo in this distribution
+  const activeWarehouse = useMemo(() => {
+    if (!warehouses || warehouses.length === 0) return null;
+
+    // 1. Match by warehouse name with cargo
+    for (const wh of warehouses) {
+      if (!wh.lat || !wh.lon) continue;
+      const whNameNorm = (wh.name || "").trim().toLowerCase();
+      for (const wCargo of warehousesWithCargo) {
+        const cNorm = wCargo.trim().toLowerCase();
+        if (cNorm === whNameNorm || whNameNorm.includes(cNorm) || cNorm.includes(whNameNorm)) {
+          return wh;
+        }
+      }
     }
-    return [38.6593, -9.1758]; // Default Lisboa / Alverca
-  }, [warehouses]);
+
+    // 2. Proximity to clients with coordinates (never pick an island if deliveries are on mainland or vice-versa!)
+    const validClients = clients.filter(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0);
+    if (validClients.length > 0) {
+      const avgLat = validClients.reduce((acc, c) => acc + Number(c.Latitude), 0) / validClients.length;
+      const avgLon = validClients.reduce((acc, c) => acc + Number(c.Longitude), 0) / validClients.length;
+      let closest = warehouses[0];
+      let minDist = Infinity;
+      warehouses.forEach(w => {
+        if (w.lat && w.lon) {
+          const dist = Math.hypot(w.lat - avgLat, w.lon - avgLon);
+          if (dist < minDist) {
+            minDist = dist;
+            closest = w;
+          }
+        }
+      });
+      if (closest && closest.lat && closest.lon) return closest;
+    }
+
+    return warehouses.find(w => w.lat && w.lon) || null;
+  }, [warehouses, warehousesWithCargo, clients]);
+
+  const center: [number, number] = useMemo(() => {
+    if (activeWarehouse && activeWarehouse.lat && activeWarehouse.lon) {
+      return [activeWarehouse.lat, activeWarehouse.lon];
+    }
+    const validClient = clients.find(c => Number(c.Latitude) !== 0 && Number(c.Longitude) !== 0);
+    if (validClient) {
+      return [Number(validClient.Latitude), Number(validClient.Longitude)];
+    }
+    return [38.841, -9.193]; // Default Loures / Grande Lisboa
+  }, [activeWarehouse, clients]);
+
+  const initialPoints = useMemo(() => {
+    const pts: [number, number][] = [];
+    if (activeWarehouse && activeWarehouse.lat && activeWarehouse.lon) {
+      pts.push([activeWarehouse.lat, activeWarehouse.lon]);
+    }
+    clients.forEach(c => {
+      const lat = Number(c.Latitude);
+      const lon = Number(c.Longitude);
+      if (lat !== 0 && lon !== 0 && !isNaN(lat) && !isNaN(lon)) {
+        pts.push([lat, lon]);
+      }
+    });
+    return pts;
+  }, [activeWarehouse, clients]);
 
   // Fetch real road geometries via OSRM for assigned routes
   useEffect(() => {
@@ -1130,21 +1221,6 @@ export default function MapComponent({
     return true;
   };
 
-  // Set of warehouses that currently have cargo / assigned routes
-  const warehousesWithCargo = useMemo(() => {
-    const set = new Set<string>();
-    clients.forEach(c => {
-      if (!isPendingRoute(c.Rota) && c.Armazem && c.Armazem !== "N/A") {
-        set.add(c.Armazem.trim());
-      }
-    });
-    fleet.forEach(f => {
-      if (f.armazem && f.armazem !== "N/A" && clients.some(c => routesMatch(c.Rota, f.veiculo))) {
-        set.add(f.armazem.trim());
-      }
-    });
-    return set;
-  }, [clients, fleet]);
 
   // Extract unique warehouses (Apenas os armazéns que têm carga por defeito)
   const warehouseOptions = useMemo(() => {
@@ -2299,18 +2375,31 @@ export default function MapComponent({
               : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           }
         />
-        <MapInitialController coords={center} />
+        <MapInitialController coords={center} initialPoints={initialPoints} />
         <MapBoundsFitter triggerKey={fitTrigger} points={visiblePoints} />
         <MapTracker setZoom={setZoomLevel} />
 
-        {/* Warehouses (Apenas armazéns com carga por defeito) */}
+        {/* Warehouses (Apenas armazéns com carga ativa nesta distribuição) */}
         {warehouses
           .filter(wh => {
-            if (statusFilter === "with_cargo" && warehousesWithCargo.size > 0) {
-              return warehousesWithCargo.has(wh.name);
-            }
+            if (!wh.lat || !wh.lon) return false;
+            // Se o utilizador filtrou um armazém específico no dropdown
             if (selectedWarehouse && selectedWarehouse !== "all") {
-              return wh.name === selectedWarehouse;
+              const selNorm = selectedWarehouse.trim().toLowerCase();
+              const whNorm = (wh.name || "").trim().toLowerCase();
+              return whNorm === selNorm || whNorm.includes(selNorm) || selNorm.includes(whNorm);
+            }
+            // Se há armazéns identificados com carga nesta distribuição, ignorar armazéns sem carga
+            if (warehousesWithCargo.size > 0) {
+              const whNameNorm = (wh.name || "").trim().toLowerCase();
+              return Array.from(warehousesWithCargo).some(wCargo => {
+                const cNorm = wCargo.trim().toLowerCase();
+                return cNorm === whNameNorm || whNameNorm.includes(cNorm) || cNorm.includes(whNameNorm);
+              });
+            }
+            // Se nenhum armazém tiver carga explícita, mostrar apenas o armazém ativo mais próximo dos clientes
+            if (activeWarehouse) {
+              return wh.name === activeWarehouse.name;
             }
             return true;
           })
