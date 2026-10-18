@@ -27,6 +27,8 @@ export default function CargoLoading3DModal({
   const [selectedRouteIdx, setSelectedRouteIdx] = useState(initialRouteIndex);
   const [viewOrder, setViewOrder] = useState<"lifo" | "delivery">("lifo");
   const [hoveredStopSeq, setHoveredStopSeq] = useState<number | null>(null);
+  const [selectedStopSeq, setSelectedStopSeq] = useState<number | null>(null);
+  const [focusMode, setFocusMode] = useState<"ghost" | "isolate">("ghost");
   const [tooltipInfo, setTooltipInfo] = useState<{
     visible: boolean;
     x: number;
@@ -355,25 +357,51 @@ export default function CargoLoading3DModal({
     });
   }, [vehicleConfig, cargoBoxes]);
 
-  // Atualização de Destaque / Iluminação (Hover Bidirecional)
+  // Atualização de Destaque / Iluminação (Hover Bidirecional ou Seleção)
+  const activeStopSeq = selectedStopSeq !== null ? selectedStopSeq : hoveredStopSeq;
+
   useEffect(() => {
     const state = threeStateRef.current;
     if (!state) return;
 
     state.boxMeshes.forEach(({ mesh, box, originalColor }) => {
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (hoveredStopSeq === box.stopSeq) {
-        // Destaque luminoso intenso
-        mat.emissive.setHex(0xffffff);
-        mat.emissiveIntensity = 0.55;
-        mesh.scale.set(1.03, 1.03, 1.03);
-      } else {
+      const isTarget = activeStopSeq === null || activeStopSeq === box.stopSeq;
+
+      if (activeStopSeq === null) {
+        mesh.visible = true;
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.depthWrite = true;
+        mat.color.copy(originalColor);
         mat.emissive.setHex(0x000000);
         mat.emissiveIntensity = 0;
         mesh.scale.set(1.0, 1.0, 1.0);
+      } else if (isTarget) {
+        mesh.visible = true;
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.depthWrite = true;
+        mat.color.copy(originalColor);
+        mat.emissive.setHex(0x38bdf8);
+        mat.emissiveIntensity = 0.65;
+        mesh.scale.set(1.03, 1.03, 1.03);
+      } else {
+        if (focusMode === "isolate") {
+          mesh.visible = false;
+        } else {
+          mesh.visible = true;
+          mat.transparent = true;
+          mat.opacity = 0.08;
+          mat.depthWrite = false;
+          mat.color.setHex(0x334155);
+          mat.emissive.setHex(0x000000);
+          mat.emissiveIntensity = 0;
+          mesh.scale.set(1.0, 1.0, 1.0);
+        }
       }
     });
-  }, [hoveredStopSeq]);
+  }, [activeStopSeq, focusMode]);
 
   // Eventos de Rato na Cena 3D: Rotação, Zoom e Raycasting
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -444,6 +472,30 @@ export default function CargoLoading3DModal({
   const handleMouseUp = () => {
     const state = threeStateRef.current;
     if (state) state.isDragging = false;
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    const state = threeStateRef.current;
+    if (!state || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, state.camera);
+    const intersects = raycaster.intersectObjects(
+      state.boxMeshes.map((b) => b.mesh)
+    );
+
+    if (intersects.length > 0) {
+      const hitMesh = intersects[0].object as THREE.Mesh;
+      const box = hitMesh.userData.box as CargoBox;
+      if (box) {
+        setSelectedStopSeq((prev) => (prev === box.stopSeq ? null : box.stopSeq));
+      }
+    }
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -607,35 +659,78 @@ export default function CargoLoading3DModal({
           
           {/* Painel Esquerdo: Lista de Entregas e Ordem de Carregamento */}
           <div className="lg:col-span-5 flex flex-col border-r border-zinc-800 bg-zinc-950/30 overflow-hidden">
-            <div className="flex items-center justify-between p-3 border-b border-zinc-800/80 bg-zinc-900/60">
-              <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
-                Sequência de Arrumação
-              </span>
-              <div className="flex space-x-1 bg-zinc-950 p-0.5 rounded-md border border-zinc-800 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setViewOrder("lifo")}
-                  className={`px-2 py-0.5 rounded font-medium transition-colors ${
-                    viewOrder === "lifo"
-                      ? "bg-indigo-600 text-white font-semibold"
-                      : "text-zinc-400 hover:text-zinc-200"
-                  }`}
-                  title="Ordem recomendada de carregamento no cais (Fundo até à Porta)"
-                >
-                  🚚 Ordem de Carga (LIFO)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewOrder("delivery")}
-                  className={`px-2 py-0.5 rounded font-medium transition-colors ${
-                    viewOrder === "delivery"
-                      ? "bg-indigo-600 text-white font-semibold"
-                      : "text-zinc-400 hover:text-zinc-200"
-                  }`}
-                  title="Ordem de descarga no cliente na estrada (1 -> N)"
-                >
-                  🏁 Ordem de Entrega
-                </button>
+            <div className="flex flex-col p-3 border-b border-zinc-800/80 bg-zinc-900/60 gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  Sequência de Arrumação
+                </span>
+                <div className="flex space-x-1 bg-zinc-950 p-0.5 rounded-md border border-zinc-800 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setViewOrder("lifo")}
+                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                      viewOrder === "lifo"
+                        ? "bg-indigo-600 text-white font-semibold"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                    title="Ordem recomendada de carregamento no cais (Fundo até à Porta)"
+                  >
+                    🚚 Carga (LIFO)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewOrder("delivery")}
+                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                      viewOrder === "delivery"
+                        ? "bg-indigo-600 text-white font-semibold"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                    title="Ordem de descarga no cliente na estrada (1 -> N)"
+                  >
+                    🏁 Entrega
+                  </button>
+                </div>
+              </div>
+
+              {/* Barra de Foco e Isolamento de Encomendas */}
+              <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-zinc-800/60">
+                <div className="flex items-center space-x-1">
+                  <span className="text-zinc-400 mr-1">Foco 3D:</span>
+                  <button
+                    type="button"
+                    onClick={() => setFocusMode("ghost")}
+                    className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                      focusMode === "ghost"
+                        ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 font-semibold"
+                        : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                    }`}
+                    title="Outros clientes ficam translúcidos / modo fantasma"
+                  >
+                    👻 Fantasma
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFocusMode("isolate")}
+                    className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                      focusMode === "isolate"
+                        ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/50 font-semibold"
+                        : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                    }`}
+                    title="Outros clientes ficam 100% invisíveis"
+                  >
+                    👁️ Isolar
+                  </button>
+                </div>
+
+                {selectedStopSeq !== null && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStopSeq(null)}
+                    className="text-amber-400 hover:text-amber-300 font-semibold text-[11px] transition-colors cursor-pointer bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20"
+                  >
+                    ✕ Ver Todos
+                  </button>
+                )}
               </div>
             </div>
 
@@ -646,31 +741,40 @@ export default function CargoLoading3DModal({
                   Sem paragens disponíveis nesta rota.
                 </div>
               ) : (
-                groupedStops.map((st, idx) => {
+                groupedStops.map((st) => {
                   const isHovered = hoveredStopSeq === st.seq;
+                  const isSelected = selectedStopSeq === st.seq;
                   return (
                     <div
                       key={st.seq}
+                      onClick={() => setSelectedStopSeq(isSelected ? null : st.seq)}
                       onMouseEnter={() => setHoveredStopSeq(st.seq)}
                       onMouseLeave={() => setHoveredStopSeq(null)}
-                      className={`pt-1.5 pb-1.5 px-2.5 rounded-lg transition-all cursor-pointer border ${
-                        isHovered
-                          ? "bg-indigo-950/60 border-indigo-500 shadow-md"
+                      className={`pt-2 pb-2 px-2.5 rounded-lg transition-all cursor-pointer border ${
+                        isSelected
+                          ? "bg-indigo-950/90 border-indigo-400 shadow-lg ring-2 ring-indigo-500/50"
+                          : isHovered
+                          ? "bg-zinc-850/80 border-zinc-600"
                           : "bg-zinc-900/50 hover:bg-zinc-850/60 border-zinc-800/50"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center space-x-2">
                           <span
-                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            className="w-3.5 h-3.5 rounded-full flex-shrink-0"
                             style={{ backgroundColor: st.color }}
                           />
                           <span className="font-mono text-xs font-bold text-white bg-zinc-800 px-1.5 py-0.2 rounded">
                             #{st.seq}
                           </span>
-                          <span className="text-xs font-semibold text-zinc-200 truncate max-w-[180px]">
+                          <span className="text-xs font-semibold text-zinc-200 truncate max-w-[170px]">
                             {st.clientName}
                           </span>
+                          {isSelected && (
+                            <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.2 rounded border border-indigo-400/40">
+                              👁️ Focado
+                            </span>
+                          )}
                         </div>
                         <span
                           className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase ${
@@ -682,15 +786,15 @@ export default function CargoLoading3DModal({
                           }`}
                         >
                           {st.lifoZone === "porta"
-                            ? "🚪 Junto à Porta"
+                            ? "🚪 Porta"
                             : st.lifoZone === "cabine"
-                            ? "🧱 Fundo (Cabine)"
+                            ? "🧱 Fundo"
                             : "📦 Centro Baú"}
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1 pl-5">
-                        <span className="truncate max-w-[200px] text-zinc-400 text-[10px]">
+                        <span className="truncate max-w-[180px] text-zinc-400 text-[10px]">
                           {st.address || "Morada não especificada"}
                         </span>
                         <div className="flex items-center space-x-2 font-mono text-[10px] text-zinc-300">
@@ -710,7 +814,7 @@ export default function CargoLoading3DModal({
             {/* Dica operacional de rodapé */}
             <div className="p-2.5 bg-zinc-950 border-t border-zinc-800/80 text-[11px] text-zinc-400 flex items-center justify-between">
               <span className="text-zinc-400">
-                💡 Passe o rato sobre qualquer linha para iluminar a carga no carro.
+                💡 Clique num cliente para focar a carga no baú 3D (e ocultar os restantes).
               </span>
             </div>
           </div>
@@ -769,6 +873,7 @@ export default function CargoLoading3DModal({
             <div className="flex-1 w-full h-full relative cursor-grab active:cursor-grabbing">
               <canvas
                 ref={canvasRef}
+                onClick={handleCanvasClick}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}

@@ -23,6 +23,8 @@ export default function Cargo3DPage() {
   const [selectedRouteIdx, setSelectedRouteIdx] = useState(0);
   const [viewOrder, setViewOrder] = useState<"lifo" | "delivery">("lifo");
   const [hoveredStopSeq, setHoveredStopSeq] = useState<number | null>(null);
+  const [selectedStopSeq, setSelectedStopSeq] = useState<number | null>(null);
+  const [focusMode, setFocusMode] = useState<"ghost" | "isolate">("ghost");
   const [tooltipInfo, setTooltipInfo] = useState<{
     visible: boolean;
     x: number;
@@ -387,24 +389,56 @@ export default function Cargo3DPage() {
     });
   }, [vehicleConfig, cargoBoxes]);
 
-  // Hover sync
+  // Sincronização de Destaque / Foco no 3D (Hover ou Seleção)
+  const activeStopSeq = selectedStopSeq !== null ? selectedStopSeq : hoveredStopSeq;
+
   useEffect(() => {
     const state = threeStateRef.current;
     if (!state) return;
 
-    state.boxMeshes.forEach(({ mesh, box }) => {
+    state.boxMeshes.forEach(({ mesh, box, originalColor }) => {
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (hoveredStopSeq === box.stopSeq) {
-        mat.emissive.setHex(0xffffff);
-        mat.emissiveIntensity = 0.55;
-        mesh.scale.set(1.03, 1.03, 1.03);
-      } else {
+      const isTarget = activeStopSeq === null || activeStopSeq === box.stopSeq;
+
+      if (activeStopSeq === null) {
+        // Todas visíveis normalmente
+        mesh.visible = true;
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.depthWrite = true;
+        mat.color.copy(originalColor);
         mat.emissive.setHex(0x000000);
         mat.emissiveIntensity = 0;
         mesh.scale.set(1.0, 1.0, 1.0);
+      } else if (isTarget) {
+        // Encomenda selecionada / em hover (destaque brilhante)
+        mesh.visible = true;
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.depthWrite = true;
+        mat.color.copy(originalColor);
+        mat.emissive.setHex(0x38bdf8);
+        mat.emissiveIntensity = 0.65;
+        mesh.scale.set(1.03, 1.03, 1.03);
+      } else {
+        // Outras encomendas
+        if (focusMode === "isolate") {
+          // Invisíveis
+          mesh.visible = false;
+        } else {
+          // Modo Fantasma (translúcido/ghost)
+          mesh.visible = true;
+          mat.transparent = true;
+          mat.opacity = 0.08;
+          mat.depthWrite = false;
+          mat.color.setHex(0x334155);
+          mat.emissive.setHex(0x000000);
+          mat.emissiveIntensity = 0;
+          mesh.scale.set(1.0, 1.0, 1.0);
+        }
       }
     });
-  }, [hoveredStopSeq]);
+  }, [activeStopSeq, focusMode]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const state = threeStateRef.current;
@@ -472,6 +506,30 @@ export default function Cargo3DPage() {
   const handleMouseUp = () => {
     const state = threeStateRef.current;
     if (state) state.isDragging = false;
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    const state = threeStateRef.current;
+    if (!state || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, state.camera);
+    const intersects = raycaster.intersectObjects(
+      state.boxMeshes.map((b) => b.mesh)
+    );
+
+    if (intersects.length > 0) {
+      const hitMesh = intersects[0].object as THREE.Mesh;
+      const box = hitMesh.userData.box as CargoBox;
+      if (box) {
+        setSelectedStopSeq((prev) => (prev === box.stopSeq ? null : box.stopSeq));
+      }
+    }
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -646,62 +704,114 @@ export default function Cargo3DPage() {
             
             {/* Lista de Paragens (Esquerda) */}
             <div className="lg:col-span-5 flex flex-col border-r border-zinc-800 bg-zinc-900/30 overflow-hidden">
-              <div className="flex items-center justify-between p-3.5 border-b border-zinc-800/80 bg-zinc-900/60">
-                <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
-                  Sequência de Arrumação
-                </span>
-                <div className="flex space-x-1 bg-zinc-950 p-0.5 rounded-md border border-zinc-800 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => setViewOrder("lifo")}
-                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
-                      viewOrder === "lifo"
-                        ? "bg-indigo-600 text-white font-semibold"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    🚚 Ordem Carga (LIFO)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewOrder("delivery")}
-                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
-                      viewOrder === "delivery"
-                        ? "bg-indigo-600 text-white font-semibold"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    🏁 Ordem Entrega
-                  </button>
+              <div className="flex flex-col p-3 border-b border-zinc-800/80 bg-zinc-900/60 gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    Sequência de Arrumação
+                  </span>
+                  <div className="flex space-x-1 bg-zinc-950 p-0.5 rounded-md border border-zinc-800 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setViewOrder("lifo")}
+                      className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                        viewOrder === "lifo"
+                          ? "bg-indigo-600 text-white font-semibold"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      🚚 Carga (LIFO)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewOrder("delivery")}
+                      className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                        viewOrder === "delivery"
+                          ? "bg-indigo-600 text-white font-semibold"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      🏁 Entrega
+                    </button>
+                  </div>
+                </div>
+
+                {/* Alternador de Modo de Foco e Botão Ver Todos */}
+                <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-zinc-800/60">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-zinc-400 mr-1">Foco 3D:</span>
+                    <button
+                      type="button"
+                      onClick={() => setFocusMode("ghost")}
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                        focusMode === "ghost"
+                          ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 font-semibold"
+                          : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                      }`}
+                      title="Outros clientes ficam translúcidos / modo fantasma"
+                    >
+                      👻 Fantasma
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFocusMode("isolate")}
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                        focusMode === "isolate"
+                          ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/50 font-semibold"
+                          : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                      }`}
+                      title="Outros clientes ficam 100% invisíveis"
+                    >
+                      👁️ Isolar
+                    </button>
+                  </div>
+
+                  {selectedStopSeq !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStopSeq(null)}
+                      className="text-amber-400 hover:text-amber-300 font-semibold text-[11px] transition-colors cursor-pointer bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20"
+                    >
+                      ✕ Ver Todos
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 divide-y divide-zinc-800/40">
                 {groupedStops.map((st) => {
                   const isHovered = hoveredStopSeq === st.seq;
+                  const isSelected = selectedStopSeq === st.seq;
                   return (
                     <div
                       key={st.seq}
+                      onClick={() => setSelectedStopSeq(isSelected ? null : st.seq)}
                       onMouseEnter={() => setHoveredStopSeq(st.seq)}
                       onMouseLeave={() => setHoveredStopSeq(null)}
-                      className={`pt-1.5 pb-1.5 px-2.5 rounded-lg transition-all cursor-pointer border ${
-                        isHovered
-                          ? "bg-indigo-950/60 border-indigo-500 shadow-md"
+                      className={`pt-2 pb-2 px-2.5 rounded-lg transition-all cursor-pointer border ${
+                        isSelected
+                          ? "bg-indigo-950/90 border-indigo-400 shadow-lg ring-2 ring-indigo-500/50"
+                          : isHovered
+                          ? "bg-zinc-850/80 border-zinc-600"
                           : "bg-zinc-900/50 hover:bg-zinc-850/60 border-zinc-800/50"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center space-x-2">
                           <span
-                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            className="w-3.5 h-3.5 rounded-full flex-shrink-0"
                             style={{ backgroundColor: st.color }}
                           />
                           <span className="font-mono text-xs font-bold text-white bg-zinc-800 px-1.5 py-0.2 rounded">
                             #{st.seq}
                           </span>
-                          <span className="text-xs font-semibold text-zinc-200 truncate max-w-[180px]">
+                          <span className="text-xs font-semibold text-zinc-200 truncate max-w-[170px]">
                             {st.clientName}
                           </span>
+                          {isSelected && (
+                            <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.2 rounded border border-indigo-400/40">
+                              👁️ Focado
+                            </span>
+                          )}
                         </div>
                         <span
                           className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase ${
@@ -713,15 +823,15 @@ export default function Cargo3DPage() {
                           }`}
                         >
                           {st.lifoZone === "porta"
-                            ? "🚪 Junto à Porta"
+                            ? "🚪 Porta"
                             : st.lifoZone === "cabine"
-                            ? "🧱 Fundo (Cabine)"
+                            ? "🧱 Fundo"
                             : "📦 Centro"}
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1 pl-5">
-                        <span className="truncate max-w-[200px] text-zinc-400 text-[10px]">
+                        <span className="truncate max-w-[180px] text-zinc-400 text-[10px]">
                           {st.address || "Morada não especificada"}
                         </span>
                         <div className="flex items-center space-x-2 font-mono text-[10px] text-zinc-300">
@@ -738,7 +848,7 @@ export default function Cargo3DPage() {
               </div>
 
               <div className="p-3 bg-zinc-950 border-t border-zinc-800 text-[11px] text-zinc-400">
-                💡 Passe o cursor sobre qualquer paragem para destacar a mercadoria dentro do baú 3D.
+                💡 Clique num cliente para focar a carga no baú 3D (e ocultar os restantes).
               </div>
             </div>
 
@@ -788,6 +898,7 @@ export default function Cargo3DPage() {
               <div className="flex-1 w-full h-full relative cursor-grab active:cursor-grabbing">
                 <canvas
                   ref={canvasRef}
+                  onClick={handleCanvasClick}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
