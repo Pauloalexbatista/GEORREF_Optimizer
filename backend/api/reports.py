@@ -122,10 +122,10 @@ def get_project_reports_summary(project_id: int, current_user: UserResponse = De
         }
 
 @router.get("/{project_id}/export")
-def export_project_final_report(project_id: int):
+def export_project_final_report(project_id: int, current_user: UserResponse = Depends(get_current_user)):
     proj = get_projeto(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado.")
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder aos dados deste projeto.")
         
     with get_db() as conn:
         cursor = conn.cursor()

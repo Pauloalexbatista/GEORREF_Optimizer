@@ -418,21 +418,27 @@ O sistema dispõe de um módulo dedicado de administração para gestão multi-t
 4. **Proteção de Notas de Motorista e Observações**:
    * O campo `Notas_Motorista` pode conter informações de acesso ou notas sensíveis dos clientes. O acesso a este campo no PWA móvel é restrito unicamente ao motorista atribuído à respetiva viatura.
 
-### 7.3 Arquitetura de Rastreio da App de Motoristas (`motoristas_webapp`):
-Em estrita conformidade com as deliberações da **CNPD** e com os **artigos 19.º e 20.º do Código do Trabalho** (proibição de vigilância contínua à distância do trabalhador):
-1. **Sem Rastreio Contínuo de Passos**:
-   * A aplicação móvel **NÃO recolhe nem regista continuamente** o trajeto segundo a segundo do motorista.
-2. **Geolocalização Estritamente Pontual (Event-Driven)**:
-   * **Pico de Entrega / POD (*Proof of Delivery*)**: Apenas no momento em que o motorista submete a paragem ("Entregue" ou "Não Entregue com Justificação"), a aplicação pode registar uma coordenada pontual como comprovativo georreferenciado de presença no cliente.
-   * **Apoio ao Motorista (Sob Demanda / Voluntário)**: Botão no PWA onde o motorista, por sua livre iniciativa, partilha momentaneamente a sua posição com o gestor de tráfego/armazém para pedir apoio no despiste de moradas erradas ou acessos difíceis.
-3. **Cessação no Fim de Turno**:
-   * Ao finalizar o manifesto da rota, o PWA encerra todas as permissões de localização.
+### 7.3 Arquitetura de Rastreio da App de Motoristas (`motoristas_webapp`) & Conformidade Legal:
+Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de Proteção de Dados)**, o **RGPD** e os **artigos 19.º e 20.º do Código do Trabalho** (legitimidade de gestão logística, proteção da mercadoria e segurança do condutor):
+1. **Rastreio Periódico Operacional (A cada 5 minutos)**:
+   * A transmissão automática de coordenadas pelo PWA móvel é **estritamente operacional** para monitorização do estado da frota e apoio logístico na distribuição.
+   * **Requisitos Legais Obrigatórios**:
+     * **Regulamento Interno / Minuta Contratual**: O condutor é informado da utilização da aplicação e assina a declaração de consentimento e regulamento de viatura da empresa.
+     * **Cessação Automática no Fim do Turno**: Assim que o motorista submete o encerramento da rota (*"Fecho do Dia"*), todas as rotinas de geolocalização e envio de GPS são **desligadas e destruídas a 100%**. É estritamente proibida qualquer recolha fora do horário de trabalho.
+     * **Modo de Pausa / Almoço**: A aplicação deve disponibilizar um botão de pausa que suspende imediatamente a transmissão de GPS durante o período de refeição e descanso legal do trabalhador.
+2. **Geolocalização no Ato de Entrega (POD - Proof of Delivery)**:
+   * No momento em que o motorista clica em *"Entregue"* ou *"Não Entregue com Justificação"*, a aplicação carimba pontualmente as coordenadas exatas como comprovativo geográfico de paragem junto ao cliente.
+3. **Apoio ao Motorista (Sob Demanda)**:
+   * Botão voluntário onde o motorista partilha momentaneamente a sua rota detalhada com a Torre de Controlo para apoio no despiste de moradas difíceis ou trânsito imprevisto.
 
 ---
 
 ## 🚀 8. Roadmap e Próximos Passos de Desenvolvimento
 
-1. **Expansão da App de Motoristas (`motoristas_webapp`)**:
+1. **Expansão e Conformidade da App de Motoristas (`motoristas_webapp`)**:
+   * **Implementar o Modo "Pausa / Almoço"**: Botão na app que suspende temporariamente o envio de GPS de 5m durante o descanso do motorista.
+   * **Garantia de Desligamento Total no Fecho**: Validação estrita de que o `setInterval` de GPS é cancelado imediatamente após o fecho da rota ou logout.
+   * **Disponibilização de Minuta Contratual RGPD**: Modelo de anexo de regulamento de viatura e consentimento para as empresas fornecerem aos motoristas.
    * Assinatura digital no ecrã (*Proof of Delivery - POD*).
    * Captura de fotos como comprovativo de entrega ou justificação de falha.
    * Leitor de códigos de barras / QR Code via câmara para conferência de volumes.
