@@ -219,13 +219,30 @@ O ecossistema GeoRoutePlan é composto pelos seguintes módulos:
   * Validação contra a matriz da Folha 4 (`Regras`: `Tag_Veiculo` + `Permissao: PERMITIR/PROIBIR` + `Tag_Entrega`).
 * **Restrições Rígidas no Solver**: Impede a alocação de entregas a viaturas incompatíveis antes do cálculo (`routing.VehicleVar(node).SetValues(allowed_vehicles)`), garantindo planos de rota 100% executáveis na prática.
 
-#### 2. Motor de Otimização VRP (`utils/optimization_solver.py`)
-* Motor baseado em **Google OR-Tools** (Execução local a custo zero):
-  * Restrições de capacidade física (peso em KG e volume em m³).
-  * Janelas horárias (*Time Windows*) por cliente e horários de funcionamento do armazém.
-  * Múltiplos armazéns com depósitos de partida e chegada diferenciados.
-  * Balanceamento dinâmico de carga de trabalho entre viaturas.
-  * Meta-heurística *Guided Local Search* (GLS) para fuga de mínimos locais.
+#### 2. Motor de Otimização VRP (`utils/optimization_solver.py`) — *Motor de Decisão Logística*
+* **Abordagem Híbrida**: Combina o poder exato do **Google OR-Tools Routing Solver (Vehicle Routing Problem with Time Windows - VRPTW)** com heurísticas locais de pós-otimização (**2-Opt**, **Squeeze Insertion** e **Dynamic Load Tracking**).
+* **Objetivos de Otimização (Função de Custo Global)**:
+  1. *Minimização de Distância Rodoviária*: Matriz calibrada (Haversine com fator de correção rodoviária `ROAD_FACTOR = 1.30` ou matriz OSRM local).
+  2. *Minimização de Custos Financeiros Diretos (€)*: Ponderação simultânea do `Custo_KM` e do `Custo_Hora` de cada viatura, priorizando encher as viaturas mais económicas.
+  3. *Eficiência e Densidade de Frota*: Minimização do número de veículos em circulação e agrupamento geográfico compacto (*density clusters*).
+* **Restrições Rígidas de Capacidade (Hard Constraints)**:
+  1. *Limite de Peso (`Capacidade_KG`)*: O somatório das entregas a bordo nunca excede a carga útil da viatura.
+  2. *Limite de Volume (`Capacidade_Vol` em m³)*: A cubagem das encomendas nunca excede o espaço útil do baú.
+  3. *Teto de Paragens (`Max_Entregas`)*: Respeita o número máximo diário de paragens configurado por viatura (ex: 25 a 35 paragens), prevenindo sobrecarga.
+  4. *Operações Mistas (Carga Dinâmica)*: Suporta Entregas (*Dropoff*), Recolhas/Devoluções (*Pickup*) e Trocas Simultâneas (*Pickup & Delivery*) com validação instantânea de espaço livre ao longo do trajeto.
+* **Gestão Rigorosa de Janelas Horárias (VRPTW Estrito)**:
+  1. *Horários dos Clientes*: Entregas matinais (ex: `09:00 - 13:00`) no período da manhã; entregas vespertinas (ex: `14:00 - 18:00`) à tarde ou em 2ª volta.
+  2. *Proibição de Espera Prolongada (`MAX_WAIT_SLACK_SEC = 1800`)*: A folga de espera máxima antes de um cliente abrir está limitada a **30 minutos**. O carro **nunca** é colocado a aguardar horas parado à porta do cliente.
+  3. *Tempos de Serviço*: Contempla o tempo de descarga específico (`Tempo_Descarga_Min`, ex: 10 a 20 min).
+  4. *Jornada de Trabalho*: As viaturas arrancam na sua `Hora_Inicio_Turno` e regressam obrigatoriamente ao armazém antes da `Hora_Fim_Turno`.
+* **Operação Multi-Turno / 2ªs Voltas (`2ª Volta = Sim`)**:
+  * O mesmo veículo executa duas voltas no mesmo dia (Volta 1 de manhã -> regresso ao armazém -> tempo de cais de 30-45 min para recarga -> Volta 2 à tarde até ao fecho de turno).
+* **Pós-Processamento e Ordenação Tática**:
+  * Botão *"⚡ Ordenar Trajeto"* no painel tático com penalização severa de violação de janelas horárias.
+  * Auditoria automática de conformidade em tempo real (alertas a cores para excesso de peso, volume ou horário).
+* **Decisão Ativa por Trânsito Preditivo CP7 (Visão Estratégica)**:
+  * O trânsito preditivo atua como critério de decisão ativo na escolha entre Carro A e Carro B (em vez de mera métrica passiva de fim de rota).
+  * Base de dados local compacta (< 250 MB) com perfis horários percentuais por CP7 e corredores de travessia, alimentada organicamente a custo zero pela telemetria da app dos motoristas.
 
 #### 3. Motores de Geocodificação e Rotas
 * `geocoder_engine.py`: Motor de geocodificação em cascata (Local DB -> Scraping -> OSM -> Google Maps).
