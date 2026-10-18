@@ -399,8 +399,15 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         new_row["Tempo_Espera"] = int(round(wait_min))
         new_row["Tempo_Entrega"] = serv_time
         new_row["Saida"] = minutes_to_time_str(dep_min)
+        new_row["Hora_Chegada_Prevista"] = new_row["Chegada"]
+        new_row["Hora_Saida_Prevista"] = new_row["Saida"]
         new_row["KM_Anterior"] = round(dist, 2)
+        new_row["Distancia_KM"] = round(dist, 2)
         new_row["Dist_Acum"] = round(cumul_dist, 2)
+        new_row["Distancia_Acumulada_KM"] = round(cumul_dist, 2)
+        new_row["Tempo_Viagem_Min"] = round(travel_min, 1)
+        new_row["Tempo_Servico_Min"] = serv_time
+        new_row["Ordem_Paragem"] = order
         
         updated_stops.append(new_row)
         p_lat, p_lon = c_lat, c_lon
@@ -409,6 +416,86 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         
     load_metrics = calculate_dynamic_route_loads(updated_stops, vehicle_cap_kg=vehicle_cap_kg, vehicle_cap_vol=vehicle_cap_vol)
     return load_metrics.get("stops_with_loads", updated_stops)
+
+def sequence_route_with_time_windows(
+    stops: list,
+    depot_lat: float,
+    depot_lon: float,
+    v_start_min: int,
+    v_speed: float,
+    v_cap_kg: float = 1000.0,
+    v_cap_vol: float = 10.0
+) -> list:
+    if not stops:
+        return []
+    if len(stops) == 1:
+        return recalculate_route_stops(
+            stops, depot_lat, depot_lon,
+            start_time_str=minutes_to_time_str(int(v_start_min)),
+            avg_speed=v_speed,
+            vehicle_cap_kg=v_cap_kg,
+            vehicle_cap_vol=v_cap_vol
+        )
+
+    remaining = [dict(s) for s in stops]
+    ordered = []
+    curr_lat, curr_lon = depot_lat, depot_lon
+    curr_time_min = v_start_min
+
+    while remaining:
+        best_idx = None
+        best_cost = float('inf')
+        best_dist = 0.0
+
+        for i, s in enumerate(remaining):
+            s_lat = float(s.get("Latitude", curr_lat) or curr_lat)
+            s_lon = float(s.get("Longitude", curr_lon) or curr_lon)
+            d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon)
+            travel_time_min = (d / v_speed) * 60.0 if v_speed > 0 else 10.0
+            arr_min = curr_time_min + travel_time_min
+
+            win_str = str(s.get("Janela_Horaria", "Qualquer") or "Qualquer")
+            win_s, win_e = parse_time_window_str(win_str)
+
+            wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0
+            late_min = max(0.0, arr_min - win_e) if win_e < 1440 else 0.0
+
+            # Penalties: distance (1.0), waiting (25.0/hr), lateness (90.0/hr)
+            cost = d * 1.0 + (wait_min / 60.0) * 25.0 + (late_min / 60.0) * 90.0
+
+            if cost < best_cost:
+                best_cost = cost
+                best_dist = d
+                best_idx = i
+
+        if best_idx is None:
+            break
+
+        selected = remaining.pop(best_idx)
+        ordered.append(selected)
+
+        s_lat = float(selected.get("Latitude", curr_lat) or curr_lat)
+        s_lon = float(selected.get("Longitude", curr_lon) or curr_lon)
+        travel_time_min = (best_dist / v_speed) * 60.0 if v_speed > 0 else 10.0
+        arr_min = curr_time_min + travel_time_min
+
+        win_str = str(selected.get("Janela_Horaria", "Qualquer") or "Qualquer")
+        win_s, win_e = parse_time_window_str(win_str)
+        wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0
+        serv_start_min = arr_min + wait_min
+        serv_time = float(selected.get("Tempo_Entrega", 15.0) or 15.0)
+        dep_min = serv_start_min + serv_time
+
+        curr_lat, curr_lon = s_lat, s_lon
+        curr_time_min = dep_min
+
+    return recalculate_route_stops(
+        ordered, depot_lat, depot_lon,
+        start_time_str=minutes_to_time_str(int(v_start_min)),
+        avg_speed=v_speed,
+        vehicle_cap_kg=v_cap_kg,
+        vehicle_cap_vol=v_cap_vol
+    )
 
 @router.post("/solve")
 def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_current_user)):
@@ -1742,11 +1829,15 @@ def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserR
         
         unique_routes = [r for r in df_routes["Rota"].dropna().unique() if str(r).strip() and "PENDENTE" not in str(r).upper() and "POR DISTRIBUIR" not in str(r).upper()]
         
+        all_recalc_rows = []
+        pending_mask = df_routes["Rota"].astype(str).str.upper().isin(["", "POR DISTRIBUIR", "PENDENTE", "NAN"])
+        pending_stops = df_routes[pending_mask].to_dict(orient="records")
+        all_recalc_rows.extend(pending_stops)
+
         for route_name in unique_routes:
             route_mask = df_routes["Rota"] == route_name
             route_stops = df_routes[route_mask].copy()
-            
-            if len(route_stops) <= 1:
+            if route_stops.empty:
                 continue
                 
             v_info = fleet_dict.get(route_name, {})
@@ -1754,54 +1845,17 @@ def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserR
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
             v_start_min = parse_time_to_minutes(v_info.get("start_time", "08:00:00"), 480)
             v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity", 1000.0))
+            v_cap_vol = float(v_info.get("capacity_volume", 10.0))
             
-            stop_indices = list(route_stops.index)
-            curr_lat, curr_lon = depot_lat, depot_lon
-            curr_time_min = v_start_min
-            cum_dist = 0.0
-            order_counter = 1
-            
-            # Nearest Neighbor Sequence TSP from depot
-            remaining = stop_indices.copy()
-            while remaining:
-                best_idx = None
-                best_dist = float('inf')
-                for s_idx in remaining:
-                    s_lat = float(df_routes.at[s_idx, "Latitude"])
-                    s_lon = float(df_routes.at[s_idx, "Longitude"])
-                    d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon)
-                    if d < best_dist:
-                        best_dist = d
-                        best_idx = s_idx
-                        
-                if best_idx is None:
-                    break
-                    
-                remaining.remove(best_idx)
-                s_lat = float(df_routes.at[best_idx, "Latitude"])
-                s_lon = float(df_routes.at[best_idx, "Longitude"])
-                
-                travel_time_min = (best_dist / v_speed) * 60.0 if v_speed > 0 else 10.0
-                arr_time_min = curr_time_min + travel_time_min
-                
-                # Service duration
-                serv_min = 15.0
-                dep_time_min = arr_time_min + serv_min
-                cum_dist += best_dist
-                
-                df_routes.at[best_idx, "Ordem"] = order_counter
-                df_routes.at[best_idx, "Ordem_Paragem"] = order_counter
-                df_routes.at[best_idx, "Distancia_KM"] = round(best_dist, 2)
-                df_routes.at[best_idx, "Distancia_Acumulada_KM"] = round(cum_dist, 2)
-                df_routes.at[best_idx, "Tempo_Viagem_Min"] = round(travel_time_min, 1)
-                df_routes.at[best_idx, "Hora_Chegada_Prevista"] = minutes_to_time_str(arr_time_min)
-                df_routes.at[best_idx, "Hora_Saida_Prevista"] = minutes_to_time_str(dep_time_min)
-                
-                curr_lat, curr_lon = s_lat, s_lon
-                curr_time_min = dep_time_min
-                order_counter += 1
+            recalc_stops = sequence_route_with_time_windows(
+                route_stops.to_dict(orient="records"),
+                depot_lat, depot_lon, v_start_min, v_speed, v_cap_kg, v_cap_vol
+            )
+            all_recalc_rows.extend(recalc_stops)
 
         # Re-sort DataFrame by Rota and Ordem
+        df_routes = pd.DataFrame(all_recalc_rows)
         df_routes.sort_values(by=["Rota", "Ordem"], inplace=True)
         
         state_dict["routes_solution"] = df_routes
@@ -1813,6 +1867,13 @@ def optimize_all_sequences(req: OptimizeAllSequencesRequest, current_user: UserR
             cursor = conn.cursor()
             cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)", 
                            (req.project_id, current_user.id, 3, snapshot_name, payload))
+            for _, r in df_routes.iterrows():
+                r_id = r.get("id") or r.get("ID_Original")
+                if r_id:
+                    cursor.execute(
+                        "UPDATE entregas SET rota = ?, ordem_paragem = ?, hora_inicio_servico = ?, hora_fim_servico = ? WHERE id = ? AND projeto_id = ?",
+                        (str(r.get("Rota", "Por Distribuir")), int(r.get("Ordem", 0)), str(r.get("Chegada", "")), str(r.get("Saida", "")), r_id, req.project_id)
+                    )
             conn.commit()
             
         return sanitize_json_data({
@@ -1856,56 +1917,22 @@ def optimize_single_route(req: SingleRouteOptimizeRequest, current_user: UserRes
         route_mask = df_canonical["Rota"].astype(str).str.strip().str.lower() == target_route.lower()
         route_stops = df_canonical[route_mask].copy()
         
-        if len(route_stops) > 1:
+        if len(route_stops) > 0:
             v_info = fleet_dict.get(target_route, {})
             wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
             v_start_min = parse_time_to_minutes(v_info.get("start_time", "08:00:00"), 480)
             v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity", 1000.0))
+            v_cap_vol = float(v_info.get("capacity_volume", 10.0))
             
-            stop_indices = list(route_stops.index)
-            curr_lat, curr_lon = depot_lat, depot_lon
-            curr_time_min = v_start_min
-            cum_dist = 0.0
-            order_counter = 1
-            
-            remaining = stop_indices.copy()
-            while remaining:
-                best_idx = None
-                best_dist = float('inf')
-                for s_idx in remaining:
-                    s_lat = float(df_canonical.at[s_idx, "Latitude"])
-                    s_lon = float(df_canonical.at[s_idx, "Longitude"])
-                    d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon)
-                    if d < best_dist:
-                        best_dist = d
-                        best_idx = s_idx
-                        
-                if best_idx is None:
-                    break
-                    
-                remaining.remove(best_idx)
-                s_lat = float(df_canonical.at[best_idx, "Latitude"])
-                s_lon = float(df_canonical.at[best_idx, "Longitude"])
-                
-                travel_time_min = (best_dist / v_speed) * 60.0 if v_speed > 0 else 10.0
-                arr_time_min = curr_time_min + travel_time_min
-                serv_min = 15.0
-                dep_time_min = arr_time_min + serv_min
-                cum_dist += best_dist
-                
-                df_canonical.at[best_idx, "Ordem"] = order_counter
-                df_canonical.at[best_idx, "Ordem_Paragem"] = order_counter
-                df_canonical.at[best_idx, "Distancia_KM"] = round(best_dist, 2)
-                df_canonical.at[best_idx, "Distancia_Acumulada_KM"] = round(cum_dist, 2)
-                df_canonical.at[best_idx, "Tempo_Viagem_Min"] = round(travel_time_min, 1)
-                df_canonical.at[best_idx, "Tempo_Servico_Min"] = serv_min
-                df_canonical.at[best_idx, "Chegada"] = minutes_to_time_str(int(arr_time_min))
-                df_canonical.at[best_idx, "Saida"] = minutes_to_time_str(int(dep_time_min))
-                
-                curr_lat, curr_lon = s_lat, s_lon
-                curr_time_min = dep_time_min
-                order_counter += 1
+            recalc_stops = sequence_route_with_time_windows(
+                route_stops.to_dict(orient="records"),
+                depot_lat, depot_lon, v_start_min, v_speed, v_cap_kg, v_cap_vol
+            )
+            other_routes = df_canonical[~route_mask].to_dict(orient="records")
+            df_canonical = pd.DataFrame(other_routes + recalc_stops)
+            df_canonical.sort_values(by=["Rota", "Ordem"], inplace=True)
 
         state_dict["routes_solution"] = df_canonical
         payload = serialize_state(state_dict)
@@ -1924,8 +1951,8 @@ def optimize_single_route(req: SingleRouteOptimizeRequest, current_user: UserRes
                 r_id = r.get("id") or r.get("ID_Original")
                 if r_id:
                     cursor.execute(
-                        "UPDATE entregas SET rota = ?, ordem_paragem = ? WHERE id = ? AND projeto_id = ?",
-                        (str(r.get("Rota", "Por Distribuir")), int(r.get("Ordem", 0)), r_id, req.project_id)
+                        "UPDATE entregas SET rota = ?, ordem_paragem = ?, hora_inicio_servico = ?, hora_fim_servico = ? WHERE id = ? AND projeto_id = ?",
+                        (str(r.get("Rota", "Por Distribuir")), int(r.get("Ordem", 0)), str(r.get("Chegada", "")), str(r.get("Saida", "")), r_id, req.project_id)
                     )
             conn.commit()
 

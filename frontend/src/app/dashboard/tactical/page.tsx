@@ -154,21 +154,100 @@ function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
   return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
 }
 
-function isDeliveryLate(serviceStartTime: string, windowStr: string): boolean {
-  if (!serviceStartTime || !windowStr || windowStr === "Qualquer" || windowStr === "--") return false;
-  if (serviceStartTime.startsWith("+1d") || serviceStartTime.startsWith("+2d")) return true;
-  const parts = windowStr.split("-");
-  if (parts.length < 2) return false;
-  const endStr = parts[1].trim().slice(0, 5);
-  const [endH, endM] = endStr.split(":").map((x) => parseInt(x, 10) || 0);
-  const [startH, startM] = serviceStartTime.replace("+1d", "").replace("+2d", "").trim().split(":").map((x) => parseInt(x, 10) || 0);
-  const endMin = endH * 60 + endM;
-  let startMin = startH * 60 + startM;
-  if (startH < 6 && endH > 12) {
-    startMin += 1440;
+export type DeliveryComplianceStatus = "on_time" | "early" | "late";
+
+export interface DeliveryCompliance {
+  status: DeliveryComplianceStatus;
+  label: string;
+  tooltip: string;
+  badgeClass: string;
+  diffMinutes: number;
+}
+
+function getDeliveryWindowCompliance(
+  chegadaStr?: string,
+  windowStr?: string
+): DeliveryCompliance {
+  if (!chegadaStr || !windowStr || windowStr === "Qualquer" || windowStr === "--") {
+    return {
+      status: "on_time",
+      label: "Livre",
+      tooltip: "Sem restrição de janela horária",
+      badgeClass: "text-zinc-300 bg-zinc-900/60 border border-zinc-800",
+      diffMinutes: 0,
+    };
   }
-  if (endMin <= 0 || endMin >= 1440) return false;
-  return startMin > endMin;
+
+  if (chegadaStr.startsWith("+1d") || chegadaStr.startsWith("+2d")) {
+    return {
+      status: "late",
+      label: "Atrasado (+1d)",
+      tooltip: `Chegada no dia seguinte (${chegadaStr}), fora da janela acordada (${windowStr})`,
+      badgeClass: "text-rose-400 bg-rose-950/70 border border-rose-800 shadow-sm",
+      diffMinutes: 1440,
+    };
+  }
+
+  const parts = windowStr.split("-");
+  if (parts.length < 2) {
+    return {
+      status: "on_time",
+      label: "OK",
+      tooltip: `Horário dentro do previsto`,
+      badgeClass: "text-zinc-300 bg-zinc-900/60 border border-zinc-800",
+      diffMinutes: 0,
+    };
+  }
+
+  const parseMins = (t: string) => {
+    const clean = t.replace("+1d", "").replace("+2d", "").trim().slice(0, 5);
+    const [h, m] = clean.split(":").map((x) => parseInt(x, 10) || 0);
+    return h * 60 + m;
+  };
+
+  const winStartMin = parseMins(parts[0]);
+  const winEndMin = parseMins(parts[1]);
+  const arrMin = parseMins(chegadaStr);
+
+  if (arrMin < winStartMin - 15) {
+    const earlyMin = winStartMin - arrMin;
+    const earlyH = Math.floor(earlyMin / 60);
+    const earlyRem = earlyMin % 60;
+    const diffStr = earlyH > 0 ? `${earlyH}h${earlyRem > 0 ? `${earlyRem}m` : ""}` : `${earlyRem}m`;
+    return {
+      status: "early",
+      label: `Adiantado (${parts[0].trim()})`,
+      tooltip: `Chegada ${diffStr} antes da abertura do cliente (Abre às ${parts[0].trim()})`,
+      badgeClass: "text-amber-400 bg-amber-950/70 border border-amber-800 shadow-sm",
+      diffMinutes: -earlyMin,
+    };
+  }
+
+  if (arrMin > winEndMin) {
+    const lateMin = arrMin - winEndMin;
+    const lateH = Math.floor(lateMin / 60);
+    const lateRem = lateMin % 60;
+    const diffStr = lateH > 0 ? `${lateH}h${lateRem > 0 ? `${lateRem}m` : ""}` : `${lateRem}m`;
+    return {
+      status: "late",
+      label: `Atrasado (${parts[1].trim()})`,
+      tooltip: `Chegada ${diffStr} após o fecho do cliente (Fechou às ${parts[1].trim()})`,
+      badgeClass: "text-rose-400 bg-rose-950/70 border border-rose-800 shadow-sm",
+      diffMinutes: lateMin,
+    };
+  }
+
+  return {
+    status: "on_time",
+    label: "Pontual",
+    tooltip: `Chegada dentro da janela horária acordada (${windowStr})`,
+    badgeClass: "text-emerald-400 bg-emerald-950/40 border border-emerald-800/60",
+    diffMinutes: 0,
+  };
+}
+
+function isDeliveryLate(serviceStartTime: string, windowStr: string): boolean {
+  return getDeliveryWindowCompliance(serviceStartTime, windowStr).status !== "on_time";
 }
 
 function calculateDurationString(startStr: string, endStr: string): string {
@@ -1056,8 +1135,9 @@ export default function TacticalPage() {
         totalKg += s.Peso_KG || 0;
         totalVol += s.Volume_m3 || 0;
 
-        // 1. Time window late check (tolerância zero)
-        if (isDeliveryLate(s.Chegada, s.Janela_Horaria)) {
+        // 1. Time window compliance check (tolerância zero)
+        const compliance = getDeliveryWindowCompliance(s.Chegada, s.Janela_Horaria);
+        if (compliance.status === "late") {
           const vItem: ViolationItem = {
             type: "time_window",
             severity: "error",
@@ -1065,7 +1145,19 @@ export default function TacticalPage() {
             client: s.Cliente,
             order: s.Ordem,
             title: `Atraso na Janela (${s.Cliente})`,
-            message: `Chegada prevista às ${s.Chegada} na paragem #${s.Ordem}, ultrapassando a janela limite ${s.Janela_Horaria}.`,
+            message: `Chegada prevista às ${s.Chegada} na paragem #${s.Ordem}, ultrapassando o fecho da janela ${s.Janela_Horaria}.`,
+          };
+          rViolations.push(vItem);
+          allViolations.push(vItem);
+        } else if (compliance.status === "early") {
+          const vItem: ViolationItem = {
+            type: "time_window",
+            severity: "warning",
+            route: rName,
+            client: s.Cliente,
+            order: s.Ordem,
+            title: `Chegada Prematura (${s.Cliente})`,
+            message: `Chegada prevista às ${s.Chegada} na paragem #${s.Ordem}, antes da abertura da janela ${s.Janela_Horaria}.`,
           };
           rViolations.push(vItem);
           allViolations.push(vItem);
@@ -1269,15 +1361,15 @@ export default function TacticalPage() {
 
       const maxKgA = cfgA?.capacidade_kg || 1000;
       const maxKgB = cfgB?.capacidade_kg || 1000;
-      const totalKgA = stopsA.length > 0 ? (stopsA[stopsA.length - 1].Carga_Acum || stopsA.reduce((sum, item) => sum + (item.Peso_KG || 0), 0)) : 0;
-      const totalKgB = stopsB.length > 0 ? (stopsB[stopsB.length - 1].Carga_Acum || stopsB.reduce((sum, item) => sum + (item.Peso_KG || 0), 0)) : 0;
+      const totalKgA = stopsA.reduce((sum, item) => sum + (Number(item.Peso_KG) || 0), 0);
+      const totalKgB = stopsB.reduce((sum, item) => sum + (Number(item.Peso_KG) || 0), 0);
       const kgPctA = (totalKgA / maxKgA) * 100;
       const kgPctB = (totalKgB / maxKgB) * 100;
 
       const maxVolA = cfgA?.capacidade_vol || 5.0;
       const maxVolB = cfgB?.capacidade_vol || 5.0;
-      const totalVolA = stopsA.length > 0 ? (stopsA[stopsA.length - 1].Carga_Vol_Acum || stopsA.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0)) : 0;
-      const totalVolB = stopsB.length > 0 ? (stopsB[stopsB.length - 1].Carga_Vol_Acum || stopsB.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0)) : 0;
+      const totalVolA = stopsA.reduce((sum, item) => sum + (Number(item.Volume_m3) || 0), 0);
+      const totalVolB = stopsB.reduce((sum, item) => sum + (Number(item.Volume_m3) || 0), 0);
       const volPctA = (totalVolA / maxVolA) * 100;
       const volPctB = (totalVolB / maxVolB) * 100;
 
@@ -2039,12 +2131,8 @@ export default function TacticalPage() {
                       const maxKg = vConfig?.capacidade_kg || 1000;
                       const maxVol = vConfig?.capacidade_vol || 5.0;
 
-                      const totalKg = allStops.length > 0
-                        ? (allStops[allStops.length - 1].Carga_Acum || allStops.reduce((sum, item) => sum + (item.Peso_KG || 0), 0))
-                        : 0;
-                      const totalVol = allStops.length > 0
-                        ? (allStops[allStops.length - 1].Carga_Vol_Acum || allStops.reduce((sum, item) => sum + (item.Volume_m3 || 0.1), 0))
-                        : 0;
+                      const totalKg = allStops.reduce((sum, item) => sum + (Number(item.Peso_KG) || 0), 0);
+                      const totalVol = allStops.reduce((sum, item) => sum + (Number(item.Volume_m3) || 0), 0);
                       const kgPct = Math.round((totalKg / maxKg) * 100);
                       const volPct = Math.round((totalVol / maxVol) * 100);
 
@@ -2080,14 +2168,14 @@ export default function TacticalPage() {
                           {/* MASTER ROUTE ROW (EXCEL DENSE ROW) */}
                           <tr
                             onClick={() => toggleRouteExpand(routeName)}
-                            className={`group cursor-pointer transition-colors border-b border-zinc-800/80 ${
+                            className={`group cursor-pointer border-b border-zinc-800/80 transition-colors duration-150 ${
                               hasRouteErrors
-                                ? "bg-rose-950/20 hover:bg-rose-900/30"
+                                ? "bg-rose-950/20 hover:bg-rose-950/40"
                                 : isPending
-                                ? "bg-amber-950/20 hover:bg-amber-900/30"
+                                ? "bg-amber-950/20 hover:bg-amber-950/40"
                                 : isExpanded
-                                ? "bg-zinc-900/80 hover:bg-zinc-850"
-                                : "hover:bg-zinc-900/60"
+                                ? "bg-zinc-900 hover:bg-zinc-950"
+                                : "bg-zinc-950 hover:bg-zinc-900"
                             }`}
                           >
                             {/* Selection Checkbox & Expand Indicator */}
@@ -2386,7 +2474,10 @@ export default function TacticalPage() {
                                           )}
 
                                           {filteredStops.map((stop, idx) => {
-                                            const isLate = !isPending && isDeliveryLate(stop.Chegada, stop.Janela_Horaria);
+                                            const compliance = !isPending
+                                              ? getDeliveryWindowCompliance(stop.Chegada, stop.Janela_Horaria)
+                                              : { status: "on_time" as DeliveryComplianceStatus, label: "Livre", tooltip: "Pendente", badgeClass: "text-zinc-300 bg-zinc-900 border border-zinc-800", diffMinutes: 0 };
+                                            const isLate = compliance.status !== "on_time";
                                             const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
                                             const stopKey = stop.id ? `${routeName}_${stop.id}` : `${routeName}_${stop.Cliente}_${idx}`;
                                             const isRowLoading = actionLoading === actKey;
@@ -2442,14 +2533,16 @@ export default function TacticalPage() {
                                                     console.error("Drop error", err);
                                                   }
                                                 }}
-                                                className={`transition-all ${
+                                                className={`transition-colors duration-150 ${
                                                   isBeingDragged
-                                                    ? "opacity-40 bg-indigo-950/40 border-2 border-dashed border-indigo-500 scale-[0.99]"
+                                                    ? "opacity-40 bg-indigo-950/40 border-2 border-dashed border-indigo-500"
                                                     : isDropTarget
                                                     ? "bg-indigo-900/40 border-t-2 border-indigo-400"
-                                                    : isLate
-                                                    ? "bg-rose-950/20 hover:bg-rose-950/30"
-                                                    : "hover:bg-zinc-850/40"
+                                                    : compliance.status === "late"
+                                                    ? "bg-rose-950/20 hover:bg-rose-950/35"
+                                                    : compliance.status === "early"
+                                                    ? "bg-amber-950/20 hover:bg-amber-950/35"
+                                                    : "hover:bg-zinc-900"
                                                 }`}
                                               >
                                                 {/* # Ordem with Reorder Arrows & Drag Handle */}
@@ -2523,24 +2616,21 @@ export default function TacticalPage() {
                                                 <td className="py-2 px-2 text-center">
                                                   <div
                                                     className="flex items-center justify-center space-x-1"
-                                                    title={
-                                                      isLate
-                                                        ? `Atraso: Previsão de chegada (${stop.Chegada || "--:--"}) ultrapassa a janela solicitada (${stop.Janela_Horaria || "08:00-19:00"})`
-                                                        : `Pontual: Chegada estimada (${stop.Chegada || "--:--"}) dentro da janela (${stop.Janela_Horaria || "08:00-19:00"})`
-                                                    }
+                                                    title={compliance.tooltip}
                                                   >
                                                     <span
-                                                      className={`font-mono text-xs font-bold px-1.5 py-0.5 rounded ${
-                                                        isLate
-                                                          ? "text-rose-400 bg-rose-950/70 border border-rose-800 shadow-sm"
-                                                          : "text-emerald-400 bg-emerald-950/30 border border-emerald-800/40"
-                                                      }`}
+                                                      className={`font-mono text-xs font-bold px-1.5 py-0.5 rounded ${compliance.badgeClass}`}
                                                     >
                                                       {stop.Chegada || "--:--"}
                                                     </span>
-                                                    {isLate && (
-                                                      <span className="cursor-help text-xs" title="Atraso face à janela horária do cliente">
+                                                    {compliance.status === "late" && (
+                                                      <span className="cursor-help text-xs" title={compliance.tooltip}>
                                                         ⚠️
+                                                      </span>
+                                                    )}
+                                                    {compliance.status === "early" && (
+                                                      <span className="cursor-help text-xs" title={compliance.tooltip}>
+                                                        ⏳
                                                       </span>
                                                     )}
                                                   </div>

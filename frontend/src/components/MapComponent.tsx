@@ -2182,12 +2182,12 @@ export default function MapComponent({
                     key={v}
                     onClick={(e) => toggleRouteFilter(v, e)}
                     title={`Clique para filtrar ${v} (Ctrl+Clique para multi-seleção)`}
-                    className={`w-full px-2 py-1.5 rounded-xl text-xs transition-all grid grid-cols-12 gap-1 items-center cursor-pointer border ${
+                    className={`w-full px-2 py-1.5 rounded-xl text-xs transition-colors duration-150 grid grid-cols-12 gap-1 items-center cursor-pointer border ${
                       isRouteActive
                         ? "bg-indigo-600 text-white border-indigo-500 shadow-md ring-1 ring-indigo-400/80"
                         : isSelected
                         ? "bg-white dark:bg-zinc-900/90 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800 hover:border-indigo-400/60 shadow-xs"
-                        : "bg-transparent text-zinc-400 dark:text-zinc-500 border-transparent opacity-40 hover:opacity-100 hover:bg-zinc-100 dark:hover:bg-zinc-900/50"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-zinc-800 dark:hover:text-zinc-200"
                     }`}
                   >
                     {/* Col 1-4: Color dot with native color picker overlay + Vehicle Name */}
