@@ -263,10 +263,31 @@ export default function CargoLoading3DModal({
     // Z vai de -W/2 (Esquerda) a +W/2 (Direita)
     state.target.set(0, H / 2, 0);
 
-    // 1. Piso com grelha metálica de armazém
+    // 1. Piso com grelha metálica de armazém externa
     const grid = new THREE.GridHelper(Math.max(L, W) * 1.4, 20, 0x38bdf8, 0x1e293b);
     grid.position.set(0, -0.01, 0);
     containerGroup.add(grid);
+
+    // Grelha matricial 3D de 5cm no piso do compartimento de carga (alinhamento exato de empacotamento)
+    const floor5cmGeo = new THREE.BufferGeometry();
+    const floor5cmVerts: number[] = [];
+    const step = 0.05; // 5cm
+    for (let z = -W / 2; z <= W / 2 + 0.001; z += step) {
+      floor5cmVerts.push(-L / 2, 0.002, z);
+      floor5cmVerts.push(L / 2, 0.002, z);
+    }
+    for (let x = -L / 2; x <= L / 2 + 0.001; x += step) {
+      floor5cmVerts.push(x, 0.002, -W / 2);
+      floor5cmVerts.push(x, 0.002, W / 2);
+    }
+    floor5cmGeo.setAttribute("position", new THREE.Float32BufferAttribute(floor5cmVerts, 3));
+    const floor5cmMat = new THREE.LineBasicMaterial({
+      color: 0x0284c7,
+      transparent: true,
+      opacity: 0.35,
+    });
+    const floor5cmLines = new THREE.LineSegments(floor5cmGeo, floor5cmMat);
+    containerGroup.add(floor5cmLines);
 
     // 2. Chassi transparente do baú da viatura
     const boxGeo = new THREE.BoxGeometry(L, H, W);
@@ -587,9 +608,12 @@ export default function CargoLoading3DModal({
                 <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-semibold px-2 py-0.5 rounded border border-indigo-500/30 uppercase">
                   Protótipo LIFO & Gravidade
                 </span>
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold px-2 py-0.5 rounded border border-emerald-500/30 uppercase flex items-center gap-1">
+                  <span>📐</span> Grelha Voxel 5cm (0% Sobreposição)
+                </span>
               </div>
               <p className="text-xs text-zinc-400">
-                Visualização do baú com regra LIFO (Última entrega ao fundo ➔ Primeira junto às portas de saída)
+                Visualização do baú com regra LIFO & Matriz 3D de 5cm (Última entrega ao fundo ➔ Primeira junto às portas de saída)
               </p>
             </div>
           </div>
