@@ -168,7 +168,104 @@ O ficheiro Excel do projeto (`GeoRoutePlan.xlsx`) é composto por 9 abas interli
 
 ---
 
-## 🏗️ 3. Arquitetura do Sistema e Componentes
+## 🖥️ 3. Manual de Operação e Instruções Passo a Passo (Como Usar o Programa)
+
+> **💡 NOTA PARA APLICAÇÃO:** Este capítulo serve de base direta para a página de **"Ajuda / Instruções Interativas"** embutida no frontend da aplicação para orientar qualquer operador logístico ou gestor de tráfego.
+
+O fluxo de trabalho no GeoRoutePlan está desenhado em **3 Fases Sequenciais**, com ferramentas táticas de suporte:
+
+### 🚀 Fluxo de Trabalho Operacional (Fases 1, 2 e 3):
+
+```mermaid
+flowchart LR
+    Fase1["📁 FASE 1: Georreferenciação<br/>(Upload Excel + Auditoria de Moradas)"] --> Fase2["🚚 FASE 2: Suporte & Regras<br/>(Armazéns, Frota, Regras, Motoristas)"]
+    Fase2 --> Fase3["⚡ FASE 3: Painel Tático & Solver<br/>(Otimizar, Editar, 3D, Exportar 9 Abas)"]
+    Fase3 --> Campo["📱 CAMPO: App Motoristas<br/>(PWA Móvel, Baixa de Guias, GPS)"]
+```
+
+---
+
+### Passo 1: Criação de Projeto & Georreferenciação (`/dashboard/georeferencing`)
+1. **Criar ou Selecionar Distribuição:** No menu superior, crie uma nova distribuição indicando a data de entrega ou selecione um projeto existente.
+2. **Carregar Ficheiro Excel:** Arraste e solte o ficheiro Excel canónico de 9 abas (ou importe um ficheiro simples de clientes).
+3. **Mapeamento de Colunas:** O sistema reconhece automaticamente as colunas canónicas (`Doc_ID`, `Cliente`, `Morada`, `CP`, `Peso_KG`, `Volume_M3`, `Janela1_Inicio`, `Janela1_Fim`). Confirme os campos e clique em **"Iniciar Geocodificação"**.
+4. **Auditoria de Qualidade:**
+   - O sistema classifica cada morada em tempo real (Nível 0 a 8).
+   - **Clientes com Sucesso (Verde/Azul - Níveis 1 a 3):** Coordenadas validadas com alta precisão.
+   - **Clientes com Falha ou Baixa Precisão (Laranja/Vermelho - Níveis 4 a 8):** O operador pode clicar sobre o cliente na tabela e usar as ferramentas de correção:
+     * *Opção A:* Escrever o nome da rua corrigido e clicar em **"Re-geocodificar"**.
+     * *Opção B:* Clicar diretamente no mapa sobre a porta do cliente para gravar as coordenadas exatas com precisão cirúrgica (Nível 0 - Manual).
+5. Clique em **"Avançar para Frota e Armazéns ➡️"**.
+
+---
+
+### Passo 2: Configuração de Frota, Armazéns e Regras (`/dashboard/fleet`)
+Neste módulo, o gestor de tráfego gere as **5 Tabelas de Suporte** antes de gerar as rotas:
+1. 🏠 **Armazéns:** Confirme o armazém base de partida, horário de abertura e tempo médio de carregamento no cais (ex: 30 min).
+2. 🚚 **Frota & Viaturas:**
+   - Ative as viaturas disponíveis para o dia de serviço.
+   - Defina a carga útil máxima em **Peso (`Capacidade_KG`)** e espaço em **Volume (`Capacidade_Vol`)**.
+   - Defina o horário de início e fim do turno do condutor (`Hora_Inicio_Turno` e `Hora_Fim_Turno`).
+   - Indique se o carro pode fazer **`2ª Volta`** (Sim/Não) para recarregar ao início da tarde.
+   - Defina o teto máximo de clientes por turno (`Max_Entregas`, ex: 25 a 30 clientes).
+3. ⚖️ **Regras de Compatibilidade:** Crie restrições cruzadas entre etiquetas (ex: proibir viatura `[SEM_FRIO]` de transportar `[FRIO]`, ou viatura `[PESADOS]` em `[ACESSO_RESTRITO_LX]`).
+4. 👤 **Motoristas & PINs:** Associe os motoristas às viaturas e defina o **PIN de 4 dígitos** de cada um para acesso à aplicação móvel.
+5. ⚠️ **Justificação de Entregas:** Catálogo de motivos oficiais que o motorista poderá selecionar na rua caso não consiga descarregar (ex: *Cliente Ausente*, *Estabelecimento Encerrado*).
+6. Clique em **"Ir para Planeamento Tático ➡️"**.
+
+---
+
+### Passo 3: Otimização de Rotas no Painel Tático (`/dashboard/tactical`)
+O Painel Tático é o centro de comando onde o algoritmo cria e permite manipular visualmente todas as viagens do dia:
+1. **Calcular a Solução Global:**
+   - Clique no botão verde **"🛠️ Otimizar Rotas"**.
+   - O motor **Google OR-Tools** calcula instantaneamente a melhor distribuição:
+     * Minimiza quilómetros e custos financeiros.
+     * Respeita rigorosamente a capacidade de peso (KG) e volume (m³).
+     * Enquadra as entregas da manhã na manhã e as da tarde na tarde.
+     * Impede que viaturas cheguem horas antes do cliente abrir (espera máxima de 30 min).
+2. **Visualização Integrada (Tabela + Mapa Destacado):**
+   - O painel exibe a timeline de cada carro com a lista sequencial de paragens, horário previsto de chegada (ETA), tempo de descarga e tempo de espera.
+   - Pode abrir o **Mapa Destacado** (`detached-map`) num segundo monitor: qualquer ação na tabela reflete-se no mapa e vice-versa em tempo real via *Broadcast Channel*.
+3. **Ajustes Táticos Manuais do Gestor:**
+   - **Mover Paragem Individual:** Clique no seletor de viatura de qualquer paragem para a transferir para outro carro. O sistema recalcula instantaneamente os horários e capacidades de ambos os veículos.
+   - **Transferir Rota em Lote:** O seletor *"⇄ Mover Rota"* permite esvaziar um carro avariado ou transferir todas as suas entregas para outro veículo com 1 clique.
+   - **Reordenar Sequência ("⚡ Ordenar"):** Se alterar clientes manualmente, clique no botão *"⚡ Ordenar"* da viatura para reorganizar a ordem de entregas pelo caminho mais curto e rápido sem violar horários.
+4. **Auditoria de Conformidade em Tempo Real:**
+   - Se uma viatura exceder a carga útil em kg, a cubagem ou a hora limite de regresso ao armazém, o sistema destaca a violação a **vermelho** com a indicação exata do excesso.
+5. **Conferência 3D do Baú de Carga ("📦 3D"):**
+   - Clique no botão *"📦 3D"* de qualquer viatura para abrir o simulador de arrumação volumétrica:
+     * Visualize as encomendas empilhadas no compartimento de carga.
+     * As caixas mais pesadas e volumosas ficam no chão; as mais leves por cima.
+     * As entregas das primeiras paragens ficam posicionadas junto às portas traseiras para descarga imediata.
+
+---
+
+### Passo 4: Operação de Campo na App dos Motoristas (`motoristas_webapp`)
+1. **Acesso Fácil:** O motorista abre a aplicação no telemóvel (PWA instalada) e insere o seu PIN pessoal (ex: `1111`).
+2. **Lista Diária:** Vê a lista ordenada das suas paragens com nome, morada, contacto telefónico (com botão de chamada rápida), caixas e notas de entrega.
+3. **Navegação com 1 Clique:** Clica no botão de navegação para abrir a morada diretamente no **Google Maps** ou **Waze**.
+4. **Baixa da Entrega:**
+   - **Entregue com Sucesso:** Clica no botão verde. A hora exata e a confirmação são registadas.
+   - **Não Entregue / Incidência:** Clica no botão vermelho e seleciona obrigatoriamente um dos motivos oficiais (ex: *Cliente Encerrado*), podendo adicionar notas.
+5. **Modo Offline-First:** Se a carrinha estiver numa cave ou zona rural sem rede 4G/5G, a app guarda tudo no telemóvel e sincroniza automaticamente assim que recuperar sinal.
+6. **Fecho de Turno:** No final do percurso, o motorista fecha a rota no armazém, conferindo devoluções e mercadoria sobrante.
+
+---
+
+### Passo 5: Relatórios, Auditoria e Exportação (`/dashboard/reports`)
+1. **Conferência de Manifestos:** O sistema consolida as métricas totais do dia: quilómetros percorridos, custo estimado da frota, taxas de ocupação em peso/volume e taxa de pontualidade de entregas.
+2. **Exportação Fiel do Excel Canónico de 9 Abas:**
+   - Clique em **"📥 Exportar Excel 9 Abas"**.
+   - O ficheiro descarregado contém todas as 9 abas atualizadas:
+     * A aba `Rotas` preenchida com a sequência final, viaturas atribuídas, horas de chegada e saída calculadas.
+     * A aba `Manifestos` preenchida com o resumo consolidado por carro.
+     * Os estados reais de entrega submetidos pelos motoristas na estrada.
+3. **Arquivo Local:** O ficheiro Excel exportado serve de arquivo definitivo para o ERP ou contabilidade do cliente.
+
+---
+
+## 🏗️ 4. Arquitetura do Sistema e Componentes Técnicos
 
 O ecossistema GeoRoutePlan é composto pelos seguintes módulos:
 
@@ -263,7 +360,25 @@ O ecossistema GeoRoutePlan é composto pelos seguintes módulos:
 
 ---
 
-## 🛡️ 4. Módulo de Administração, Licenciamento e Controlo de Custos
+## 🔍 5. Níveis de Qualidade de Georreferenciação
+
+O sistema audita e classifica cada coordenada de entrega em 9 níveis de precisão (0 a 8):
+
+| Nível | Classificação | Descrição da Precisão | Tolerância Aprox. | Ação do Sistema |
+| :---: | :--- | :--- | :---: | :--- |
+| **0** | Cliente / Manual | Coordenadas fornecidas explicitamente no Excel ou corrigidas no mapa | Exata | Aceite imediatamente |
+| **1** | Ouro (*Rua + Porta*) | Morada completa validada com número de polícia | ~10m | Ótimo para otimização |
+| **2** | Prata (*Rua + CP4*) | Rua identificada associada ao código postal de 4 dígitos | ~50m | Válido para distribuição |
+| **3** | Bronze (*CP7 Completo*) | Centroide de código postal completo (ex: 1000-001) | ~100m | Aceitável em zonas urbanas |
+| **4** | Ferro (*CP4*) | Centroide do código postal genérico de 4 dígitos | ~500m | Aceitável em zonas rurais |
+| **5** | Pedra (*Localidade*) | Centroide da localidade ou povoação | ~1km | Alerta de baixa precisão |
+| **6** | Concelho | Centroide do município/concelho | ~5km | Requer revisão manual |
+| **7** | Distrito | Centroide da capital de distrito | ~20km | Não recomendado para rotas |
+| **8** | Falha (*Não Encontrado*) | Endereço inválido ou não localizado | N/A | Exige intervenção manual |
+
+---
+
+## 🛡️ 6. Módulo de Administração, Licenciamento e Controlo de Custos
 
 O sistema dispõe de um módulo dedicado de administração para gestão multi-tenant, segurança e faturação:
 
@@ -283,43 +398,39 @@ O sistema dispõe de um módulo dedicado de administração para gestão multi-t
 
 ---
 
-## 🔍 5. Níveis de Qualidade de Georreferenciação
+## 🔒 7. Política de Retenção de Dados, RGPD & Arquitetura da App de Motoristas
 
-O sistema audita e classifica cada coordenada de entrega em 9 níveis de precisão (0 a 8):
+### 7.1 Regra de Retenção de 7 Dias (1 Semana) & Limite de 10 Distribuições:
+1. **Ciclo de Vida das Distribuições (7 Dias)**:
+   * Cada projeto/distribuição tem um ciclo de vida ativo no servidor de **7 dias (1 semana)** a contar da data de distribuição.
+   * **Exceção de Segurança**: Projetos com estado ativo na rua (`status = 'active'`) nunca são eliminados automaticamente.
+   * **Responsabilidade do Arquivo**: O cliente descarrega o **Excel Canónico de 9 Abas** para o seu arquivo local/ERP. Como o sistema suporta *roundtrip* completo, se o cliente necessitar de revisitar ou auditar a distribuição no futuro, basta importar novamente o Excel de 9 abas que o sistema reconstrói as rotas e métricas exatamente como estavam.
+2. **Limite de 10 Projetos por Empresa**:
+   * O sistema limita a 10 o número de distribuições simultâneas por empresa no servidor, prevenindo a degradação de espaço e custos no SQLite / VPS Coolify.
 
-| Nível | Classificação | Descrição da Precisão | Tolerância Aprox. | Ação do Sistema |
-| :---: | :--- | :--- | :---: | :--- |
-| **0** | Cliente / Manual | Coordenadas fornecidas explicitamente no Excel ou corrigidas no mapa | Exata | Aceite imediatamente |
-| **1** | Ouro (*Rua + Porta*) | Morada completa validada com número de polícia | ~10m | Ótimo para otimização |
-| **2** | Prata (*Rua + CP4*) | Rua identificada associada ao código postal de 4 dígitos | ~50m | Válido para distribuição |
-| **3** | Bronze (*CP7 Completo*) | Centroide de código postal completo (ex: 1000-001) | ~100m | Aceitável em zonas urbanas |
-| **4** | Ferro (*CP4*) | Centroide do código postal genérico de 4 dígitos | ~500m | Aceitável em zonas rurais |
-| **5** | Pedra (*Localidade*) | Centroide da localidade ou povoação | ~1km | Alerta de baixa precisão |
-| **6** | Concelho | Centroide do município/concelho | ~5km | Requer revisão manual |
-| **7** | Distrito | Centroide da capital de distrito | ~20km | Não recomendado para rotas |
-| **8** | Falha (*Não Encontrado*) | Endereço inválido ou não localizado | N/A | Exige intervenção manual |
+### 7.2 Diretrizes de RGPD & Proteção de Dados Pessoais (Lei n.º 58/2019 e CNPD):
+1. **Minimização de Dados**:
+   * Apenas recolher e processar os campos estritamente necessários à entrega (nome, morada, contacto e janela horária).
+2. **Geocoding Seguro (APIs Externas)**:
+   * Ao comunicar com a Google Maps API ou OpenStreetMap (Nominatim), **nunca** enviar dados pessoais de clientes (nome, telefone, NIF ou observações). Enviar exclusivamente a cadeia de texto da morada, concelho e código postal.
+3. **Isolamento Multitenant Inviolável**:
+   * Todos os acessos a projetos, rotas, entregas, frotas e consumos devem ser estritamente filtrados por `empresa_id` através do token JWT autenticado.
+4. **Proteção de Notas de Motorista e Observações**:
+   * O campo `Notas_Motorista` pode conter informações de acesso ou notas sensíveis dos clientes. O acesso a este campo no PWA móvel é restrito unicamente ao motorista atribuído à respetiva viatura.
 
----
-
-## 🧹 6. Levantamento de Código: Componentes Ativos vs. Legado
-
-### ✅ Componentes Ativos e Principais (Manter e Evoluir):
-* `frontend/`: Aplicação Next.js completa (UI moderna de gestão).
-* `backend/`: API FastAPI e endpoints REST.
-* `motoristas_webapp/`: Aplicação PWA de distribuição para motoristas.
-* `utils/optimization_solver.py`: Motor OR-Tools VRP.
-* `utils/rules_engine.py`: Motor de avaliação de regras de distribuição e compatibilidade multi-tag.
-* `utils/geocoder_engine.py`: Motor de geocodificação em cascata.
-* `utils/template_manager.py` e `utils/export_engine.py`: Gestores do Excel de 9 abas.
-* `utils/google_routes_engine.py`: Integração com serviços Google Maps.
-* `database.py`: Estrutura de dados SQLite e multi-tenancy.
-
-### ⚠️ Componentes Legados / Obsoletos (Isolados em `_legacy_archive/`):
-* `_legacy_archive/`: Guarda o monólito Streamlit antigo (`app.py`), componentes antigos (`components/`), páginas legadas, backups pesados de bases de dados e templates antigos.
+### 7.3 Arquitetura de Rastreio da App de Motoristas (`motoristas_webapp`):
+Em estrita conformidade com as deliberações da **CNPD** e com os **artigos 19.º e 20.º do Código do Trabalho** (proibição de vigilância contínua à distância do trabalhador):
+1. **Sem Rastreio Contínuo de Passos**:
+   * A aplicação móvel **NÃO recolhe nem regista continuamente** o trajeto segundo a segundo do motorista.
+2. **Geolocalização Estritamente Pontual (Event-Driven)**:
+   * **Pico de Entrega / POD (*Proof of Delivery*)**: Apenas no momento em que o motorista submete a paragem ("Entregue" ou "Não Entregue com Justificação"), a aplicação pode registar uma coordenada pontual como comprovativo georreferenciado de presença no cliente.
+   * **Apoio ao Motorista (Sob Demanda / Voluntário)**: Botão no PWA onde o motorista, por sua livre iniciativa, partilha momentaneamente a sua posição com o gestor de tráfego/armazém para pedir apoio no despiste de moradas erradas ou acessos difíceis.
+3. **Cessação no Fim de Turno**:
+   * Ao finalizar o manifesto da rota, o PWA encerra todas as permissões de localização.
 
 ---
 
-## 🚀 7. Roadmap e Próximos Passos de Desenvolvimento
+## 🚀 8. Roadmap e Próximos Passos de Desenvolvimento
 
 1. **Expansão da App de Motoristas (`motoristas_webapp`)**:
    * Assinatura digital no ecrã (*Proof of Delivery - POD*).
@@ -340,39 +451,7 @@ O sistema audita e classifica cada coordenada de entrega em 9 níveis de precis�
 
 ---
 
-## 🔒 9. Política de Retenção de Dados, RGPD & Arquitetura da App de Motoristas
-
-### 9.1 Regra de Retenção de 7 Dias (1 Semana) & Limite de 10 Distribuições:
-1. **Ciclo de Vida das Distribuições (7 Dias)**:
-   * Cada projeto/distribuição tem um ciclo de vida ativo no servidor de **7 dias (1 semana)** a contar da data de distribuição.
-   * **Exceção de Segurança**: Projetos com estado ativo na rua (`status = 'active'`) nunca são eliminados automaticamente.
-   * **Responsabilidade do Arquivo**: O cliente descarrega o **Excel Canónico de 9 Abas** para o seu arquivo local/ERP. Como o sistema suporta *roundtrip* completo, se o cliente necessitar de revisitar ou auditar a distribuição no futuro, basta importar novamente o Excel de 9 abas que o sistema reconstrói as rotas e métricas exatamente como estavam.
-2. **Limite de 10 Projetos por Empresa**:
-   * O sistema limita a 10 o número de distribuições simultâneas por empresa no servidor, prevenindo a degradação de espaço e custos no SQLite / VPS Coolify.
-
-### 9.2 Diretrizes de RGPD & Proteção de Dados Pessoais (Lei n.º 58/2019 e CNPD):
-1. **Minimização de Dados**:
-   * Apenas recolher e processar os campos estritamente necessários à entrega (nome, morada, contacto e janela horária).
-2. **Geocoding Seguro (APIs Externas)**:
-   * Ao comunicar com a Google Maps API ou OpenStreetMap (Nominatim), **nunca** enviar dados pessoais de clientes (nome, telefone, NIF ou observações). Enviar exclusivamente a cadeia de texto da morada, concelho e código postal.
-3. **Isolamento Multitenant Inviolável**:
-   * Todos os acessos a projetos, rotas, entregas, frotas e consumos devem ser estritamente filtrados por `empresa_id` através do token JWT autenticado.
-4. **Proteção de Notas de Motorista e Observações**:
-   * O campo `Notas_Motorista` pode conter informações de acesso ou notas sensíveis dos clientes. O acesso a este campo no PWA móvel é restrito unicamente ao motorista atribuído à respetiva viatura.
-
-### 9.3 Arquitetura de Rastreio da App de Motoristas (`motoristas_webapp`):
-Em estrita conformidade com as deliberações da **CNPD** e com os **artigos 19.º e 20.º do Código do Trabalho** (proibição de vigilância contínua à distância do trabalhador):
-1. **Sem Rastreio Contínuo de Passos**:
-   * A aplicação móvel **NÃO recolhe nem regista continuamente** o trajeto segundo a segundo do motorista.
-2. **Geolocalização Estritamente Pontual (Event-Driven)**:
-   * **Pico de Entrega / POD (*Proof of Delivery*)**: Apenas no momento em que o motorista submete a paragem ("Entregue" ou "Não Entregue com Justificação"), a aplicação pode registar uma coordenada pontual como comprovativo georreferenciado de presença no cliente.
-   * **Apoio ao Motorista (Sob Demanda / Voluntário)**: Botão no PWA onde o motorista, por sua livre iniciativa, partilha momentaneamente a sua posição com o gestor de tráfego/armazém para pedir apoio no despiste de moradas erradas ou acessos difíceis.
-3. **Cessação no Fim de Turno**:
-   * Ao finalizar o manifesto da rota, o PWA encerra todas as permissões de localização.
-
----
-
-## 📋 10. Checklist de Início de Sessão para o Desenvolvedor / Agente
+## 📋 9. Checklist de Início de Sessão para o Desenvolvedor / Agente
 
 Antes de iniciar qualquer desenvolvimento:
 - [ ] Ler este documento (`GeoRoutePlan.md`) na íntegra.
