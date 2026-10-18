@@ -189,13 +189,22 @@ flowchart LR
 1. **Criar ou Selecionar Distribuição:** No menu superior, crie uma nova distribuição indicando a data de entrega ou selecione um projeto existente.
 2. **Carregar Ficheiro Excel:** Arraste e solte o ficheiro Excel canónico de 9 abas (ou importe um ficheiro simples de clientes).
 3. **Mapeamento de Colunas:** O sistema reconhece automaticamente as colunas canónicas (`Doc_ID`, `Cliente`, `Morada`, `CP`, `Peso_KG`, `Volume_M3`, `Janela1_Inicio`, `Janela1_Fim`). Confirme os campos e clique em **"Iniciar Geocodificação"**.
-4. **Auditoria de Qualidade:**
+4. **Auditoria de Importação e Controlo de Linhas (Tudo-ou-Nada)**:
+   - Antes de gravar na base de dados, o sistema valida a integridade completa de todas as abas e apresenta uma grelha transparente de conferência:
+     | Aba | Linhas no Ficheiro | Registos Validados | Estado / Observações |
+     | :--- | :---: | :---: | :--- |
+     | `Entregas` | 200 | 200 | ✅ 100% Importado com Sucesso |
+     | `Armazéns` | 2 | 2 | ✅ 100% Importado com Sucesso |
+     | `Frota` | 8 | 8 | ✅ 100% Importado com Sucesso |
+     | `Motoristas` | 10 | 8 | ❌ **Erro na linha 9: PIN em falta** |
+   - **Regra de Segurança Inviolável:** Se qualquer linha tiver erro ou estiver incompleta, a importação parcial é **rejeitada imediatamente (*Rollback*)**, impedindo que o operador avance com metade das encomendas esquecidas. O sistema só grava quando o ficheiro estiver 100% íntegro.
+5. **Auditoria de Qualidade de Coordenadas:**
    - O sistema classifica cada morada em tempo real (Nível 0 a 8).
    - **Clientes com Sucesso (Verde/Azul - Níveis 1 a 3):** Coordenadas validadas com alta precisão.
    - **Clientes com Falha ou Baixa Precisão (Laranja/Vermelho - Níveis 4 a 8):** O operador pode clicar sobre o cliente na tabela e usar as ferramentas de correção:
      * *Opção A:* Escrever o nome da rua corrigido e clicar em **"Re-geocodificar"**.
      * *Opção B:* Clicar diretamente no mapa sobre a porta do cliente para gravar as coordenadas exatas com precisão cirúrgica (Nível 0 - Manual).
-5. Clique em **"Avançar para Frota e Armazéns ➡️"**.
+6. Clique em **"Avançar para Frota e Armazéns ➡️"**.
 
 ---
 
@@ -454,6 +463,8 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
 6. **Construção de Base de Dados Própria de Trânsito Preditivo 24h (Estratégia Proprietária)**:
    * Armazenamento incremental em SQLite de cada resposta de trânsito obtida (Google, TomTom ou dados de campo dos motoristas) parametrizada por: *Origem (CP4)*, *Destino (CP4)*, *Dia da Semana*, *Faixa Horária (24h)* e *Velocidade Real Registada*.
    * Geração de um modelo preditivo local a custo zero: à medida que as distribuições são executadas, o nosso solver passa a consultar a nossa própria matriz histórica de trânsito 24h, atingindo independência total de APIs pagas.
+7. **Grelha de Auditoria de Importação Transacional (Tudo-ou-Nada)**:
+   * Implementação da tabela visual de conferência (Aba / Linhas / Validadas / Estado com linha de erro) no frontend e mecanismo de *Rollback* transacional no backend para rejeitar gravações parciais.
 
 ---
 
