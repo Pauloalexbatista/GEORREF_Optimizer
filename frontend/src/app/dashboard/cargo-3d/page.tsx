@@ -343,22 +343,36 @@ export default function Cargo3DPage() {
     cabineMesh.position.set(-L / 2, H / 2, 0);
     containerGroup.add(cabineMesh);
 
-    const doorGeo = new THREE.PlaneGeometry(W * 0.45, H);
+    // 3. Portas Traseiras Batentes (Dobradiças nos pilares exteriores, abrindo para fora)
+    const doorW = W * 0.46;
+    const doorGeo = new THREE.PlaneGeometry(doorW, H);
     const doorMat = new THREE.MeshBasicMaterial({
-      color: 0x15803d,
+      color: 0x16a34a,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.28,
       side: THREE.DoubleSide,
     });
-    const doorLeft = new THREE.Mesh(doorGeo, doorMat);
-    doorLeft.position.set(L / 2 + 0.3, H / 2, -W * 0.25);
-    doorLeft.rotation.y = Math.PI / 4;
-    containerGroup.add(doorLeft);
+    const doorEdgeMat = new THREE.LineBasicMaterial({ color: 0x4ade80, linewidth: 2 });
 
-    const doorRight = new THREE.Mesh(doorGeo, doorMat);
-    doorRight.position.set(L / 2 + 0.3, H / 2, W * 0.25);
-    doorRight.rotation.y = -Math.PI / 4;
-    containerGroup.add(doorRight);
+    // Porta Esquerda: Dobradiça no pilar exterior esquerdo (X = L/2, Z = -W/2)
+    const leftDoorHinge = new THREE.Group();
+    leftDoorHinge.position.set(L / 2, H / 2, -W / 2);
+    const leftDoorMesh = new THREE.Mesh(doorGeo, doorMat);
+    leftDoorMesh.position.set(doorW / 2, 0, 0);
+    leftDoorMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(doorGeo), doorEdgeMat));
+    leftDoorHinge.add(leftDoorMesh);
+    leftDoorHinge.rotation.y = Math.PI * 0.35;
+    containerGroup.add(leftDoorHinge);
+
+    // Porta Direita: Dobradiça no pilar exterior direito (X = L/2, Z = +W/2)
+    const rightDoorHinge = new THREE.Group();
+    rightDoorHinge.position.set(L / 2, H / 2, W / 2);
+    const rightDoorMesh = new THREE.Mesh(doorGeo, doorMat);
+    rightDoorMesh.position.set(doorW / 2, 0, 0);
+    rightDoorMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(doorGeo), doorEdgeMat));
+    rightDoorHinge.add(rightDoorMesh);
+    rightDoorHinge.rotation.y = -Math.PI * 0.35;
+    containerGroup.add(rightDoorHinge);
 
     // 4. Caixas
     cargoBoxes.forEach((b) => {

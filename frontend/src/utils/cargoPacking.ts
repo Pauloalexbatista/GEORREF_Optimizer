@@ -210,19 +210,23 @@ export function calculateCargoLoadingPlan(
     }
   });
 
-  // 2. Ordenação LIFO (Last In First Out):
-  // Primeiro as paragens com maior sequência (descarregadas em último -> fundo da viatura)
-  // Dentro de paragens equivalentes, as mais pesadas assentam em baixo (piso)
+  // 2. Ordenação LIFO e Gravidade Hierárquica:
+  // Primeiro as paragens com maior sequência (descarregadas em último -> Cabine/Fundo)
+  // Dentro de paragens equivalentes, as caixas mais pesadas e volumosas assentam primeiro no piso
   rawBoxes.sort((a, b) => {
     if (b.stopSeq !== a.stopSeq) {
       return b.stopSeq - a.stopSeq;
     }
-    return b.weightKg - a.weightKg;
+    const weightDiff = b.weightKg - a.weightKg;
+    if (Math.abs(weightDiff) > 0.5) {
+      return weightDiff;
+    }
+    return b.volumeM3 - a.volumeM3;
   });
 
   // 3. Empacotamento Tridimensional Sem Sobreposição (Zero-Overlap 3D Packing com Suporte e Gravidade)
   const placedBoxes: CargoBox[] = [];
-  const placedRects: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number }[] = [];
+  const placedRects: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number; weightKg: number }[] = [];
   const pad = 0.02; // 2cm de folga física realista entre caixas
 
   const L = container.length;
@@ -247,24 +251,69 @@ export function calculateCargoLoadingPlan(
     return false;
   }
 
-  // Lista de pontos de ancoragem possíveis no espaço 3D (X, Y, Z)
-  const candidateAnchors: { x: number; y: number; z: number }[] = [
-    { x: pad, y: 0, z: -W / 2 + pad }
-  ];
+  // Verifica suporte físico: se estiver em cima (Y > 0), tem de ter caixa sólida por baixo
+  // E nunca permite uma caixa pesada pousar em cima de uma caixa muito mais leve
+  function isValidSupport(minX: number, maxX: number, posY: number, minZ: number, maxZ: number, boxWeight: number): boolean {
+    if (posY <= 0.01) return true; // No piso do carro -> suporte 100% garantido!
+
+    for (const p of placedRects) {
+      if (Math.abs(p.maxY - posY) <= 0.04) {
+        const overlapX = Math.min(maxX, p.maxX) - Math.max(minX, p.minX);
+        const overlapZ = Math.min(maxZ, p.maxZ) - Math.max(minZ, p.minZ);
+        if (overlapX > 0.08 && overlapZ > 0.08) {
+          if (p.weightKg >= boxWeight * 0.5) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
 
   for (const box of rawBoxes) {
-    // Alocação LIFO ao longo do eixo X (0 = Cabine/Fundo, L = Portas Traseiras)
+    // Cálculo do target longitudinal X pela regra LIFO
+    // Última entrega (Seq N) -> Cabine (X=0); Primeira entrega (Seq 1) -> Portas Traseiras (X=L)
     const lifoRatio = (totalStops - box.stopSeq) / Math.max(1, totalStops - 1);
     const targetX = lifoRatio * Math.max(0, L - box.length - pad * 2);
 
-    candidateAnchors.push({ x: targetX, y: 0, z: -W / 2 + pad });
+    // Margens longitudinais estritas por zona:
+    // Uma entrega "junto à porta" NUNCA é colocada no fundo da cabine e vice-versa!
+    let minAllowedX = pad;
+    let maxAllowedX = L - box.length - pad;
+
+    if (box.lifoZone === "cabine") {
+      minAllowedX = pad;
+      maxAllowedX = Math.min(L * 0.45, L - box.length - pad);
+    } else if (box.lifoZone === "porta") {
+      minAllowedX = Math.max(pad, L * 0.52);
+      maxAllowedX = L - box.length - pad;
+    } else { // meio
+      minAllowedX = Math.max(pad, L * 0.20);
+      maxAllowedX = Math.min(L * 0.80, L - box.length - pad);
+    }
+
+    // Âncoras candidatas
+    const candidateAnchors: { x: number; y: number; z: number }[] = [
+      { x: Math.max(minAllowedX, Math.min(targetX, maxAllowedX)), y: 0, z: -W / 2 + pad }
+    ];
+
+    for (const p of placedRects) {
+      if (p.maxX + pad <= maxAllowedX && p.maxX >= minAllowedX) {
+        candidateAnchors.push({ x: p.maxX + pad, y: p.minY, z: p.minZ });
+      }
+      if (p.minX >= minAllowedX && p.minX <= maxAllowedX) {
+        candidateAnchors.push(
+          { x: p.minX, y: p.maxY + pad, z: p.minZ },
+          { x: p.minX, y: p.minY, z: p.maxZ + pad }
+        );
+      }
+    }
 
     let bestPos: { x: number; y: number; z: number } | null = null;
     let bestScore = Number.POSITIVE_INFINITY;
 
-    // Testar âncoras disponíveis
     for (const anchor of candidateAnchors) {
-      const posX = Math.max(pad, Math.min(anchor.x, L - box.length - pad));
+      const posX = Math.max(minAllowedX, Math.min(anchor.x, maxAllowedX));
       const posY = anchor.y;
       const posZ = Math.max(-W / 2 + pad, Math.min(anchor.z, W / 2 - box.width - pad));
 
@@ -275,7 +324,7 @@ export function calculateCargoLoadingPlan(
       const minZ = posZ;
       const maxZ = posZ + box.width;
 
-      if (maxX > L - pad * 0.5 || maxY > H || maxZ > W / 2 - pad * 0.5) {
+      if (maxX > maxAllowedX + pad * 0.5 || maxY > H || maxZ > W / 2 - pad * 0.5) {
         continue;
       }
 
@@ -283,9 +332,14 @@ export function calculateCargoLoadingPlan(
         continue;
       }
 
-      // Gravidade (prioriza menor Y) e LIFO (prioriza proximidade a targetX)
+      if (!isValidSupport(minX, maxX, minY, minZ, maxZ, box.weightKg)) {
+        continue;
+      }
+
+      // Gravidade forte: valoriza fortemente Y=0 (piso) e penaliza subir em altura
+      // LIFO: penaliza afastar-se do targetX da encomenda
       const distLIFO = Math.abs(posX - targetX);
-      const score = posY * 15 + distLIFO * 2.0 + (posZ + W / 2) * 0.5;
+      const score = posY * 60 + distLIFO * 15 + (posZ + W / 2) * 0.5;
 
       if (score < bestScore) {
         bestScore = score;
@@ -293,48 +347,46 @@ export function calculateCargoLoadingPlan(
       }
     }
 
-    // Se nenhuma âncora direta coube, varrimento regular em grelha sem colisão
+    // Se nenhuma âncora serviu, varrimento estrito dentro da faixa permitida
     if (!bestPos) {
       scanLoop:
-      for (let y = 0; y <= H - box.height; y += box.height + pad) {
-        for (let x = targetX; x <= L - box.length - pad; x += box.length + pad) {
-          for (let z = -W / 2 + pad; z <= W / 2 - box.width - pad; z += box.width + pad) {
+      for (let y = 0; y <= H - box.height; y += 0.05) {
+        for (let x = targetX; x <= maxAllowedX; x += 0.05) {
+          for (let z = -W / 2 + pad; z <= W / 2 - box.width - pad; z += 0.05) {
             if (!collidesWithPlaced(x, x + box.length, y, y + box.height, z, z + box.width)) {
-              bestPos = { x, y, z };
-              break scanLoop;
+              if (isValidSupport(x, x + box.length, y, z, z + box.width, box.weightKg)) {
+                bestPos = { x, y, z };
+                break scanLoop;
+              }
             }
           }
         }
-        for (let x = 0; x < targetX; x += box.length + pad) {
-          for (let z = -W / 2 + pad; z <= W / 2 - box.width - pad; z += box.width + pad) {
+        for (let x = targetX; x >= minAllowedX; x -= 0.05) {
+          for (let z = -W / 2 + pad; z <= W / 2 - box.width - pad; z += 0.05) {
             if (!collidesWithPlaced(x, x + box.length, y, y + box.height, z, z + box.width)) {
-              bestPos = { x, y, z };
-              break scanLoop;
+              if (isValidSupport(x, x + box.length, y, z, z + box.width, box.weightKg)) {
+                bestPos = { x, y, z };
+                break scanLoop;
+              }
             }
           }
         }
       }
     }
 
-    const finalX = bestPos ? bestPos.x : Math.min(targetX, Math.max(pad, L - box.length - pad));
+    const finalX = bestPos ? bestPos.x : Math.max(minAllowedX, Math.min(targetX, maxAllowedX));
     const finalY = bestPos ? bestPos.y : 0;
     const finalZ = bestPos ? bestPos.z : -W / 2 + pad;
 
-    const minX = finalX;
-    const maxX = finalX + box.length;
-    const minY = finalY;
-    const maxY = finalY + box.height;
-    const minZ = finalZ;
-    const maxZ = finalZ + box.width;
-
-    placedRects.push({ minX, maxX, minY, maxY, minZ, maxZ });
-
-    // Gerar novas âncoras em redor desta caixa
-    candidateAnchors.push(
-      { x: maxX + pad, y: minY, z: minZ },      // Atrás no eixo X
-      { x: minX, y: maxY + pad, z: minZ },      // Em cima no eixo Y (empilhar)
-      { x: minX, y: minY, z: maxZ + pad }       // Ao lado no eixo Z
-    );
+    placedRects.push({
+      minX: finalX,
+      maxX: finalX + box.length,
+      minY: finalY,
+      maxY: finalY + box.height,
+      minZ: finalZ,
+      maxZ: finalZ + box.width,
+      weightKg: box.weightKg,
+    });
 
     const centerX = finalX + box.length / 2;
     const centerY = finalY + box.height / 2;
