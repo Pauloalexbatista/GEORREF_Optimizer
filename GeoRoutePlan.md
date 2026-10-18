@@ -317,6 +317,9 @@ O sistema audita e classifica cada coordenada de entrega em 9 níveis de precis�
    * Recálculo automático de previsões de chegada (ETA) no painel de tráfego com base em ocorrências de campo reportadas pelos motoristas.
 5. **Futura Integração da Google Routes Matrix (Condicionada a Clientes Reais)**:
    * A ativação da API de trânsito em tempo real da Google para a matriz do solver fica guardada e planeada, mas **só será implementada quando houver clientes comerciais reais a operar no sistema**.
+6. **Construção de Base de Dados Própria de Trânsito Preditivo 24h (Estratégia Proprietária)**:
+   * Armazenamento incremental em SQLite de cada resposta de trânsito obtida (Google, TomTom ou dados de campo dos motoristas) parametrizada por: *Origem (CP4)*, *Destino (CP4)*, *Dia da Semana*, *Faixa Horária (24h)* e *Velocidade Real Registada*.
+   * Geração de um modelo preditivo local a custo zero: à medida que as distribuições são executadas, o nosso solver passa a consultar a nossa própria matriz histórica de trânsito 24h, atingindo independência total de APIs pagas.
 
 ---
 

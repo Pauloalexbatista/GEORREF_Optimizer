@@ -118,3 +118,23 @@ Após a solução global gerada pelo OR-Tools, o utilizador tem ao dispor ferram
 - **Botão "⚡ Ordenar Trajeto":** Reordena qualquer rota individual recorrendo a um algoritmo sequencial calibrado com forte penalização por violação de janelas horárias.
 - **Auditoria Automática de Conformidade:** Verifica se alguma alteração manual excedeu o peso, volume ou horário limite, alertando o gestor de tráfego a cores (Verde = Conforme, Vermelho = Violação).
 - **Cálculo Imediato de Manifestos:** Atualiza em tempo real os KM totais, tempos de condução, tempos de espera, taxa de ocupação em peso (%), taxa de ocupação em volume (%) e custo financeiro total (€).
+
+---
+
+## 🧠 9. Estratégia Futura: Decisão Ativa por Trânsito Preditivo CP7 (Corredores Horários)
+
+O trânsito preditivo não deve ser uma métrica calculada apenas no fim da rota, mas sim o **critério decisor ativo no momento exato em que o solver escolhe se uma entrega vai para a Viatura A ou para a Viatura B**.
+
+### A. O Problema da Decisão Puramente Geométrica
+- Um cliente pode estar a apenas **5 km** do Carro A, mas exigir atravessar um nó de estrangulamento às 08h30 (ex: 2ª Circular / VCI) que demora **28 minutos**.
+- O Carro B pode estar a **7 km**, mas a circular por um corredor fluido no sentido contrário, demorando apenas **11 minutos**.
+- **Comportamento Inteligente:** O solver escolhe o **Carro B**, garantindo a chegada antecipada sem queimar tempo de motor em marcha lenta e sem violar a janela do cliente.
+
+### B. Arquitetura da Tabela de Trânsito por CP7 (`perfil_transito_cp7`)
+- **Sem explosão de dados ($N \times N$):** Em vez de calcular todos os pares de ruas, a base de dados em SQLite armazena o perfil de penalização percentual por Código Postal CP7 (~350.000 CP7s reais em Portugal) nas 24 horas do dia.
+- **Tamanho compacto:** Ocupa menos de **250 MB**, com pesquisas instantâneas em memória RAM (< 1 ms).
+- **Alimentação Orgânica a Custo Zero:** 
+  1. Pelas rotas finais validadas pontualmente com APIs gratuitas (ex: 250.000 chamadas/mês da HERE ou créditos da Google).
+  2. Pela telemetria GPS em tempo real da nossa própria **App de Motoristas** no terreno.
+- **Corredores de Travessia:** O tempo de trânsito entre dois nós herda o perfil horários dos CP7s do corredor rodoviário em tempo real de decisão, forçando a criação de rotas organicamente imunes a engarrafamentos.
+
