@@ -574,11 +574,11 @@ export default function Cargo3DPage() {
         state.spherical.phi = 0.05;
         break;
       case "side":
-        state.spherical.theta = Math.PI / 2;
+        state.spherical.theta = 0; // Olhar o perfil lateral ao longo do eixo Z
         state.spherical.phi = Math.PI / 2.3;
         break;
       case "doors":
-        state.spherical.theta = 0;
+        state.spherical.theta = Math.PI / 2; // Olhar as portas traseiras de frente ao longo do eixo X
         state.spherical.phi = Math.PI / 2.3;
         break;
       case "isometric":

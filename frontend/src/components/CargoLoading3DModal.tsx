@@ -539,12 +539,12 @@ export default function CargoLoading3DModal({
         state.spherical.theta = 0;
         state.spherical.phi = 0.05;
         break;
-      case "side": // Perfil lateral
-        state.spherical.theta = Math.PI / 2;
+      case "side": // Perfil lateral (olhar a partir do eixo Z)
+        state.spherical.theta = 0;
         state.spherical.phi = Math.PI / 2.3;
         break;
-      case "doors": // Olhar de trás (Portas de descarga)
-        state.spherical.theta = 0;
+      case "doors": // Olhar de trás para as portas de descarga (olhar a partir do eixo X)
+        state.spherical.theta = Math.PI / 2;
         state.spherical.phi = Math.PI / 2.3;
         break;
       case "isometric":
