@@ -151,19 +151,19 @@ function MapInitialController({
   const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (initializedRef.current) return;
     const valid = (initialPoints || []).filter(p => p[0] !== 0 && p[1] !== 0);
-    if (valid.length > 0) {
+    // Só bloqueia a inicialização se tivermos os clientes reais carregados (mais do que apenas o armazém)
+    if (valid.length > 1) {
       try {
         const bounds = L.latLngBounds(valid.map(p => L.latLng(p[0], p[1])));
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14, animate: false });
         initializedRef.current = true;
         return;
       } catch (e) {}
-    }
-    if (coords[0] !== 0 && coords[1] !== 0) {
+    } else if (valid.length === 1 && !initializedRef.current) {
+      map.setView(valid[0], 12);
+    } else if (!initializedRef.current && coords[0] !== 0 && coords[1] !== 0) {
       map.setView(coords, map.getZoom() || 11);
-      initializedRef.current = true;
     }
   }, [coords, initialPoints, map]);
 
@@ -1078,7 +1078,9 @@ export default function MapComponent({
       if (closest && closest.lat && closest.lon) return closest;
     }
 
-    return warehouses.find(w => w.lat && w.lon) || null;
+    // 3. Fallback: Prioritize mainland warehouse (never default to an island if continental exists)
+    const mainlandWh = warehouses.find(w => w.lat && w.lon && w.lat > 36.5 && w.lat < 42.5 && w.lon > -10.0 && w.lon < -6.0);
+    return mainlandWh || warehouses.find(w => w.lat && w.lon) || null;
   }, [warehouses, warehousesWithCargo, clients]);
 
   const center: [number, number] = useMemo(() => {

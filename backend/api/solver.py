@@ -460,8 +460,18 @@ def sequence_route_with_time_windows(
             wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0
             late_min = max(0.0, arr_min - win_e) if win_e < 1440 else 0.0
 
-            # Penalties: distance (1.0), waiting (25.0/hr), lateness (90.0/hr)
-            cost = d * 1.0 + (wait_min / 60.0) * 25.0 + (late_min / 60.0) * 90.0
+            # Penalizações severas para manter respeito rigoroso por VRPTW:
+            # - Espera > 30 min: inadmissível deixar viatura horas parada
+            # - Chegada após fecho: inadmissível entregar fora de horas
+            tw_penalty = 0.0
+            if late_min > 0.0:
+                tw_penalty += 50000.0 + (late_min * 200.0)
+            if wait_min > 30.0:
+                tw_penalty += 30000.0 + (wait_min * 100.0)
+            else:
+                tw_penalty += (wait_min / 60.0) * 15.0
+
+            cost = (d * 1.0) + tw_penalty
 
             if cost < best_cost:
                 best_cost = cost

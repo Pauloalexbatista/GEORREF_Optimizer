@@ -1386,6 +1386,27 @@ async def import_fleet_warehouses(
                     lon_d = _clean_coord(d.get("Longitude", 0.0))
                     qual_d = 1 if (lat_d != 0 and lon_d != 0) else 99
                     src_d = "FICHEIRO" if qual_d == 1 else "PENDENTE"
+
+                    w_s_str = str(d.get("Janela_Inicio") or d.get("Janela1_Inicio") or d.get("Slot1_Inicio") or d.get("janela_inicio") or "").strip()
+                    w_e_str = str(d.get("Janela_Fim") or d.get("Janela1_Fim") or d.get("Slot1_Fim") or d.get("janela_fim") or "").strip()
+                    if not w_s_str or not w_e_str:
+                        win_h = str(d.get("Janela_Horaria") or d.get("janela_horaria") or d.get("Horario") or "").strip()
+                        if win_h:
+                            try:
+                                from utils.optimization_solver import parse_time_window_str, minutes_to_time_str
+                                ws_m, we_m = parse_time_window_str(win_h)
+                                if ws_m > 0 or we_m < 1440:
+                                    if not w_s_str:
+                                        w_s_str = minutes_to_time_str(ws_m)
+                                    if not w_e_str:
+                                        w_e_str = minutes_to_time_str(we_m)
+                            except Exception:
+                                pass
+                    if not w_s_str:
+                        w_s_str = "08:00"
+                    if not w_e_str:
+                        w_e_str = "18:00"
+
                     cursor.execute("""
                         INSERT INTO entregas (
                             projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
@@ -1396,8 +1417,8 @@ async def import_fleet_warehouses(
                     """, (
                         project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
                         d.get("CP", ""), d.get("Localidade", ""), _clean_coord(d.get("Peso_KG", 50.0)),
-                        _clean_coord(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
-                        d.get("Janela_Fim", "18:00"), lat_d, lon_d, qual_d, src_d,
+                        _clean_coord(d.get("Volume_M3", 0.1)), 2, w_s_str,
+                        w_e_str, lat_d, lon_d, qual_d, src_d,
                         d.get("Morada", ""), d.get("Armazem", "Armazém Principal"),
                         d.get("Telefone_Cliente", d.get("Telefone", "")),
                         d.get("Notas_Motorista", d.get("Observacoes", "")),

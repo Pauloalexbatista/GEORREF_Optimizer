@@ -449,6 +449,7 @@ class AdvancedRouteOptimizer:
 
         # 6. Time Dimension in SECONDS with Per-Vehicle Speed Model
         HORIZON_SEC = 24 * 3600
+        MAX_WAIT_SLACK_SEC = 1800  # Máximo 30 minutos de espera permitidos antes da abertura de uma paragem
         time_cb_cache = {}
         vehicle_time_cb_indices = []
 
@@ -471,7 +472,7 @@ class AdvancedRouteOptimizer:
 
         routing.AddDimensionWithVehicleTransits(
             vehicle_time_cb_indices,
-            HORIZON_SEC,
+            MAX_WAIT_SLACK_SEC,
             HORIZON_SEC,
             False,
             "Time"
@@ -761,6 +762,9 @@ class AdvancedRouteOptimizer:
                     if arr > (w_e + tol_min):
                         return False, 0.0
                     if arr < w_s:
+                        # Rejeitar paragens onde a viatura chegue com mais de 30 minutos de avanço (não deixar motorista à espera)
+                        if (w_s - arr) > 30:
+                            return False, 0.0
                         arr = float(w_s)
 
                 serv = client_service_times[n] if client_service_times and n < len(client_service_times) else 10
@@ -806,6 +810,8 @@ class AdvancedRouteOptimizer:
                                 if arr2 > (we2 + tol_min):
                                     return False, 0.0
                                 if arr2 < ws2:
+                                    if (ws2 - arr2) > 30:
+                                        return False, 0.0
                                     arr2 = float(ws2)
                             s2 = client_service_times[n2] if client_service_times and n2 < len(client_service_times) else 10
                             t_sim = arr2 + s2
