@@ -47,3 +47,16 @@ app.include_router(agent.router, prefix='/api')
 @app.get('/')
 def read_root():
     return {'message': 'Welcome to GeoRoutePlan API'}
+
+from fastapi.responses import JSONResponse
+from fastapi import Request
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erro interno do servidor: {str(exc)}"}
+    )
+

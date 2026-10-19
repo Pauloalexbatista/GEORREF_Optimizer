@@ -294,6 +294,14 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                 if not route_wh:
                     route_wh = default_wh
                 
+                # Motorista e Viatura
+                drv_raw = str(df_r.iloc[0].get("Motorista", df_r.iloc[0].get("driver_name", ""))) if "Motorista" in df_r.columns and pd.notna(df_r.iloc[0].get("Motorista")) else ""
+                has_driver = bool(drv_raw.strip() and drv_raw.lower() not in ["não atribuído", "nao atribuido", "nan", "none", ""])
+                drv_name = drv_raw.strip() if has_driver else ""
+                
+                veh_raw = str(df_r.iloc[0].get("Viatura", df_r.iloc[0].get("vehicle", df_r.iloc[0].get("Matricula", r_str)))) if pd.notna(df_r.iloc[0].get("Viatura", df_r.iloc[0].get("vehicle", df_r.iloc[0].get("Matricula", r_str)))) else r_str
+                veh_name = veh_raw.strip() if veh_raw.strip() and veh_raw.lower() not in ["nan", "none", ""] else r_str
+
                 stops = []
                 for idx_s, (_, s_row) in enumerate(df_r.iterrows()):
                     lat_val = float(s_row.get("Latitude", s_row.get("Lat", s_row.get("lat", 0.0)))) if pd.notna(s_row.get("Latitude", s_row.get("Lat", s_row.get("lat", 0.0)))) else 0.0
@@ -418,14 +426,6 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                 else:
                     punctuality_status = "no_horario"
 
-                # Motorista e Viatura
-                drv_raw = str(df_r.iloc[0].get("Motorista", df_r.iloc[0].get("driver_name", ""))) if "Motorista" in df_r.columns and pd.notna(df_r.iloc[0].get("Motorista")) else ""
-                has_driver = bool(drv_raw.strip() and drv_raw.lower() not in ["não atribuído", "nao atribuido", "nan", "none", ""])
-                drv_name = drv_raw.strip() if has_driver else ""
-                
-                veh_raw = str(df_r.iloc[0].get("Viatura", df_r.iloc[0].get("vehicle", df_r.iloc[0].get("Matricula", r_str)))) if pd.notna(df_r.iloc[0].get("Viatura", df_r.iloc[0].get("vehicle", df_r.iloc[0].get("Matricula", r_str)))) else r_str
-                veh_name = veh_raw.strip() if veh_raw.strip() and veh_raw.lower() not in ["nan", "none", ""] else r_str
-                
                 # 5. Cálculo Dinâmico do Próximo Cliente e Posição Operacional
                 # Próxima paragem = primeira paragem pendente
                 next_stop = next((s for s in stops if s["status"] == "Pendente"), None)
