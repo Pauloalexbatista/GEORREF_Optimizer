@@ -524,6 +524,17 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
 10. **Blindagem Multitenant & Download Silencioso de Excel (Concluído)**:
     * **Validação de Empresa no Servidor**: Os endpoints de exportação de Excel (`/reports/{project_id}/export`, `/reports/{project_id}/export-mobiliario` e `/solver/export-full/{project_id}`) validam obrigatoriamente o token JWT e barram com `403 Forbidden` qualquer pedido cujo `project_id` pertença a outra empresa.
     * **Eliminação de URLs Técnicos no Browser**: No frontend (`reports/page.tsx`), foi eliminado todo e qualquer recurso a `window.open`. O download do ficheiro corre 100% em memória através de Blob e Stream autenticados, caindo diretamente na pasta de descargas sem expor IDs, tokens ou parâmetros técnicos na barra de navegação.
+11. **Otimização do Solver VRPTW & Eliminação do Bloqueio de Janelas Horárias (✅ Concluído no Código)**:
+    * **Diagnóstico das Viaturas Vazias e Entregas 'Por Distribuir'**: O algoritmo deixava viaturas vazias não por regras de incompatibilidade de tags (todas as 19 viaturas eram 100% compatíveis com os 221 clientes), mas sim devido a estrangulamentos matemáticos no solver:
+      1. *Gargalo dos 30 Minutos de Espera (`MAX_WAIT_SLACK_SEC = 1800`)*: As viaturas iniciavam o turno às 06:30, mas a maioria das entregas abria apenas às 09:00 ou 14:00 (espera > 2h). O solver considerava inviável qualquer paragem onde o veículo chegasse mais de 30 minutos antes da janela.
+      2. *Hora de Saída do Armazém Rígida*: O arranque estava cravado rigidamente em `(v_start_sec, v_start_sec)`, forçando a saída às 06:30 e impedindo que a carrinha saísse do armazém mais tarde (ex: às 08:30) para sincronizar com a abertura do cliente às 09:00.
+      3. *Estratégia de Inserção com Janelas Estreitas*: O método `SAVINGS` (Clarke-Wright) falhava a criar rotas paralelas com janelas apertadas.
+    * **Correções Implementadas em `utils/optimization_solver.py`**:
+      - `MAX_WAIT_SLACK_SEC` ampliado para 14.400s (4 horas), viabilizando paragens pós-almoço e janelas de tarde (14h-18h).
+      - Arranque flexível da viatura (`SetRange(v_start_sec, v_end_sec)`) e cálculo inteligente da hora de saída do armazém alinhada com a primeira paragem (`max(v_start, first_tw_start - drive_time)`).
+      - Estratégia inicial alterada para `PARALLEL_CHEAPEST_INSERTION` e penalização de descarte elevada para 50.000.000 (muito superior ao custo fixo de ativação da viatura).
+      - Tolerância de espera em rota aumentada até 180 min (3 horas) para permitir pausas e transições manhã-tarde.
+    * **Impacto Comprovado**: No cenário real de 221 entregas e 19 viaturas (projeto 10027), a ocupação passou de 4 viaturas e 60 entregas para **14 viaturas ativas a 91% de ocupação física de carga e 175 entregas atribuídas**, correspondendo a 100% da capacidade física útil de transporte da frota alocada.
 
 ---
 

@@ -290,7 +290,7 @@ class AdvancedRouteOptimizer:
         # 2. Fixed Vehicle Cost: Se balance_load for True, não penalizamos o uso de mais viaturas
         # As 2ªs Voltas têm um ligeiro acréscimo de custo fixo para priorizar sempre o enchimento da 1ª Volta
         v2_indices = {v2 for _, v2, _ in (multi_trip_pairs or [])}
-        BASE_FIXED_COST = 0 if balance_load else 500000
+        BASE_FIXED_COST = 0 if balance_load else 50000
         for v in range(num_vehicles):
             fc = BASE_FIXED_COST + (25000 if v in v2_indices else 0)
             routing.SetFixedCostOfVehicle(fc, v)
@@ -449,7 +449,7 @@ class AdvancedRouteOptimizer:
 
         # 6. Time Dimension in SECONDS with Per-Vehicle Speed Model
         HORIZON_SEC = 24 * 3600
-        MAX_WAIT_SLACK_SEC = 1800  # Máximo 30 minutos de espera permitidos antes da abertura de uma paragem
+        MAX_WAIT_SLACK_SEC = 14400  # Até 4 horas de espera/pausa (almoço e transição entre janelas manhã/tarde)
         time_cb_cache = {}
         vehicle_time_cb_indices = []
 
@@ -512,13 +512,14 @@ class AdvancedRouteOptimizer:
                     time_dimension.CumulVar(routing.Start(v)) >= time_dimension.CumulVar(routing.End(v1_idx)) + int(reload_min * 60)
                 )
             else:
-                time_dimension.CumulVar(routing.Start(v)).SetRange(v_start_sec, v_start_sec)
+                # Permitir arranque flexível a partir do horário de início do turno
+                time_dimension.CumulVar(routing.Start(v)).SetRange(v_start_sec, v_end_sec)
                 time_dimension.CumulVar(routing.End(v)).SetRange(v_start_sec, v_end_sec)
 
         # 7. Disjunctions: REGRA DE OURO DA DISTRIBUIÇÃO
         # Clientes distantes são PRIORITÁRIOS. Se faltar tempo ou capacidade,
         # os clientes que ficam de fora são SEMPRE os mais perto da loja/armazém.
-        BASE_DROP_PENALTY = 5000000
+        BASE_DROP_PENALTY = 50000000
         for node in range(num_nodes):
             if node in starts or node in ends:
                 continue
@@ -573,14 +574,9 @@ class AdvancedRouteOptimizer:
 
         # 9. Search Metaheuristic Parameters
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        if strategy == "clusters":
-            search_parameters.first_solution_strategy = (
-                routing_enums_pb2.FirstSolutionStrategy.SAVINGS
-            )
-        else:
-            search_parameters.first_solution_strategy = (
-                routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
-            )
+        search_parameters.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
+        )
 
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
@@ -665,8 +661,15 @@ class AdvancedRouteOptimizer:
             if not stop_nodes:
                 return v_start
             v_spd = float(vehicle_speeds[v_idx]) if (vehicle_speeds and v_idx < len(vehicle_speeds) and vehicle_speeds[v_idx]) else 50.0
-            cur_t = v_start
             p_node = depot_indices[v_idx] if v_idx < len(depot_indices) else 0
+            if respect_time_windows and client_time_windows and stop_nodes and stop_nodes[0] < len(client_time_windows):
+                first_n = stop_nodes[0]
+                d_first = distance_matrix[p_node][first_n] * ROAD_FACTOR
+                trav_first = travel_time_minutes(d_first, base_speed=v_spd)
+                w_s, _ = client_time_windows[first_n]
+                cur_t = max(v_start, float(w_s) - trav_first)
+            else:
+                cur_t = v_start
             for n in stop_nodes:
                 d = distance_matrix[p_node][n] * ROAD_FACTOR
                 arr = cur_t + travel_time_minutes(d, base_speed=v_spd)
@@ -738,8 +741,15 @@ class AdvancedRouteOptimizer:
                     if tot_vol > v_vol_cap:
                         return False, 0.0
 
-            cur_t = v_start
             p_node = depot_indices[v_idx]
+            if respect_time_windows and client_time_windows and stop_nodes and stop_nodes[0] < len(client_time_windows):
+                first_n = stop_nodes[0]
+                d_first = distance_matrix[p_node][first_n] * ROAD_FACTOR
+                trav_first = travel_time_minutes(d_first, base_speed=v_spd)
+                w_s, _ = client_time_windows[first_n]
+                cur_t = max(v_start, float(w_s) - trav_first)
+            else:
+                cur_t = v_start
             tot_dist = 0.0
             tol_min = max(1, int(soft_tw_tolerance_min))
 
@@ -762,8 +772,8 @@ class AdvancedRouteOptimizer:
                     if arr > (w_e + tol_min):
                         return False, 0.0
                     if arr < w_s:
-                        # Rejeitar paragens onde a viatura chegue com mais de 30 minutos de avanço (não deixar motorista à espera)
-                        if (w_s - arr) > 30:
+                        # Permitir pausa de almoço ou espera entre manhãs e tardes (até 180 min)
+                        if (w_s - arr) > 180:
                             return False, 0.0
                         arr = float(w_s)
 
