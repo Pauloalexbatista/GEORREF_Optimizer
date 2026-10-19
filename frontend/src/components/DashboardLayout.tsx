@@ -12,18 +12,20 @@ import { api } from "@/utils/api";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { projects, selectedProject, selectProject, createProject, deleteProject } = useProjects();
+  const { projects, selectedProject, selectProject, createProject, deleteProject, downloadArchivedProject } = useProjects();
   const { t, language, setLanguage } = useI18n();
   const { theme, toggleTheme } = useTheme();
 
   const [showCreateProj, setShowCreateProj] = useState(false);
   const [newProjName, setNewProjName] = useState("");
   const [newProjDesc, setNewProjDesc] = useState("");
+  const [newProjDate, setNewProjDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeletingProj, setIsDeletingProj] = useState(false);
   const [createProjError, setCreateProjError] = useState<string | null>(null);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isDownloadingArchive, setIsDownloadingArchive] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -60,6 +62,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       alert("Erro ao descarregar backup: " + (err.message || "Erro desconhecido"));
     } finally {
       setIsBackingUp(false);
+    }
+  };
+
+  const handleDownloadArchive = async (id: number, nome: string) => {
+    setIsDownloadingArchive(true);
+    try {
+      await downloadArchivedProject(id, nome);
+    } catch (err: any) {
+      alert("Erro ao descarregar arquivo: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setIsDownloadingArchive(false);
     }
   };
 
@@ -157,9 +170,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!newProjName.trim()) return;
     setCreateProjError(null);
     try {
-      await createProject(newProjName, newProjDesc);
+      await createProject(newProjName, newProjDesc, newProjDate);
       setNewProjName("");
       setNewProjDesc("");
+      setNewProjDate(new Date().toISOString().split("T")[0]);
       setShowCreateProj(false);
     } catch (err: any) {
       setCreateProjError(err.message || "Erro ao criar projeto.");
@@ -246,11 +260,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   }}
                   className="w-full bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-200 outline-none transition-all cursor-pointer truncate"
                 >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}
-                    </option>
-                  ))}
+                  {projects.map((p) => {
+                    let suffix = "";
+                    if (p.is_archived) {
+                      suffix = " 📦 [Arquivado]";
+                    } else if (p.dias_restantes !== undefined && p.dias_restantes <= 3) {
+                      suffix = ` ⚠️ [${p.dias_restantes}d restantes]`;
+                    }
+                    return (
+                      <option key={p.id} value={p.id} className="bg-zinc-900 text-zinc-100">
+                        {p.nome}{suffix}
+                      </option>
+                    );
+                  })}
                   {projects.length === 0 && <option value="">{t.navigation.noProjects}</option>}
                 </select>
 
@@ -528,6 +550,49 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
+        {/* Banner de Ciclo de Vida & Salvaguarda de Dados (Ponto 5 GeoRoutePlan) */}
+        {selectedProject?.is_archived && (
+          <div className="bg-zinc-900/95 border-b border-indigo-500/40 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md z-10">
+            <div className="flex items-center space-x-2.5 text-xs">
+              <span className="px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-bold tracking-wide">
+                📦 ARQUIVO SALVAGUARDADO
+              </span>
+              <span className="text-zinc-300">
+                Esta distribuição atingiu o ciclo de 10 dias. A BD SQLite operacional foi purgada, mas o <b>Excel Canónico de 9 Abas</b> está guardado permanentemente para o seu ERP.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleDownloadArchive(selectedProject.id, selectedProject.nome)}
+              disabled={isDownloadingArchive}
+              className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-all shadow-md shadow-indigo-600/20 border border-indigo-500 cursor-pointer"
+            >
+              <span>{isDownloadingArchive ? "A descarregar..." : "📥 Descarregar Excel Arquivado"}</span>
+            </button>
+          </div>
+        )}
+
+        {!selectedProject?.is_archived && selectedProject?.dias_restantes !== undefined && selectedProject.dias_restantes <= 3 && selectedProject.dias_restantes > 0 && (
+          <div className="bg-amber-950/40 border-b border-amber-600/40 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md z-10">
+            <div className="flex items-center space-x-2.5 text-xs">
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold tracking-wide">
+                ⚠️ ALERTA DE EXPIRAÇÃO
+              </span>
+              <span className="text-amber-200">
+                Esta distribuição expira em <b>{selectedProject.dias_restantes} dia(s)</b> ({selectedProject.data_distribuicao ? `serviço de ${selectedProject.data_distribuicao}` : "planeamento"}). Guarde o <b>Excel de 9 Abas</b> no seu ERP antes da purga automática dos 10 dias.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleBackupProject}
+              disabled={isBackingUp}
+              className="flex items-center space-x-1 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-all border border-amber-500 cursor-pointer"
+            >
+              <span>Exportar Excel Agora</span>
+            </button>
+          </div>
+        )}
+
         {/* Dynamic View Body */}
         <main className="flex-1 p-6 overflow-y-auto">
           {selectedProject ? (
@@ -611,13 +676,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 <div>
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+                    Data da Distribuição
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newProjDate}
+                    onChange={(e) => setNewProjDate(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-3.5 py-2 text-xs text-zinc-100 transition-all outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-400 mt-1">
+                    Data em que as viaturas saem para a rua. Serve de base para a contagem do ciclo de vida de 10 dias.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
                     {t.navigation.projectDesc}
                   </label>
                   <textarea
                     value={newProjDesc}
                     onChange={(e) => setNewProjDesc(e.target.value)}
                     placeholder="Descrição opcional..."
-                    rows={3}
+                    rows={2}
                     className="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 rounded-xl px-3.5 py-2 text-xs text-zinc-100 placeholder-zinc-400 transition-all outline-none resize-none"
                   />
                 </div>

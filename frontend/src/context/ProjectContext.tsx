@@ -4,11 +4,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { apiRequest } from "@/utils/api";
 import { useAuth } from "./AuthContext";
 
-interface Project {
+export interface Project {
   id: number;
   nome: string;
   descricao: string;
   created_at: string;
+  data_distribuicao?: string;
+  dias_restantes?: number;
+  status?: string;
+  is_active?: number;
+  is_archived?: boolean;
+  archive_available?: boolean;
 }
 
 interface ProjectContextType {
@@ -17,8 +23,9 @@ interface ProjectContextType {
   loading: boolean;
   selectProject: (id: number) => void;
   refreshProjects: () => Promise<void>;
-  createProject: (nome: string, descricao?: string) => Promise<Project>;
+  createProject: (nome: string, descricao?: string, data_distribuicao?: string) => Promise<Project>;
   deleteProject: (id: number) => Promise<void>;
+  downloadArchivedProject: (id: number, nome: string) => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -73,11 +80,11 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const createProject = async (nome: string, descricao: string = "") => {
+  const createProject = async (nome: string, descricao: string = "", data_distribuicao?: string) => {
     try {
       const newProj = await apiRequest("/api/projects", {
         method: "POST",
-        body: JSON.stringify({ nome, descricao }),
+        body: JSON.stringify({ nome, descricao, data_distribuicao }),
       });
       setProjects((prev) => [...prev, newProj]);
       setSelectedProject(newProj);
@@ -88,7 +95,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-    const deleteProject = async (id: number) => {
+  const deleteProject = async (id: number) => {
     try {
       await apiRequest(`/api/projects/${id}`, { method: "DELETE" });
       const remaining = projects.filter((p) => p.id !== id);
@@ -107,6 +114,33 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const downloadArchivedProject = async (id: number, nome: string) => {
+    try {
+      const token = localStorage.getItem("georoute_token") || "";
+      const res = await fetch(`/api/projects/${id}/download-archive`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error("Não foi possível transferir o arquivo Excel da distribuição.");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cleanName = (nome || `Projeto_${id}`).replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
+      a.download = `GeoRoutePlan_ARQUIVO_${cleanName}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Erro no download de arquivo:", error);
+      throw error;
+    }
+  };
+
   return (
     <ProjectContext.Provider
       value={{
@@ -117,6 +151,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         refreshProjects,
         createProject,
         deleteProject,
+        downloadArchivedProject,
       }}
     >
       {children}

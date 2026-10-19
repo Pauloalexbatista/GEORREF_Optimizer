@@ -258,6 +258,9 @@ def init_database():
         add_column_if_missing("empresas", "driver_password", "TEXT DEFAULT ''")
         add_column_if_missing("projetos", "is_active", "BOOLEAN DEFAULT 0")
         add_column_if_missing("projetos", "status", "TEXT DEFAULT 'draft'")
+        add_column_if_missing("projetos", "data_distribuicao", "TEXT")
+        add_column_if_missing("projetos", "archived_at", "TIMESTAMP")
+        add_column_if_missing("projetos", "archive_file_path", "TEXT")
         add_column_if_missing("empresas", "api_key_google", "TEXT DEFAULT ''")
         
         add_column_if_missing("utilizadores", "is_superadmin", "BOOLEAN DEFAULT 0")
@@ -410,16 +413,27 @@ def autenticar(email, password):
 
 # ============ PROJETOS ============
 
-def criar_projeto(empresa_id, nome, descricao=''):
-    """Criar novo projeto"""
+def criar_projeto(empresa_id, nome, descricao='', data_distribuicao=None):
+    """Criar novo projeto com data de distribuição associada"""
+    if not data_distribuicao:
+        data_distribuicao = datetime.now().strftime("%Y-%m-%d")
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO projetos (empresa_id, nome, descricao)
-            VALUES (?, ?, ?)
-        """, (empresa_id, nome, descricao))
+            INSERT INTO projetos (empresa_id, nome, descricao, data_distribuicao, status)
+            VALUES (?, ?, ?, ?, 'draft')
+        """, (empresa_id, nome, descricao, data_distribuicao))
         conn.commit()
         return cursor.lastrowid
+
+
+def limpar_projetos_expirados(empresa_id=None, dias=10):
+    """Executa a auto-limpeza e arquivo de salvaguarda de projetos que atingiram o limite de dias."""
+    try:
+        from utils.lifecycle_manager import process_project_lifecycle
+        process_project_lifecycle(empresa_id)
+    except Exception as e:
+        print(f"[DB Notice] Erro ao executar lifecycle de projetos: {e}")
 
 
 def get_projetos(empresa_id):
