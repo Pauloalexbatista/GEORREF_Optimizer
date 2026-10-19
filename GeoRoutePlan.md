@@ -431,8 +431,11 @@ O sistema dispõe de um módulo dedicado de administração para gestão multi-t
    * Apenas recolher e processar os campos estritamente necessários à entrega (nome, morada, contacto e janela horária).
 2. **Geocoding Seguro (APIs Externas)**:
    * Ao comunicar com a Google Maps API ou OpenStreetMap (Nominatim), **nunca** enviar dados pessoais de clientes (nome, telefone, NIF ou observações). Enviar exclusivamente a cadeia de texto da morada, concelho e código postal.
-3. **Isolamento Multitenant Inviolável**:
-   * Todos os acessos a projetos, rotas, entregas, frotas e consumos devem ser estritamente filtrados por `empresa_id` através do token JWT autenticado.
+3. **Isolamento Multitenant Inviolável & Blindagem na Exportação de Ficheiros**:
+   * **Controlo de Acesso Baseado em Sessão Silenciosa (Token JWT)**: Todos os acessos a projetos, rotas, entregas, frotas, relatórios e exportações de ficheiros Excel são estritamente filtrados por `empresa_id` através do token JWT autenticado do utilizador logado.
+   * **Eliminação Total de URLs Técnicos no Browser**: O descarregamento de ficheiros Excel (`.xlsx` e `.zip`) é processado 100% em memória no cliente através de *Streams/Blobs* autenticados com o cabeçalho `Authorization: Bearer <token>`. O sistema nunca expõe URLs diretos na barra de navegação nem utiliza abas externas (`window.open`), caindo o ficheiro diretamente na pasta de descargas do utilizador de forma transparente.
+   * **Bloqueio Ativo Contra Manipulação de IDs (HTTP 403 Forbidden)**: Se um utilizador ou agente externo tentar aceder ou manipular o identificador de um projeto que não pertence à sua `empresa_id` (ex: `/api/reports/<outro_id>/export`), o servidor rejeita e bloqueia imediatamente o pedido, garantindo que nenhuma empresa consegue espreitar dados de concorrentes.
+   * **Estado de Implementação**: ✅ **100% Concluído e Blindado no Código** (Backend em `reports.py`, `solver.py` e Frontend em `reports/page.tsx`).
 4. **Proteção de Notas de Motorista e Observações**:
    * O campo `Notas_Motorista` pode conter informações de acesso ou notas sensíveis dos clientes. O acesso a este campo no PWA móvel é restrito unicamente ao motorista atribuído à respetiva viatura.
 
@@ -483,6 +486,9 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
    * **Campo `data_distribuicao`**: Adicionar a coluna à tabela `projetos` para que a contagem dos 7 dias tenha como referência o dia do serviço e não o momento do upload (`created_at`).
    * **Aviso Visual no Painel**: Banner ou aviso de contagem decrescente no dashboard (*"Distribuição a expirar em X dias. Guarde o Excel no seu ERP"*).
    * **Purga Forçada aos 10 Dias**: Eliminação automática e irrevogável no servidor aos 10 dias da distribuição (mesmo se o projeto não tiver sido fechado manualmente), garantindo que a base de dados SQLite não cresce indefinidamente. O cliente preserva os seus dados através do descarregamento do Excel canónico.
+10. **Blindagem Multitenant & Download Silencioso de Excel (Concluído)**:
+    * **Validação de Empresa no Servidor**: Os endpoints de exportação de Excel (`/reports/{project_id}/export`, `/reports/{project_id}/export-mobiliario` e `/solver/export-full/{project_id}`) validam obrigatoriamente o token JWT e barram com `403 Forbidden` qualquer pedido cujo `project_id` pertença a outra empresa.
+    * **Eliminação de URLs Técnicos no Browser**: No frontend (`reports/page.tsx`), foi eliminado todo e qualquer recurso a `window.open`. O download do ficheiro corre 100% em memória através de Blob e Stream autenticados, caindo diretamente na pasta de descargas sem expor IDs, tokens ou parâmetros técnicos na barra de navegação.
 
 ---
 

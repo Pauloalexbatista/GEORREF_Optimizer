@@ -1783,11 +1783,11 @@ def export_full_project(project_id: int, current_user: UserResponse = Depends(ge
         from fastapi import Response
         import re
         from datetime import datetime
-        now_str = datetime.now().strftime('%Y%m%d_%H%M')
+        now_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         proj_dict = dict(proj) if proj else {}
         proj_name = proj_dict.get("nome", f"Projeto_{project_id}")
         safe_proj_name = re.sub(r'[^\w\s-]', '', str(proj_name)).strip().replace(' ', '_')
-        filename = f"Distribuicao_{safe_proj_name}_{now_str}.xlsx"
+        filename = f"GeoRoutePlan_{safe_proj_name}_{now_str}.xlsx"
         return Response(
             content=excel_data,
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

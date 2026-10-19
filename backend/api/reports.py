@@ -189,7 +189,8 @@ def export_project_final_report(project_id: int, current_user: UserResponse = De
         reasons_data=reasons_data
     )
     
-    filename = f"GeoRoutePlan_Fecho_{proj['nome'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    safe_proj_name = proj['nome'].strip().replace(' ', '_')
+    filename = f"GeoRoutePlan_{safe_proj_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     return StreamingResponse(
         io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

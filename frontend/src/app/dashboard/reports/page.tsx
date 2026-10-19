@@ -61,14 +61,14 @@ export default function ReportsPage() {
     setExportSuccess(false);
 
     try {
-      const filename = `GeoRoutePlan_Fecho_${(selectedProject.nome || "Projeto").replace(/\s+/g, "_")}.xlsx`;
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const filename = `GeoRoutePlan_${(selectedProject.nome || "Projeto").replace(/\s+/g, "_")}_${dateStr}.xlsx`;
       await api.download(`/api/reports/${selectedProject.id}/export`, filename);
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 5000);
     } catch (e: any) {
       console.error("Erro ao descarregar:", e);
-      // Fallback: abrir em nova janela
-      window.open(`/api/reports/${selectedProject.id}/export`, "_blank");
+      alert("Não foi possível descarregar o ficheiro. Verifique a sua ligação ou permissões de sessão.");
     } finally {
       setExporting(false);
     }
@@ -87,7 +87,7 @@ export default function ReportsPage() {
       setTimeout(() => setExportMobSuccess(false), 5000);
     } catch (e: any) {
       console.error("Erro ao descarregar ficheiros Mobiliário:", e);
-      window.open(`/api/reports/${selectedProject.id}/export-mobiliario`, "_blank");
+      alert("Não foi possível descarregar os ficheiros de exportação Mobiliário.");
     } finally {
       setExportingMob(false);
     }
