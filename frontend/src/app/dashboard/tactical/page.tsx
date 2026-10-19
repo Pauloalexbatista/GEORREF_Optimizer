@@ -925,6 +925,35 @@ export default function TacticalPage() {
     }
   };
 
+  const handleResetAllRoutes = async () => {
+    if (!selectedProject) return;
+    if (routes.length === 0) return;
+    const confirmMsg = "Tem a certeza que deseja efetuar o Reset Geral de todas as rotas?\n\nTodas as entregas de todos os veículos serão desatribuídas e movidas para o cesto 'Por Distribuir'.";
+    if (!window.confirm(confirmMsg)) return;
+
+    setActionLoading("reset_all");
+    try {
+      const res = await apiRequest("/api/solver/reset-all-routes", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: selectedProject.id,
+        }),
+      });
+      const updated: RouteNode[] = (res.routes || []).map((r: any) => ({
+        ...r,
+        Rota: isPendingRoute(r.Rota) ? "Por Distribuir" : r.Rota,
+      }));
+      setRoutes(updated);
+      setSelectedStatusFilter("all");
+      broadcastUpdate(updated, vehicles, warehouses);
+      showAlert("Sucesso", "Todas as entregas foram movidas para 'Por Distribuir'.", "success");
+    } catch (err: any) {
+      showAlert("Erro", "Erro ao repor rotas: " + (err.message || "Erro"), "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReassign = async (clientCode: string, newRoute: string, deliveryId?: number, address?: string) => {
     if (!selectedProject) return;
     const actKey = deliveryId ? `${clientCode}_${deliveryId}` : clientCode;
@@ -1983,6 +2012,16 @@ export default function TacticalPage() {
 
             <div className="flex items-center space-x-1.5">
               <button
+                type="button"
+                onClick={handleResetAllRoutes}
+                disabled={actionLoading === "reset_all" || routes.length === 0}
+                className="px-2.5 py-0.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 hover:text-rose-100 rounded text-xs transition-colors cursor-pointer flex items-center space-x-1 font-semibold disabled:opacity-50"
+                title="Esvaziar todas as viaturas e mover todas as entregas para 'Por Distribuir'"
+              >
+                <span className={actionLoading === "reset_all" ? "animate-spin" : ""}>↺</span>
+                <span>Reset</span>
+              </button>
+              <button
                 onClick={() => toggleAllRoutes(true)}
                 className="px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded text-xs transition-colors cursor-pointer"
               >
@@ -2024,14 +2063,14 @@ export default function TacticalPage() {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] scrollbar-thin scrollbar-thumb-zinc-700">
               <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-zinc-900/90 border-b border-zinc-800 text-zinc-400 font-bold uppercase tracking-wider text-[10px] select-none sticky top-0 z-20">
-                    <th className="py-2.5 px-3 w-8 text-center"></th>
+                <thead className="sticky top-0 z-30 bg-zinc-900 shadow-md">
+                  <tr className="bg-zinc-900 border-b border-zinc-800 text-zinc-400 font-bold uppercase tracking-wider text-[10px] select-none">
+                    <th className="py-2.5 px-3 w-8 text-center sticky top-0 bg-zinc-900 z-30"></th>
                     <th
                       onClick={() => handleSort("name")}
-                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[170px]"
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[170px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
                         <span>Rota / Viatura</span>
@@ -2040,7 +2079,7 @@ export default function TacticalPage() {
                     </th>
                     <th
                       onClick={() => handleSort("warehouse")}
-                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[130px]"
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[130px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
                         <span>Armazém</span>
@@ -2049,17 +2088,17 @@ export default function TacticalPage() {
                     </th>
                     <th
                       onClick={() => handleSort("time")}
-                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[150px]"
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[150px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
                         <span>Horário Previsto</span>
                         <span className="text-indigo-400">{sortField === "time" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
                       </div>
                     </th>
-                    <th className="py-2.5 px-3 min-w-[80px]">Duração</th>
+                    <th className="py-2.5 px-3 min-w-[80px] sticky top-0 bg-zinc-900 z-30">Duração</th>
                     <th
                       onClick={() => handleSort("stops")}
-                      className="py-2.5 px-3 text-center cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[90px]"
+                      className="py-2.5 px-3 text-center cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[90px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center justify-center space-x-1">
                         <span>Paragens</span>
@@ -2068,7 +2107,7 @@ export default function TacticalPage() {
                     </th>
                     <th
                       onClick={() => handleSort("km")}
-                      className="py-2.5 px-3 text-center cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[90px]"
+                      className="py-2.5 px-3 text-center cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[90px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center justify-center space-x-1">
                         <span>Distância</span>
@@ -2077,7 +2116,7 @@ export default function TacticalPage() {
                     </th>
                     <th
                       onClick={() => handleSort("weight_pct")}
-                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px]"
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
                         <span>Carga (Peso)</span>
@@ -2086,15 +2125,15 @@ export default function TacticalPage() {
                     </th>
                     <th
                       onClick={() => handleSort("vol_pct")}
-                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px]"
+                      className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
                         <span>Volume (m³)</span>
                         <span className="text-indigo-400">{sortField === "vol_pct" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
                       </div>
                     </th>
-                    <th className="py-2.5 px-3 text-center min-w-[110px]">Estado / Erros</th>
-                    <th className="py-2.5 px-3 text-right min-w-[280px]">Ações Rápidas</th>
+                    <th className="py-2.5 px-3 text-center min-w-[110px] sticky top-0 bg-zinc-900 z-30">Estado / Erros</th>
+                    <th className="py-2.5 px-3 text-right min-w-[280px] sticky top-0 bg-zinc-900 z-30">Ações Rápidas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-850">
@@ -2424,20 +2463,20 @@ export default function TacticalPage() {
                                       Nenhuma paragem atribuída a esta viatura. Arraste clientes ou use o seletor para atribuir entregas.
                                     </div>
                                   ) : (
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-x-auto overflow-y-auto max-h-[480px] scrollbar-thin scrollbar-thumb-zinc-700">
                                       <table className="w-full text-left text-xs border-collapse">
-                                        <thead>
+                                        <thead className="sticky top-0 z-20 bg-zinc-950 shadow-sm">
                                           <tr className="bg-zinc-950 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                                            <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-950 z-10"># Ordem</th>
-                                            <th className="py-2 px-2 text-center w-20 sticky top-0 bg-zinc-950 z-10">Tipo</th>
-                                            <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-950 z-10">Doc ID / Cliente</th>
-                                            <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-950 z-10">Morada & Localidade</th>
-                                            <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-10">Contacto / Vend.</th>
-                                            <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-950 z-10">Janela Horária</th>
-                                            <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-10">Previsão Chegada</th>
-                                            <th className="py-2 px-2 w-[115px] text-center sticky top-0 bg-zinc-950 z-10">Carga / A Bordo</th>
-                                            <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-950 z-10">Distância</th>
-                                            <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-950 z-10">Mover / Reatribuir</th>
+                                            <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-950 z-20"># Ordem</th>
+                                            <th className="py-2 px-2 text-center w-20 sticky top-0 bg-zinc-950 z-20">Tipo</th>
+                                            <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-950 z-20">Doc ID / Cliente</th>
+                                            <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-950 z-20">Morada & Localidade</th>
+                                            <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-20">Contacto / Vend.</th>
+                                            <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-950 z-20">Janela Horária</th>
+                                            <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-20">Previsão Chegada</th>
+                                            <th className="py-2 px-2 w-[115px] text-center sticky top-0 bg-zinc-950 z-20">Carga / A Bordo</th>
+                                            <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-950 z-20">Distância</th>
+                                            <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-950 z-20">Mover / Reatribuir</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-zinc-850">

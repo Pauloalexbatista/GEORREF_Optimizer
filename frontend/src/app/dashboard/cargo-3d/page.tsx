@@ -152,6 +152,7 @@ export default function Cargo3DPage() {
       totalBoxes: number;
       totalWeight: number;
       totalVolume: number;
+      overflowBoxes: number;
     }>();
 
     cargoBoxes.forEach((b) => {
@@ -165,10 +166,12 @@ export default function Cargo3DPage() {
           totalBoxes: 0,
           totalWeight: 0,
           totalVolume: 0,
+          overflowBoxes: 0,
         });
       }
       const entry = map.get(b.stopSeq)!;
       entry.totalBoxes += 1;
+      if (b.overflow) entry.overflowBoxes += 1;
       entry.totalWeight += b.weightKg;
       entry.totalVolume += b.volumeM3;
     });
@@ -414,7 +417,7 @@ export default function Cargo3DPage() {
 
       const cEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(cGeo),
-        new THREE.LineBasicMaterial({ color: 0x0f172a, linewidth: 1.5 })
+        new THREE.LineBasicMaterial({ color: b.overflow ? 0xef4444 : 0x0f172a, linewidth: 1.5 })
       );
       cMesh.add(cEdges);
       cMesh.userData = { box: b };
@@ -880,6 +883,11 @@ export default function Cargo3DPage() {
                           <span>{st.totalVolume.toFixed(2)} m³</span>
                         </div>
                       </div>
+                      {st.overflowBoxes > 0 && (
+                        <div className="mt-1 pl-5 text-[10px] font-semibold text-red-400">
+                          ⚠ NÃO CABE no baú respeitando LIFO e estabilidade — {st.overflowBoxes} volume(s) fora (atrás das portas)
+                        </div>
+                      )}
                     </div>
                   );
                 })}

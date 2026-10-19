@@ -2355,7 +2355,7 @@ export default function MapComponent({
 
       <style jsx global>{`
         .pale-map-tile {
-          filter: saturate(30%) brightness(105%) contrast(92%) !important;
+          filter: grayscale(88%) saturate(12%) brightness(104%) contrast(88%) !important;
         }
       `}</style>
 

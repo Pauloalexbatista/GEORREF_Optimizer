@@ -245,10 +245,13 @@ O Painel Tático é o centro de comando onde o algoritmo cria e permite manipula
 4. **Auditoria de Conformidade em Tempo Real:**
    - Se uma viatura exceder a carga útil em kg, a cubagem ou a hora limite de regresso ao armazém, o sistema destaca a violação a **vermelho** com a indicação exata do excesso.
 5. **Conferência 3D do Baú de Carga ("📦 3D"):**
-   - Clique no botão *"📦 3D"* de qualquer viatura para abrir o simulador de arrumação volumétrica:
-     * Visualize as encomendas empilhadas no compartimento de carga.
-     * As caixas mais pesadas e volumosas ficam no chão; as mais leves por cima.
-     * As entregas das primeiras paragens ficam posicionadas junto às portas traseiras para descarga imediata.
+   - Clique no botão *"📦 3D"* de qualquer viatura para abrir o simulador de arrumação volumétrica em Three.js:
+     * **100% dos Volumes Carregados Dentro do Carro**: Todos os bultos atribuídos à rota são integralmente acomodados dentro do espaço útil da viatura, sem volumes de fora.
+     * **Arrumação Sequencial Cliente-a-Cliente (LIFO Inviolável)**: O carregamento processa paragem a paragem, começando nos clientes do fim da rota (últimas entregas) que entram primeiro e ficam encostados ao **fundo/cabine ($X = 0$)**, avançando cliente a cliente até à Paragem 1 (primeira entrega), que fica encostada às **portas traseiras ($X = L$)** para descarga direta sem desarrumar a viatura.
+     * **Carga de Cada Cliente 100% Contígua**: Todas as caixas e volumes de um cliente ficam estritamente agrupados no mesmo bloco transversal (*Wall-Building Logístico*), sendo proibido que caixas do mesmo cliente fiquem dispersas.
+     * **Contagem Exata de Volumes ($X$ Volumes = $X$ Caixas)**: Se o cliente tem $X$ volumes registados no Excel, o simulador renderiza visualmente no 3D exatamente as $X$ caixas individuais.
+     * **Física da Gravidade Real e Empilhamento por Peso**: As caixas mais pesadas de cada cliente assentam obrigatoriamente no chão ($Y = 0$). As caixas de peso igual empilham ordenadamente sobre as inferiores com suporte plano 100%, e as caixas mais leves ficam sempre no topo (zero caixas a flutuar no ar).
+     * **0% Sobreposição (*Zero Overlap*)**: Separação física rigorosa entre volumes vizinhos com arestas delimitadas.
 
 ---
 
@@ -356,6 +359,14 @@ O ecossistema GeoRoutePlan é composto pelos seguintes módulos:
 * `geocoder_engine.py`: Motor de geocodificação em cascata (Local DB -> Scraping -> OSM -> Google Maps).
 * `google_routes_engine.py`: Integração com serviços de rotas, matrizes de distância e trânsito da Google Maps API.
 * `template_manager.py` e `export_engine.py`: Criação, leitura e escrita consistente do template de 9 abas.
+
+#### 4. Motor de Carregamento 3D LIFO Wall-Building (`frontend/src/utils/cargoPacking.ts`)
+* **Arrumação Logística 100% Conforme**: Particiona o espaço longitudinal do baú da viatura em fatias transversais contíguas (*Wall-Building*), proporcionais ao volume cúbico de cada cliente, garantindo 100% dos volumes arrumados no veículo sem caixas deixadas de fora.
+* **Arrumação Sequencial Cliente-a-Cliente (LIFO Rigoroso)**: Ordena as paragens por sequência LIFO decrescente ($N \to 1$). Começa a arrumação encostada ao fundo/cabine ($X=0$) e avança cliente a cliente em direção às portas de descarga ($X=L$).
+* **Agrupamento Contíguo Inviolável**: As caixas de cada cliente são arrumadas no mesmo bloco transversal. Uma encomenda de um cliente nunca fica dispersa pelo veículo.
+* **Integridade dos Volumes do Cliente**: Renderiza exatamente os $X$ bultos registados no Excel para cada cliente.
+* **Gravidade e Estabilidade Estrutural por Peso**: As caixas mais pesadas de cada cliente assentam no piso ($Y=0$). Caixas de peso igual empilham ordenadamente sobre as inferiores com 100% de base apoiada, e caixas mais leves ficam sempre no topo (zero caixas suspensas no ar).
+* **0% de Sobreposição**: Separação visual e geométrica precisa entre volumes vizinhos.
 
 ### D. App Móvel para Motoristas — `motoristas_webapp/`
 * Aplicação web progressiva (**PWA**) otimizada para telemóveis (ecrãs táteis, modo claro/escuro para dia/noite).

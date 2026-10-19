@@ -311,6 +311,7 @@ export default function TrackingMap({
         style={{ height: "100%", width: "100%", backgroundColor: "#18181B" }}
       >
         <TileLayer
+          className="pale-map-tile"
           attribution='&copy; Google Maps'
           url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           maxZoom={19}

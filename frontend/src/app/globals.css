@@ -293,3 +293,11 @@ html.dark .opt-param-inactive .opt-desc {
   color: #a1a1aa !important;
   font-weight: 400 !important;
 }
+
+/* Muted / Esbatido Map Tiles so Route Polylines and Markers pop out vibrantly */
+.pale-map-tile {
+  filter: grayscale(88%) saturate(12%) brightness(104%) contrast(88%) !important;
+}
+html.dark .pale-map-tile {
+  filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(85%) saturate(12%) !important;
+}

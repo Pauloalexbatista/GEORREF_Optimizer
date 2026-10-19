@@ -133,6 +133,9 @@ class BulkReassignRouteRequest(BaseModel):
     source_route: str
     target_route: str
 
+class ResetAllRoutesRequest(BaseModel):
+    project_id: int
+
 class OptimizeRouteRequest(BaseModel):
     project_id: int
     route_name: str
@@ -395,9 +398,9 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         win_s, win_e = parse_time_window_str(win_str)
 
         # Pausa de Almoço / Intervalo Operacional entre Janelas (ex: manhã -> tarde):
-        # Se a saída da paragem anterior + tempo de viagem chegar com mais de 15 minutos de avanço face à abertura da janela,
+        # Se a saída da paragem anterior + tempo de viagem chegar com avanço face à abertura de uma janela vespertina (após 12h/13h),
         # o motorista efetua a pausa/almoço, iniciando a viagem de modo a chegar sincronizado com a abertura do cliente.
-        if win_s > 0 and (cur_time_min + travel_min) < (win_s - 15):
+        if idx > 0 and cur_time_min >= 720 and win_s >= 780 and (cur_time_min + travel_min) < (win_s - 15):
             cur_time_min = max(cur_time_min, win_s - travel_min)
 
         cumul_dist += dist
@@ -919,10 +922,35 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 else:
                     v_start_str = str(v_info.get("start_time", "08:00:00"))
 
-                processed_stops = recalculate_route_stops(
-                    raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
-                    vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
-                )
+                # Gatekeeper de Pontualidade: se respect_time_windows=True, nenhuma paragem pode chegar após fecho de janela
+                if solver_params.get("respect_time_windows", True):
+                    while raw_stops:
+                        processed_stops = recalculate_route_stops(
+                            raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
+                            vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+                        )
+                        has_late = False
+                        for idx_s, st in enumerate(processed_stops):
+                            w_e = parse_time_to_minutes(str(st.get("Janela_Fim", "")), 1440)
+                            arr = parse_time_to_minutes(str(st.get("Chegada", "")), 0)
+                            if w_e < 1440 and arr > w_e:
+                                # Paragem com atraso detectada! Ejetar de imediato para 'Por Distribuir'
+                                ejected = raw_stops.pop(idx_s)
+                                e_doc = str(ejected.get("Doc_ID", ""))
+                                for c_idx, crow in deliveries_df.iterrows():
+                                    if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
+                                        visited_client_indices.discard(c_idx)
+                                        break
+                                has_late = True
+                                break
+                        if not has_late:
+                            break
+                else:
+                    processed_stops = recalculate_route_stops(
+                        raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
+                        vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+                    )
+
                 routes_list.extend(processed_stops)
 
                 if "(Volta 2)" not in vehicle_name and processed_stops:
@@ -1737,6 +1765,82 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
             conn.commit()
             
         return sanitize_json_data({"status": "success", "routes": df_new_routes.to_dict(orient="records")})
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/reset-all-routes")
+def reset_all_routes(req: ResetAllRoutesRequest, current_user: UserResponse = Depends(get_current_user)):
+    proj = get_projeto(req.project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+        
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (req.project_id,))
+            row = cursor.fetchone()
+            state_dict = deserialize_state(row["payload_json"]) if (row and row["payload_json"]) else {}
+            
+        df_routes = _build_routes_from_state_or_db(req.project_id, state_dict)
+        if df_routes.empty:
+            raise HTTPException(status_code=400, detail="Não existem entregas ou rotas calculadas.")
+            
+        updated_rows = []
+        order = 1
+        for idx, row_c in df_routes.iterrows():
+            rc = dict(row_c)
+            rc["Rota"] = "Por Distribuir"
+            rc["Ordem"] = order
+            rc["Chegada"] = ""
+            rc["Saida"] = ""
+            rc["Hora_Chegada_Prevista"] = ""
+            rc["Hora_Saida_Prevista"] = ""
+            rc["Tempo_Espera"] = 0
+            rc["Tempo_Entrega"] = int(rc.get("Tempo_Entrega", 10) or 10)
+            rc["KM_Anterior"] = 0.0
+            rc["Distancia_KM"] = 0.0
+            rc["Dist_Acum"] = 0.0
+            rc["Distancia_Acumulada_KM"] = 0.0
+            rc["Tempo_Viagem_Min"] = 0.0
+            rc["Tempo_Servico_Min"] = 0.0
+            rc["Carga_Acum"] = 0.0
+            rc["Carga_Vol_Acum"] = 0.0
+            rc["Ocupacao_Kg_Pct"] = 0.0
+            updated_rows.append(rc)
+            order += 1
+            
+        df_new_routes = pd.DataFrame(updated_rows)
+        state_dict["routes_solution"] = df_new_routes
+        state_dict["routes_df"] = df_new_routes
+        payload = serialize_state(state_dict)
+        
+        snapshot_name = f"Reset Geral -> Todas as entregas para Por Distribuir ({datetime.now().strftime('%H:%M:%S')})"
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
+                (req.project_id, current_user.id, 3, snapshot_name, payload)
+            )
+            cursor.execute("UPDATE entregas SET rota = 'Por Distribuir' WHERE projeto_id = ?", (req.project_id,))
+            cursor.execute("DELETE FROM rotas WHERE projeto_id = ?", (req.project_id,))
+            for r_item in updated_rows:
+                cursor.execute("""
+                    INSERT INTO rotas (
+                        projeto_id, veiculo, ordem, entrega_id, distancia_km, tempo_minutos, custo_estimado
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    req.project_id, "Por Distribuir", int(r_item.get("Ordem", 1) or 1),
+                    int(r_item.get("id", 1) or 1), 0.0, 0.0, 0.0
+                ))
+            conn.commit()
+            
+        return sanitize_json_data({
+            "status": "success",
+            "message": f"Todas as {len(updated_rows)} entregas foram movidas para 'Por Distribuir'.",
+            "routes": df_new_routes.to_dict(orient="records")
+        })
     except HTTPException as he:
         raise he
     except Exception as e:

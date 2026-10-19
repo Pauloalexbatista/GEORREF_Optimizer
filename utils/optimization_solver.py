@@ -26,14 +26,15 @@ ROAD_FACTOR = 1.30
 def get_segment_speed(dist_km: float, base_speed: float = 50.0) -> float:
     """
     Calcula a velocidade efetiva do segmento escalonando autoestrada/via rápida
-    proporcionalmente à velocidade base da viatura (ex: camião pesado vs carrinha ligeira).
+    proporcionalmente à velocidade base da viatura (ex: camião pesado vs carrinha ligeira),
+    calibrada para tráfego real de distribuição em horário laboral.
     """
     speed_ratio = max(0.6, min(1.4, float(base_speed or 50.0) / 50.0))
     if dist_km > 25.0:
-        return 80.0 * speed_ratio
+        return 70.0 * speed_ratio
     elif dist_km > 10.0:
-        return 65.0 * speed_ratio
-    return max(float(base_speed or 50.0), 35.0)
+        return 50.0 * speed_ratio
+    return max(min(float(base_speed or 50.0), 40.0), 30.0)
 
 
 def travel_time_seconds(dist_km: float, base_speed: float = 50.0) -> int:
@@ -480,22 +481,19 @@ class AdvancedRouteOptimizer:
         time_dimension = routing.GetDimensionOrDie("Time")
 
         if respect_time_windows:
-            tol_sec = max(0, int(soft_tw_tolerance_min) * 60)
             for node in range(num_warehouses, num_nodes):
                 tw = client_time_windows[node] if client_time_windows and node < len(client_time_windows) else (480, 1080)
                 index = manager.NodeToIndex(node)
                 if index != -1:
                     s_win_sec = max(0, min(HORIZON_SEC, int(tw[0]) * 60))
                     e_win_sec = max(s_win_sec, min(HORIZON_SEC, int(tw[1]) * 60))
-                    hard_end_sec = min(HORIZON_SEC, e_win_sec + tol_sec)
+                    # Regra de Ouro da Distribuição: ZERO TOLERÂNCIA A ATRASOS.
+                    # Janelas horárias de clientes são Hard Constraints estritas.
+                    # Se a janela tiver >= 45 min, aplicamos margem preventiva de 5 min (300s)
+                    # para garantir que pequenas variações de tráfego nunca causam entregas fora de horas.
+                    safety_buf_sec = 300 if (e_win_sec - s_win_sec) >= 2700 else 0
+                    hard_end_sec = max(s_win_sec, min(HORIZON_SEC, e_win_sec - safety_buf_sec))
                     time_dimension.CumulVar(index).SetRange(s_win_sec, hard_end_sec)
-
-                    # Se houver tolerância soft configurada, penalizar fortemente cada segundo após o fecho oficial
-                    if tol_sec > 0 and e_win_sec < HORIZON_SEC:
-                        time_dimension.SetCumulVarSoftUpperBound(index, e_win_sec, 2500)
-                    # Margem de segurança preventiva: se a janela tiver >= 60 min, incentivar chegada 5 min antes do fecho
-                    elif (e_win_sec - s_win_sec) >= 3600 and e_win_sec < HORIZON_SEC:
-                        time_dimension.SetCumulVarSoftUpperBound(index, e_win_sec - 300, 10)
 
         v2_to_v1_map = {v2: (v1, reload_min) for v1, v2, reload_min in (multi_trip_pairs or [])}
         for v in range(num_vehicles):
@@ -751,7 +749,7 @@ class AdvancedRouteOptimizer:
             else:
                 cur_t = v_start
             tot_dist = 0.0
-            tol_min = max(1, int(soft_tw_tolerance_min))
+            tol_min = 0  # Zero tolerância: nenhuma paragem pode chegar após fecho da janela
 
             for n in stop_nodes:
                 c_r = client_rules[n] if client_rules and n < len(client_rules) else ""
@@ -769,7 +767,7 @@ class AdvancedRouteOptimizer:
 
                 if respect_time_windows and client_time_windows and n < len(client_time_windows):
                     w_s, w_e = client_time_windows[n]
-                    if arr > (w_e + tol_min):
+                    if arr > w_e:
                         return False, 0.0
                     if arr < w_s:
                         # Permitir pausa de almoço ou espera entre manhãs e tardes (até 180 min)

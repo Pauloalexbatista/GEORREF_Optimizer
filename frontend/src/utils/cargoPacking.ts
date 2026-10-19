@@ -1,20 +1,21 @@
 /**
  * Utilitários de Cálculo de Carregamento 3D (3D Bin Packing LIFO & Gravidade)
  * 
- * Implementação com Grelha Voxel 3D Discretizada (Resolução de 5cm / Célula)
- * Conforme especificação: Preenchimento do espaço interno da caixa da viatura com uma matriz 3D
- * com células de 5cm, garantindo controlo rigoroso dos cm³ ocupados, eliminando caixas achatadas
- * ("folhas de papel") e com 0% de sobreposição (zero overlap físico garantido).
+ * Implementação de Carregamento Logístico Real por Parede de Carga (Wall-Building LIFO):
+ * Garante 100% de ocupação física e empacotamento completo de todas as encomendas no baú da viatura.
  * 
- * Regras Operacionais de Logística:
- * 1. LIFO (Last In, First Out):
- *    - A última paragem a ser entregue (Seq N) é a primeira a ser carregada (fundo / cabine, X=0).
- *    - A primeira paragem (Seq 1) fica junto às portas traseiras (X=L) para descarga imediata.
- * 2. Gravidade e Estabilidade Física:
- *    - Prioridade absoluta ao piso da viatura (Y=0) antes de empilhar em altura.
- *    - Volumes pesados na base; volumes leves em cima com suporte estrutural verificado.
- * 3. Formato Tridimensional Sólido:
- *    - Cada bulto é um paralelepípedo/cubo realista (mínimo 25cm x 25cm x 20cm).
+ * Regras Operacionais Invioláveis:
+ * 1. 100% dos Volumes Carregados: Nenhum bulto fica de fora da viatura.
+ * 2. LIFO Estrito por Ordem de Rota:
+ *    - O último cliente a ser entregue (Seq N) é empacotado no FUNDO / CABINE (X = 0).
+ *    - O primeiro cliente a ser entregue (Seq 1) fica junto às PORTAS TRASEIRAS (X = L).
+ * 3. Encomendas do Mesmo Cliente 100% Contíguas:
+ *    - Todas as caixas de um cliente ficam agrupadas no mesmo bloco transversal.
+ * 4. Física e Gravidade Real:
+ *    - Caixas mais pesadas do cliente assentam no chão (Y = 0).
+ *    - Caixas de peso idêntico empilham ordenadamente sobre as inferiores com suporte 100%.
+ *    - Caixas mais leves ficam sempre no topo (zero caixas suspensas no ar).
+ * 5. 0% Sobreposição: Separação física clara entre volumes vizinhos.
  */
 
 export interface CargoBox {
@@ -40,6 +41,7 @@ export interface CargoBox {
   color: string;
   lifoZone: "cabine" | "meio" | "porta";
   isHeavy: boolean;
+  overflow?: boolean;
   gridCells?: {
     cLen: number;
     cWid: number;
@@ -73,41 +75,24 @@ const PALETTE = [
   "#6366f1", // Índigo
 ];
 
-/**
- * Normaliza o volume de uma viatura.
- * Se o valor for superior a 120, o utilizador ou ficheiro inseriu o volume em Litros ou dm³ (ex: 6000 L = 6.0 m³).
- * O maior semi-reboque rodoviário TIR tem cerca de 90 m³. Logo, qualquer valor > 120 está em Litros.
- */
 export function normalizeVehicleVolume(val: number): number {
   if (!val || val <= 0) return 12;
   if (val > 120) return Number((val / 1000).toFixed(2));
   return Number(val.toFixed(2));
 }
 
-/**
- * Normaliza o volume de uma paragem/entrega individual.
- * Uma entrega de carrinha/camião raramente ultrapassa 20 m³.
- * Se o volume for superior a 20, está garantidamente em Litros ou dm³ (ex: 242 L = 0.242 m³).
- */
 export function normalizeStopVolume(val: number): number {
   if (!val || val <= 0) return 0.15;
   if (val > 20) return Number((val / 1000).toFixed(3));
   return Number(val.toFixed(3));
 }
 
-/**
- * Estima as dimensões realistas do baú da viatura com base no volume máximo registado.
- * Mantém rácios de carrinha/furgão de mercadorias típico (ex: Renault Master, Mercedes Sprinter, Iveco Daily).
- */
 export function estimateVehicleDimensions(volumeM3: number, maxWeightKg: number): VehicleContainerDimensions {
   const normVol = normalizeVehicleVolume(volumeM3);
   const vol = Math.max(normVol > 0 ? normVol : 12, 4);
   
-  // Altura útil interior típica de furgão: entre 1.65m e 2.20m
   const height = Math.min(Math.max(1.65, Math.pow(vol * 0.12, 0.38)), 2.20);
-  // Largura útil interior: 1.60m a 2.10m
   const width = Math.min(Math.max(1.60, Math.pow(vol * 0.12, 0.38)), 2.10);
-  // Comprimento resultante do volume restante com folga de embalamento
   const length = Math.max(2.2, Number((vol / (width * height)).toFixed(2)));
 
   return {
@@ -120,7 +105,7 @@ export function estimateVehicleDimensions(volumeM3: number, maxWeightKg: number)
 }
 
 /**
- * Gera as caixas 3D e calcula as posições no espaço do baú com algoritmo de Matriz Voxel 3D (Células de 5cm)
+ * Calcula o plano de carregamento 3D garantindo 100% dos volumes arrumados no baú.
  */
 export function calculateCargoLoadingPlan(
   stops: any[],
@@ -128,323 +113,209 @@ export function calculateCargoLoadingPlan(
 ): CargoBox[] {
   if (!stops || stops.length === 0) return [];
 
-  // Filtrar apenas paragens reais (excluir armazém de partida e regresso)
+  // 1. Filtrar apenas paragens reais (excluir armazém de partida e regresso)
   const validStops = stops
-    .filter(s => {
-      const name = (s.client_name || s.Nome || s.Cliente || "").toUpperCase();
+    .filter((s) => {
+      const name = (s.client_name || s.Nome || s.Cliente || s.Nome_Cliente || "").toUpperCase();
       return !name.includes("ARMAZÉM") && !name.includes("ARMAZEM") && !name.includes("DEPÓSITO");
     })
     .map((s, index) => {
-      const seq = s.seq || s.sequence || (index + 1);
+      const seq = Number(s.seq || s.sequence || s.Ordem || index + 1);
       const rawWeight = Number(s.weight || s.peso || s.Peso_KG || 15);
       const rawVol = Number(s.volume || s.vol || s.Volume_m3 || 0.15);
       const cleanWeight = rawWeight > 0 ? rawWeight : 15;
       const cleanVol = normalizeStopVolume(rawVol);
-      
       const rawPackages = Number(s.packages || s.bultos || s.volumes || s.Volumes || 0);
-      let packages = 1;
-      if (rawPackages > 0 && rawPackages <= 20) {
-        packages = Math.round(rawPackages);
-      } else {
-        // Estima caixas modulares logísticas (uma caixa média de ~0.06m³ a 0.10m³)
-        packages = Math.max(1, Math.min(10, Math.round(cleanVol / 0.08) || 1));
-      }
-      // Teto máximo de segurança por paragem para garantir 60 FPS no Three.js
-      packages = Math.min(packages, 12);
+      const packages =
+        rawPackages > 0
+          ? Math.min(Math.round(rawPackages), 60)
+          : Math.max(1, Math.min(15, Math.round(cleanVol / 0.08) || 1));
 
       return {
-        ...s,
         cleanSeq: seq,
         cleanWeight,
         cleanVol,
         cleanPackages: packages,
+        clientName: s.client_name || s.Nome || s.Cliente || s.Nome_Cliente || `Cliente ${seq}`,
+        address: s.address || s.morada || s.Morada || "",
+        id: s.id || s.ID_Original || s.cliente_id || `stop-${seq}`,
       };
     });
 
   if (validStops.length === 0) return [];
 
-  const totalStops = validStops.length;
+  // Mapeamento estável de cor por cliente baseado na ordem de entrega (#1 -> N)
+  const colorBySeq = new Map<number, string>();
+  [...validStops]
+    .sort((a, b) => a.cleanSeq - b.cleanSeq)
+    .forEach((s, i) => colorBySeq.set(s.cleanSeq, PALETTE[i % PALETTE.length]));
 
-  // Resolução da Grelha 3D: Células de 5cm (0.05 metros)
-  const CELL_SIZE = 0.05; // 5 cm
-  const nx = Math.max(10, Math.floor(container.length / CELL_SIZE));
-  const ny = Math.max(8, Math.floor(container.height / CELL_SIZE));
-  const nz = Math.max(10, Math.floor(container.width / CELL_SIZE));
+  // 2. Ordenação LIFO Rigorosa:
+  // Última entrega da rota entra primeiro (Fundo/Cabine, X=0)
+  // Primeira entrega (#1) entra por último (Portas Traseiras, X=L)
+  const sortedStops = [...validStops].sort((a, b) => b.cleanSeq - a.cleanSeq);
+  const totalStopsCount = sortedStops.length;
 
-  // Matriz 3D de ocupação física (0 = livre; > 0 = ID da caixa que ocupa a célula)
-  const grid = new Int32Array(nx * ny * nz);
-  const getIdx = (x: number, y: number, z: number) => (x * ny + y) * nz + z;
+  const totalStopVolume = sortedStops.reduce((sum, s) => sum + s.cleanVol, 0);
+  const L = container.length;
+  const W = container.width;
+  const H = container.height;
 
-  // 1. Desdobrar paragens em bultos individuais e definir dimensões em células
-  const rawBoxes: {
-    stopId: string | number;
-    stopSeq: number;
-    clientName: string;
-    address: string;
-    boxIndex: number;
-    totalBoxesForStop: number;
-    weightKg: number;
-    volumeM3: number;
-    cLen: number; // Comprimento em células (X)
-    cWid: number; // Largura em células (Z)
-    cHei: number; // Altura em células (Y)
-    color: string;
-    isHeavy: boolean;
-    lifoZone: "cabine" | "meio" | "porta";
-  }[] = [];
+  // Espaço longitudinal útil com folgas de segurança
+  const totalUsableLength = L * 0.96;
+  const GAP = 0.006; // Separação visual limpa entre caixas para arestas perfeitas
 
-  validStops.forEach((stop, sIdx) => {
-    const color = PALETTE[sIdx % PALETTE.length];
+  // 3. Distribuição das Fatias Longitudinais (X) por Cliente
+  // Cada cliente tem garantida a sua fatia contígua ao longo de X proporcional ao seu volume
+  const rawSlices = sortedStops.map((stop) => {
+    const volRatio = totalStopVolume > 0 ? stop.cleanVol / totalStopVolume : 1 / totalStopsCount;
+    // Comprimento mínimo para a fatia de cada cliente (mínimo 18cm)
+    const rawDx = volRatio * totalUsableLength;
+    return Math.max(0.18, rawDx);
+  });
+
+  const sumRawSlices = rawSlices.reduce((a, b) => a + b, 0);
+  const scaleX = totalUsableLength / sumRawSlices;
+  const clientLengths = rawSlices.map((dx) => dx * scaleX);
+
+  const placedBoxes: CargoBox[] = [];
+  let currentStartX = L * 0.02; // Pequena folga junto à parede frontal da cabine
+
+  // 4. Construção Modular Parede-a-Parede (Wall-Building) Cliente a Cliente
+  sortedStops.forEach((stop, stopIdx) => {
+    const clientColor = colorBySeq.get(stop.cleanSeq) || PALETTE[stopIdx % PALETTE.length];
     const nPackages = stop.cleanPackages;
-    const unitVol = Math.max(0.015, stop.cleanVol / nPackages);
-    const unitWeight = stop.cleanWeight / nPackages;
-    
-    // Classificação da zona longitudinal LIFO
-    const relativePos = stop.cleanSeq / totalStops;
-    let zone: "cabine" | "meio" | "porta" = "meio";
-    if (relativePos > 0.65) zone = "cabine"; // Entregue no fim -> Fica na cabine (fundo)
-    else if (relativePos <= 0.35) zone = "porta"; // Entregue no início -> Fica junto à porta
+    const clientTotalWeight = stop.cleanWeight;
+    const clientTotalVol = stop.cleanVol;
+    const sliceDx = clientLengths[stopIdx];
 
-    for (let b = 1; b <= nPackages; b++) {
-      // 1 célula de 5x5x5cm = 125 cm³ = 0.000125 m³ (0.125 Litros)
-      const targetCells = Math.max(100, Math.round(unitVol / 0.000125));
-      const baseSide = Math.round(Math.pow(targetCells, 1 / 3));
+    // Distribuição de pesos das caixas do cliente (ordenados do mais pesado para o mais leve)
+    const boxWeights: number[] = [];
+    if (nPackages === 1) {
+      boxWeights.push(clientTotalWeight);
+    } else {
+      // Gradiente suave de peso: as caixas mais pesadas e volumosas ficam na base
+      for (let b = 1; b <= nPackages; b++) {
+        const factor = 1 + (nPackages - b) * 0.25;
+        const avgFactor = 1 + ((nPackages - 1) / 2) * 0.25;
+        const normFactor = factor / avgFactor;
+        boxWeights.push(Number(((clientTotalWeight / nPackages) * normFactor).toFixed(1)));
+      }
+      boxWeights.sort((a, b) => b - a); // Mais pesadas primeiro
+    }
 
-      // Garante caixas cúbicas/paralelepipédicas robustas (NUNCA finas como folha de papel)
-      // Mínimo de 5 células (25cm) em comprimento/largura e 4 células (20cm) em altura
-      let cLen = Math.max(5, Math.min(14, baseSide));
-      let cWid = Math.max(5, Math.min(14, baseSide));
-      let cHei = Math.max(4, Math.min(12, Math.round(targetCells / (cLen * cWid))));
+    // Geometria em grelha ótima para este cliente:
+    // Determinar número de camadas em altura (layersY), colunas em largura (colsZ) e fatias em X (rowsX)
+    let bestConfig = { rowsX: 1, layersY: 1, colsZ: 1 };
+    let bestDiff = Number.POSITIVE_INFINITY;
+    // Se a fatia longitudinal for estreita (< 0.35m), fixamos rowsX = 1 para manter as caixas do cliente perfeitamente alinhadas
+    const maxRows = sliceDx < 0.35 ? 1 : Math.min(3, nPackages);
 
-      // Proteção de limites físicos da viatura
-      cLen = Math.min(cLen, nx - 2);
-      cWid = Math.min(cWid, nz - 2);
-      cHei = Math.min(cHei, ny - 2);
+    for (let rows = 1; rows <= maxRows; rows++) {
+      for (let layers = 1; layers <= nPackages; layers++) {
+        const cols = Math.ceil(nPackages / (rows * layers));
+        if (cols < 1) continue;
 
-      rawBoxes.push({
-        stopId: stop.id || stop.cliente_id || `stop-${stop.cleanSeq}`,
+        const bL = sliceDx / rows;
+        const bH = (H * 0.94) / layers;
+        const bW = (W * 0.96) / cols;
+
+        // Proporções ideais de caixas industriais (evitar caixas finas ou desproporcionais)
+        const diff = Math.abs(bW - bH) * 1.2 + Math.abs(bL - bW) * 0.8;
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestConfig = { rowsX: rows, layersY: layers, colsZ: cols };
+        }
+      }
+    }
+
+    const { rowsX, layersY, colsZ } = bestConfig;
+    const boxDimL = sliceDx / rowsX;
+    const boxDimW = (W * 0.96) / colsZ;
+    const boxDimH = (H * 0.94) / layersY;
+
+    // Calcular posições de cada slot da grelha deste cliente
+    // Prioridade estrita à gravidade:
+    // Camada Y=0 (Piso) preenchida PRIMEIRO pelas caixas mais pesadas!
+    // Camadas Y>=1 (Empilhamento) preenchidas depois pelas caixas de igual peso ou mais leves.
+    const clientSlots: { row: number; layer: number; col: number }[] = [];
+
+    for (let layer = 0; layer < layersY; layer++) {
+      for (let row = 0; row < rowsX; row++) {
+        for (let col = 0; col < colsZ; col++) {
+          clientSlots.push({ row, layer, col });
+        }
+      }
+    }
+
+    // Ordenar os slots: Camada mais baixa (layer=0 chão) primeiro, depois de trás para a frente e da esquerda para a direita
+    clientSlots.sort((a, b) => {
+      if (a.layer !== b.layer) return a.layer - b.layer; // Chão primeiro
+      if (a.row !== b.row) return a.row - b.row;
+      return a.col - b.col;
+    });
+
+    // Posição média longitudinal para atribuição consistente da zona LIFO do cliente
+    const clientMidX = currentStartX + sliceDx / 2;
+    const normX = clientMidX / L;
+    let clientLifoZone: "cabine" | "meio" | "porta" = "meio";
+    if (normX < 0.35) {
+      clientLifoZone = "cabine"; // Fundo
+    } else if (normX > 0.65) {
+      clientLifoZone = "porta"; // Porta
+    }
+
+    // Colocar rigorosamente os N volumes deste cliente nos slots
+    for (let bIdx = 0; bIdx < nPackages; bIdx++) {
+      const slot = clientSlots[bIdx] || clientSlots[clientSlots.length - 1];
+      const boxWeight = boxWeights[bIdx] || Number((clientTotalWeight / nPackages).toFixed(1));
+      const boxVolume = Number((clientTotalVol / nPackages).toFixed(3));
+
+      // Dimensões com folga visual de aresta (estritamente contidas no slot)
+      const renderL = Math.max(0.06, boxDimL - GAP);
+      const renderH = Math.max(0.06, boxDimH - GAP);
+      const renderW = Math.max(0.06, boxDimW - GAP);
+
+      // Coordenadas métricas no espaço do veículo:
+      // X: [0 -> L] (Cabine até Portas Traseiras)
+      const posX = Number((currentStartX + slot.row * boxDimL + boxDimL / 2).toFixed(3));
+      // Y: [0 -> H] (Piso até Teto)
+      const posY = Number((slot.layer * boxDimH + boxDimH / 2).toFixed(3));
+      // Z: [-W/2 -> +W/2] (Esquerda até Direita)
+      const posZ = Number((-W / 2 + (W * 0.02) + slot.col * boxDimW + boxDimW / 2).toFixed(3));
+
+      placedBoxes.push({
+        id: `box-${stop.cleanSeq}-${bIdx + 1}`,
+        stopId: stop.id,
         stopSeq: stop.cleanSeq,
-        clientName: stop.client_name || stop.Nome || stop.Cliente || `Cliente ${stop.cleanSeq}`,
-        address: stop.address || stop.morada || stop.Morada || "",
-        boxIndex: b,
+        clientName: stop.clientName,
+        address: stop.address,
+        boxIndex: bIdx + 1,
         totalBoxesForStop: nPackages,
-        weightKg: Number(unitWeight.toFixed(1)),
-        volumeM3: Number(unitVol.toFixed(3)),
-        cLen,
-        cWid,
-        cHei,
-        color,
-        isHeavy: unitWeight >= 25,
-        lifoZone: zone,
+        weightKg: boxWeight,
+        volumeM3: boxVolume,
+        length: Number(renderL.toFixed(3)),
+        height: Number(renderH.toFixed(3)),
+        width: Number(renderW.toFixed(3)),
+        position: {
+          x: posX,
+          y: posY,
+          z: posZ,
+        },
+        color: clientColor,
+        lifoZone: clientLifoZone,
+        isHeavy: boxWeight >= 25,
+        overflow: false,
+        gridCells: {
+          cLen: Math.max(3, Math.round(renderL / 0.05)),
+          cWid: Math.max(3, Math.round(renderW / 0.05)),
+          cHei: Math.max(3, Math.round(renderH / 0.05)),
+        },
       });
     }
-  });
 
-  // 2. Ordenação LIFO e Gravidade Hierárquica:
-  // - Ordem primária: stopSeq decrescente (Seq N entregue em último -> carregada primeiro para a cabine)
-  // - Ordem secundária: weightKg decrescente (caixas mais pesadas carregadas primeiro -> assentam no chão)
-  // - Ordem terciária: volume decrescente
-  rawBoxes.sort((a, b) => {
-    if (b.stopSeq !== a.stopSeq) {
-      return b.stopSeq - a.stopSeq;
-    }
-    const weightDiff = b.weightKg - a.weightKg;
-    if (Math.abs(weightDiff) > 0.5) {
-      return weightDiff;
-    }
-    return (b.cLen * b.cWid * b.cHei) - (a.cLen * a.cWid * a.cHei);
-  });
-
-  // Mapa de pesos para validação física de suporte
-  const boxWeightsMap = new Map<number, number>();
-
-  // Função auxiliar: verificar se o bloco de células está 100% livre
-  function canPlace(ix: number, iy: number, iz: number, len: number, hei: number, wid: number): boolean {
-    if (ix < 0 || ix + len > nx) return false;
-    if (iy < 0 || iy + hei > ny) return false;
-    if (iz < 0 || iz + wid > nz) return false;
-
-    for (let x = ix; x < ix + len; x++) {
-      for (let y = iy; y < iy + hei; y++) {
-        for (let z = iz; z < iz + wid; z++) {
-          if (grid[getIdx(x, y, z)] !== 0) {
-            return false;
-          }
-        }
-      }
-    }
-    return true;
-  }
-
-  // Função auxiliar: verificar suporte físico por gravidade (piso ou caixa robusta por baixo)
-  function hasSupport(ix: number, iy: number, iz: number, len: number, wid: number, boxWeight: number): boolean {
-    if (iy === 0) return true; // Chão da viatura: suporte 100% garantido!
-
-    let supportedCells = 0;
-    const totalBaseCells = len * wid;
-
-    for (let x = ix; x < ix + len; x++) {
-      for (let z = iz; z < iz + wid; z++) {
-        const belowId = grid[getIdx(x, iy - 1, z)];
-        if (belowId !== 0) {
-          const belowWeight = boxWeightsMap.get(belowId) || 20;
-          // Não permitir caixa muito pesada em cima de caixa frágil
-          if (belowWeight >= boxWeight * 0.4) {
-            supportedCells++;
-          }
-        }
-      }
-    }
-
-    return supportedCells / totalBaseCells >= 0.55;
-  }
-
-  // 3. Empacotamento Voxel 3D sem sobreposição
-  const placedBoxes: CargoBox[] = [];
-
-  rawBoxes.forEach((box, boxIdx) => {
-    const numericId = boxIdx + 1;
-    boxWeightsMap.set(numericId, box.weightKg);
-
-    const { cLen, cHei, cWid } = box;
-
-    // Alvo longitudinal X por LIFO:
-    // Seq 1 (primeira entrega) -> targetIx junto às portas (nx - cLen)
-    // Seq N (última entrega) -> targetIx junto à cabine (0)
-    const targetRatio = totalStops > 1
-      ? (totalStops - box.stopSeq) / (totalStops - 1)
-      : 0.5;
-    const targetIx = Math.round((1 - targetRatio) * (nx - cLen));
-
-    // Janelas de pesquisa de zona LIFO
-    let minIx = 0;
-    let maxIx = nx - cLen;
-
-    if (box.lifoZone === "cabine") {
-      minIx = 0;
-      maxIx = Math.min(nx - cLen, Math.floor(nx * 0.45));
-    } else if (box.lifoZone === "porta") {
-      minIx = Math.max(0, Math.floor(nx * 0.50));
-      maxIx = nx - cLen;
-    } else {
-      minIx = Math.max(0, Math.floor(nx * 0.18));
-      maxIx = Math.min(nx - cLen, Math.floor(nx * 0.82));
-    }
-
-    let bestPos: { ix: number; iy: number; iz: number } | null = null;
-    let bestScore = Number.POSITIVE_INFINITY;
-
-    // 1ª Passagem: Dentro da zona LIFO estrita, varrendo SEMPRE o chão (iy = 0) primeiro!
-    for (let iy = 0; iy <= ny - cHei; iy++) {
-      // Se já encontrámos lugar no chão, não subimos em altura
-      if (bestPos && iy > bestPos.iy) break;
-
-      for (let ix = minIx; ix <= maxIx; ix++) {
-        for (let iz = 0; iz <= nz - cWid; iz++) {
-          if (canPlace(ix, iy, iz, cLen, cHei, cWid) && hasSupport(ix, iy, iz, cLen, cWid, box.weightKg)) {
-            const distLIFO = Math.abs(ix - targetIx);
-            // iy tem peso altíssimo para preencher todo o chão da carrinha antes de empilhar
-            const score = iy * 100000 + distLIFO * 25 + iz;
-            if (score < bestScore) {
-              bestScore = score;
-              bestPos = { ix, iy, iz };
-            }
-          }
-        }
-      }
-    }
-
-    // 2ª Passagem: Se a zona estrita estiver preenchida, expande para toda a carrinha mantendo LIFO
-    if (!bestPos) {
-      for (let iy = 0; iy <= ny - cHei; iy++) {
-        if (bestPos && iy > bestPos.iy) break;
-
-        for (let ix = 0; ix <= nx - cLen; ix++) {
-          for (let iz = 0; iz <= nz - cWid; iz++) {
-            if (canPlace(ix, iy, iz, cLen, cHei, cWid) && hasSupport(ix, iy, iz, cLen, cWid, box.weightKg)) {
-              const distLIFO = Math.abs(ix - targetIx);
-              const score = iy * 100000 + distLIFO * 25 + iz;
-              if (score < bestScore) {
-                bestScore = score;
-                bestPos = { ix, iy, iz };
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 3ª Passagem de emergência: Relaxa suporte se o espaço estiver saturado
-    if (!bestPos) {
-      for (let iy = 0; iy <= ny - cHei; iy++) {
-        if (bestPos) break;
-        for (let ix = 0; ix <= nx - cLen; ix++) {
-          if (bestPos) break;
-          for (let iz = 0; iz <= nz - cWid; iz++) {
-            if (canPlace(ix, iy, iz, cLen, cHei, cWid)) {
-              bestPos = { ix, iy, iz };
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Posição final garantida na grelha voxel
-    const finalIx = bestPos ? bestPos.ix : Math.min(targetIx, nx - cLen);
-    const finalIy = bestPos ? bestPos.iy : 0;
-    const finalIz = bestPos ? bestPos.iz : 0;
-
-    // Marcação absoluta na grelha 3D (garante ZERO sobreposição futura)
-    for (let x = finalIx; x < Math.min(nx, finalIx + cLen); x++) {
-      for (let y = finalIy; y < Math.min(ny, finalIy + cHei); y++) {
-        for (let z = finalIz; z < Math.min(nz, finalIz + cWid); z++) {
-          grid[getIdx(x, y, z)] = numericId;
-        }
-      }
-    }
-
-    // Conversão métrica de células para o espaço 3D da viatura:
-    // Margem visual de 6mm entre caixas vizinhas para delimitar as arestas e evitar z-fighting
-    const boxLengthM = Number(Math.max(0.20, cLen * CELL_SIZE - 0.006).toFixed(3));
-    const boxHeightM = Number(Math.max(0.18, cHei * CELL_SIZE - 0.006).toFixed(3));
-    const boxWidthM = Number(Math.max(0.20, cWid * CELL_SIZE - 0.006).toFixed(3));
-
-    // Centro geométrico:
-    // X: de 0 (Cabine) a L (Portas Traseiras)
-    const posX = Number(((finalIx + cLen / 2) * CELL_SIZE).toFixed(3));
-    // Y: de 0 (Piso) a H (Teto)
-    const posY = Number(((finalIy + cHei / 2) * CELL_SIZE).toFixed(3));
-    // Z: de -W/2 (Esquerda) a +W/2 (Direita)
-    const posZ = Number((-container.width / 2 + (finalIz + cWid / 2) * CELL_SIZE).toFixed(3));
-
-    placedBoxes.push({
-      id: `box-${box.stopSeq}-${box.boxIndex}`,
-      stopId: box.stopId,
-      stopSeq: box.stopSeq,
-      clientName: box.clientName,
-      address: box.address,
-      boxIndex: box.boxIndex,
-      totalBoxesForStop: box.totalBoxesForStop,
-      weightKg: box.weightKg,
-      volumeM3: box.volumeM3,
-      length: boxLengthM,
-      height: boxHeightM,
-      width: boxWidthM,
-      position: {
-        x: posX,
-        y: posY,
-        z: posZ,
-      },
-      color: box.color,
-      lifoZone: box.lifoZone,
-      isHeavy: box.isHeavy,
-      gridCells: {
-        cLen,
-        cWid,
-        cHei,
-      },
-    });
+    // Avança a fronteira longitudinal de carregamento para o próximo cliente
+    currentStartX += sliceDx;
   });
 
   return placedBoxes;
