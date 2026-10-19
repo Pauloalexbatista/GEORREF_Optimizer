@@ -2269,3 +2269,38 @@ async def import_mobiliario_files(
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao importar ficheiros Mobiliário: {str(e)}")
+
+
+class RuleSimulatePayload(BaseModel):
+    vehicle_name: Optional[str] = "Viatura"
+    vehicle_tags: Optional[str] = ""
+    delivery_tags: Optional[str] = ""
+    delivery_cp: Optional[str] = ""
+    rules_matrix: Optional[List[Dict[str, Any]]] = None
+
+@router.post("/{project_id}/rules/simulate")
+def simulate_fleet_rule(
+    project_id: int,
+    payload: RuleSimulatePayload,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Simulador interativo de regras para testar compatibilidade entre viaturas e entregas,
+    considerando tags, restrições e faixas de Código Postal.
+    """
+    proj = get_projeto(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado.")
+    if proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False):
+        raise HTTPException(status_code=403, detail="Sem permissão para aceder a este projeto.")
+
+    from utils.rules_engine import simulate_rule_evaluation
+
+    res = simulate_rule_evaluation(
+        vehicle_tags=payload.vehicle_tags or "",
+        delivery_tags=payload.delivery_tags or "",
+        rules_matrix=payload.rules_matrix,
+        delivery_cp=payload.delivery_cp or "",
+        vehicle_name=payload.vehicle_name or "Viatura"
+    )
+    return res

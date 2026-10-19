@@ -469,9 +469,16 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
        * *Validação Específica*: No card da paragem ou no ato de entrega (POD), o motorista bipa a caixa e o sistema valida se a etiqueta corresponde ao `doc_id` / `barcode` daquela paragem. Se o volume pertencer a outra carrinha ou cliente, dispara aviso visual e sonoro de volume trocado (*"⚠️ Atenção: Volume pertence à Paragem #X"*).
        * *Localizador Contínuo na Carrinha*: O condutor aponta para qualquer caixa dentro do baú e a app faz scroll automático e abre a paragem correspondente.
      - **Feedback Multissensorial**: Som de *Beep* sintetizado localmente via Web Audio API e vibração háptica tátil ao confirmar com sucesso. Entrada manual de contingência caso a etiqueta esteja rasgada ou suja.
-2. **Desenvolvimento Avançado do Módulo de Regras (`utils/rules_engine.py`)**:
-   * Expansão para suporte a regras compostas (precedências, descansos obrigatórios, limites por categoria).
-   * Simulador visual de regras no frontend (`dashboard/fleet`).
+2. **Desenvolvimento Avançado do Módulo de Regras (`utils/rules_engine.py`) & Simulador Visual no Frontend (`/dashboard/fleet`) (✅ Concluído no Código)**:
+   * **Simulador Visual Interativo de Regras em Tempo Real**:
+     - No separador *"4. Regras"* do ecrã de Gestão de Frota e Suporte (`/dashboard/fleet`), foi implementado um **Simulador Interativo** completo.
+     - Permite ao gestor de tráfego testar instantaneamente a compatibilidade de qualquer viatura com as entregas da distribuição, antes de correr o algoritmo de otimização.
+     - **Modo Amostra Real vs. Modo Teste Livre**: O operador pode escolher uma encomenda real da lista ou inserir um Código Postal e Tags de teste manual (ex: `FRIO`, `PESADOS`, `CENTRO_HISTORICO`).
+     - **Feedback Visual Instantâneo**: Emissão de veredito imediato (*"Compatível"* ou *"Incompatível"*), pontuação de compatibilidade (0 a 100%), listagem detalhada de todas as regras aplicadas e alertas explicativos em caso de bloqueio.
+   * **Suporte a Regras Avançadas no Motor (`rules_engine.py`)**:
+     - **Regras de Precedência entre Clientes (`validate_route_precedence`)**: Permite garantir que certas entregas ou recolhas ocorram obrigatoriamente antes de outras paragens na mesma rota (ex: recolha de amostras/devoluções antes da entrega final).
+     - **Tetos e Limites por Categoria (`validate_category_limits`)**: Restringe o número máximo de entregas ou peso de determinada categoria que uma viatura pode transportar numa só rota (ex: no máximo 2 clientes com mercadoria perigosa `ADR` ou volume sobredimensionado por carro).
+     - **API de Simulação Dedicada**: Endpoint `POST /api/fleet/{project_id}/rules/simulate` em `backend/api/fleet.py` para testes rápidos sem persistência nem recálculo de rotas.
 3. **Evolução da Ferramenta de Zonas & Códigos Postais**:
    * Integração com a Google Maps JavaScript API para desenho dinâmico de polígonos, clustering de entregas por CP4/CP7 e mapa de calor de densidade.
 4. **Torre de Controlo e ETA Dinâmico**:

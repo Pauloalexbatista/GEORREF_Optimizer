@@ -438,3 +438,110 @@ def filter_eligible_vehicles_for_node(
             eligible_indices.append(idx)
             
     return eligible_indices
+
+
+def simulate_rule_evaluation(
+    vehicle_tags: Union[str, Set[str]],
+    delivery_tags: Union[str, Set[str]],
+    rules_matrix: Optional[List[Dict[str, Any]]] = None,
+    delivery_cp: Optional[Any] = None,
+    vehicle_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Executa uma simulação detalhada de regras entre uma viatura e uma entrega.
+    Retorna diagnóstico completo com compatibilidade, motivo e tags analisadas.
+    """
+    compatible = is_vehicle_compatible(
+        vehicle_tags=vehicle_tags,
+        delivery_tags=delivery_tags,
+        rules_matrix=rules_matrix,
+        delivery_cp=delivery_cp,
+        vehicle_name=vehicle_name
+    )
+
+    explanation = explain_incompatibility(
+        vehicle_tags=vehicle_tags,
+        delivery_tags=delivery_tags,
+        rules_matrix=rules_matrix,
+        delivery_cp=delivery_cp,
+        vehicle_name=vehicle_name
+    )
+
+    v_set = sorted(list(extract_tags(vehicle_tags)))
+    d_set = sorted(list(extract_tags(delivery_tags)))
+    cp_info = normalize_postal_code(delivery_cp)
+
+    return {
+        "compatible": compatible,
+        "explanation": explanation or "A viatura cumpre 100% dos requisitos de tags e zonas postais para esta entrega.",
+        "vehicle_name": vehicle_name or "Viatura",
+        "vehicle_tags": v_set,
+        "delivery_tags": d_set,
+        "postal_code": cp_info.get("clean") or "",
+        "applied_rules_count": len(rules_matrix) if rules_matrix else 0
+    }
+
+
+def validate_route_precedence(
+    route_stops: List[Dict[str, Any]],
+    precedence_rules: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[bool, List[str]]:
+    """
+    Valida se as regras de precedência foram cumpridas na sequência de uma rota.
+    Ex: Paragem A (ex: recolha de peça) tem de ocorrer estritamente antes de Paragem B (entrega/substituição).
+    """
+    violations = []
+    if not route_stops or not precedence_rules:
+        return True, violations
+
+    # Mapear posições de cada paragem na rota
+    pos_map = {}
+    for pos, stop in enumerate(route_stops):
+        doc_id = str(stop.get('Doc_ID') or stop.get('Codigo_Cliente') or stop.get('id') or '').strip().upper()
+        if doc_id:
+            pos_map[doc_id] = pos
+
+    for r in precedence_rules:
+        before_id = str(r.get('Precedente_ID', r.get('before_id', ''))).strip().upper()
+        after_id = str(r.get('Dependente_ID', r.get('after_id', ''))).strip().upper()
+        desc = r.get('Descricao', r.get('descricao', 'Precedência Obrigatória'))
+
+        if before_id in pos_map and after_id in pos_map:
+            if pos_map[before_id] > pos_map[after_id]:
+                violations.append(
+                    f"Violação de precedência: Paragem '{before_id}' (posição {pos_map[before_id]+1}) "
+                    f"deve ser visitada antes de '{after_id}' (posição {pos_map[after_id]+1}). Regra: {desc}"
+                )
+
+    return len(violations) == 0, violations
+
+
+def validate_category_limits(
+    vehicle_route_stops: List[Dict[str, Any]],
+    category_limits: Optional[Dict[str, int]] = None
+) -> Tuple[bool, List[str]]:
+    """
+    Valida se o número de entregas de uma determinada categoria/tag numa mesma rota
+    não ultrapassa o teto máximo permitido para a viatura.
+    Ex: category_limits = {'PESADO': 3, 'FRIO': 5}
+    """
+    violations = []
+    if not vehicle_route_stops or not category_limits:
+        return True, violations
+
+    counts: Dict[str, int] = {}
+    for stop in vehicle_route_stops:
+        tags = extract_tags(stop.get('Regras', stop.get('regras', '')))
+        for t in tags:
+            counts[t] = counts.get(t, 0) + 1
+
+    for tag, max_limit in category_limits.items():
+        tag_upper = tag.strip().upper()
+        actual = counts.get(tag_upper, 0)
+        if actual > max_limit:
+            violations.append(
+                f"Limite de categoria excedido: Rota possui {actual} entregas com a tag '[{tag_upper}]', "
+                f"mas o limite máximo permitido é de {max_limit}."
+            )
+
+    return len(violations) == 0, violations

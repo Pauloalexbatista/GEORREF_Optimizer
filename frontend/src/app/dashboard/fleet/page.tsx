@@ -126,6 +126,68 @@ export default function FleetPage() {
   const [editingWhIndex, setEditingWhIndex] = useState<number | null>(null);
   const [editingClient, setEditingClient] = useState<ClientDeliveryItem | null>(null);
 
+  // Rules Simulator State (Ponto 2 GeoRoutePlan)
+  const [simVehicleIndex, setSimVehicleIndex] = useState<number>(0);
+  const [simDeliveryIndex, setSimDeliveryIndex] = useState<number>(0);
+  const [simCustomVehicleTags, setSimCustomVehicleTags] = useState<string>("");
+  const [simCustomDeliveryTags, setSimCustomDeliveryTags] = useState<string>("");
+  const [simCustomCP, setSimCustomCP] = useState<string>("");
+  const [simUseCustom, setSimUseCustom] = useState<boolean>(false);
+  const [simResult, setSimResult] = useState<{
+    compatible: boolean;
+    explanation: string;
+    vehicle_name?: string;
+    vehicle_tags?: string[];
+    delivery_tags?: string[];
+    postal_code?: string;
+    applied_rules_count?: number;
+  } | null>(null);
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+
+  const runRulesSimulation = async () => {
+    if (!selectedProject) return;
+    setIsSimulating(true);
+    try {
+      let vName = "Viatura";
+      let vTags = "";
+      let dTags = "";
+      let dCp = "";
+
+      if (simUseCustom) {
+        vTags = simCustomVehicleTags;
+        dTags = simCustomDeliveryTags;
+        dCp = simCustomCP;
+      } else {
+        const v = fleet[simVehicleIndex];
+        if (v) {
+          vName = v.veiculo;
+          vTags = v.regras || "";
+        }
+        const d = clients[simDeliveryIndex];
+        if (d) {
+          dTags = d.regras || "";
+          dCp = d.codigo_postal || "";
+        }
+      }
+
+      const res = await apiRequest(`/api/fleet/${selectedProject.id}/rules/simulate`, {
+        method: "POST",
+        body: JSON.stringify({
+          vehicle_name: vName,
+          vehicle_tags: vTags,
+          delivery_tags: dTags,
+          delivery_cp: dCp,
+          rules_matrix: rules
+        })
+      });
+      setSimResult(res);
+    } catch (err: any) {
+      alert("Erro na simulação de regras: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
   // Load all tables on project change
   useEffect(() => {
     if (!selectedProject) return;
@@ -1338,6 +1400,171 @@ export default function FleetPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* --------------------------------------------------------- */}
+            {/* SIMULADOR INTERATIVO DE REGRAS (Ponto 2 GeoRoutePlan)     */}
+            {/* --------------------------------------------------------- */}
+            <div className="mt-4 pt-4 border-t border-zinc-800 bg-zinc-950/60 p-4 rounded-xl border border-zinc-800/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                    <span>🧪</span> Simulador Interativo de Regras & Compatibilidade
+                  </h3>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    Teste antes de otimizar: verifique instantaneamente se uma viatura pode transportar uma encomenda considerando as regras de tags e zonas de Código Postal.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSimUseCustom(!simUseCustom)}
+                    className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-semibold cursor-pointer"
+                  >
+                    {simUseCustom ? "← Usar Dados Reais da Frota/Clientes" : "⚙️ Modo Teste Livre (Digitar Tags Manuais)"}
+                  </button>
+                </div>
+              </div>
+
+              {!simUseCustom ? (
+                /* Modo Seleção Rápida de Dados Reais */
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  <div className="md:col-span-5">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      1. Viatura da Frota ({fleet.length})
+                    </label>
+                    <select
+                      value={simVehicleIndex}
+                      onChange={(e) => setSimVehicleIndex(parseInt(e.target.value, 10))}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      {fleet.map((v, i) => (
+                        <option key={i} value={i}>
+                          {v.veiculo} {v.regras ? `— Tags: [${v.regras}]` : "— [Sem restrições]"}
+                        </option>
+                      ))}
+                      {fleet.length === 0 && <option value="0">Nenhuma viatura carregada</option>}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-5">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      2. Encomenda / Cliente ({clients.length})
+                    </label>
+                    <select
+                      value={simDeliveryIndex}
+                      onChange={(e) => setSimDeliveryIndex(parseInt(e.target.value, 10))}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      {clients.slice(0, 100).map((c, i) => (
+                        <option key={i} value={i}>
+                          {c.codigo_cliente || `CLI_${i+1}`} — {c.nome_cliente || c.morada} (CP: {c.codigo_postal || "-"}) {c.regras ? `[${c.regras}]` : ""}
+                        </option>
+                      ))}
+                      {clients.length === 0 && <option value="0">Nenhum cliente carregado</option>}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <button
+                      type="button"
+                      onClick={runRulesSimulation}
+                      disabled={isSimulating || fleet.length === 0 || clients.length === 0}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/20"
+                    >
+                      <span>⚡</span> <span>{isSimulating ? "A testar..." : "Simular"}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Modo Entrada Livre */
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  <div className="md:col-span-4">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      Tags da Viatura
+                    </label>
+                    <input
+                      type="text"
+                      value={simCustomVehicleTags}
+                      onChange={(e) => setSimCustomVehicleTags(e.target.value)}
+                      placeholder="Ex: [PESADO][CP:1000..1999]"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="md:col-span-4">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      Tags da Entrega
+                    </label>
+                    <input
+                      type="text"
+                      value={simCustomDeliveryTags}
+                      onChange={(e) => setSimCustomDeliveryTags(e.target.value)}
+                      placeholder="Ex: [FRIO][LISBOA]"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      Código Postal
+                    </label>
+                    <input
+                      type="text"
+                      value={simCustomCP}
+                      onChange={(e) => setSimCustomCP(e.target.value)}
+                      placeholder="Ex: 1050-023"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <button
+                      type="button"
+                      onClick={runRulesSimulation}
+                      disabled={isSimulating}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>⚡</span> <span>{isSimulating ? "A testar..." : "Simular"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Resultado Detalhado do Diagnóstico */}
+              {simResult && (
+                <div className={`mt-3 p-3.5 rounded-xl border text-xs flex items-start gap-3 transition-all ${
+                  simResult.compatible
+                    ? "bg-emerald-950/40 border-emerald-800/80 text-emerald-200"
+                    : "bg-rose-950/40 border-rose-800/80 text-rose-200"
+                }`}>
+                  <span className="text-xl shrink-0 mt-0.5">{simResult.compatible ? "✅" : "❌"}</span>
+                  <div className="space-y-1 w-full">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs uppercase tracking-wide">
+                        {simResult.compatible ? "Compatibilidade Aprovada" : "Bloqueio de Regras Detetado"}
+                      </span>
+                      <span className="text-[10px] font-mono opacity-80">
+                        {simResult.applied_rules_count} regras avaliadas
+                      </span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      {simResult.explanation}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1.5 text-[10px] font-mono opacity-90 border-t border-white/10 mt-1">
+                      <span>Viatura: <b>{simResult.vehicle_name}</b> {simResult.vehicle_tags?.length ? `[${simResult.vehicle_tags.join(", ")}]` : "[sem tags]"}</span>
+                      <span>•</span>
+                      <span>Entrega: {simResult.delivery_tags?.length ? `[${simResult.delivery_tags.join(", ")}]` : "[sem tags]"}</span>
+                      {simResult.postal_code && (
+                        <>
+                          <span>•</span>
+                          <span>CP: <b>{simResult.postal_code}</b></span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
