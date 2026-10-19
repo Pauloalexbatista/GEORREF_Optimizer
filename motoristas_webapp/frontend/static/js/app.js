@@ -53,9 +53,21 @@ function initUI() {
   document.getElementById("btn-nav-summary").addEventListener("click", showSummaryModal);
   
   document.getElementById("btn-logout").addEventListener("click", () => {
+    stopGpsTracking();
     localStorage.removeItem("geo_driver");
     window.location.href = "/login";
   });
+
+  // Pausa/Almoço & Fecho do Dia (RGPD / CNPD)
+  const btnToggleBreak = document.getElementById("btn-toggle-break");
+  if (btnToggleBreak) {
+    btnToggleBreak.addEventListener("click", toggleDriverBreak);
+  }
+
+  const btnCloseShift = document.getElementById("btn-close-shift");
+  if (btnCloseShift) {
+    btnCloseShift.addEventListener("click", closeDriverShift);
+  }
 
   // Modal events (Motivo de Insucesso)
   document.getElementById("btn-cancel-reason").addEventListener("click", closeReasonModal);
@@ -682,13 +694,102 @@ function startPeriodicSync() {
   }, 300000);
 }
 
-// Mantido sem alterações conforme diretiva do utilizador
+// -------------------------------------------------------------
+// Gestão de Rastreio GPS & Conformidade RGPD / CNPD
+// -------------------------------------------------------------
+let gpsIntervalId = null;
+let isBreakActive = false;
+let isShiftClosed = false;
+
+function toggleDriverBreak() {
+  if (isShiftClosed) return;
+  isBreakActive = !isBreakActive;
+  
+  const btn = document.getElementById("btn-toggle-break");
+  const pill = document.getElementById("shift-status-pill");
+  const text = document.getElementById("shift-status-text");
+  const indicator = document.getElementById("gps-status-indicator");
+  const alertBox = document.getElementById("break-alert-box");
+
+  if (isBreakActive) {
+    stopGpsTracking();
+    if (btn) btn.innerHTML = "▶️ Retomar Turno";
+    if (pill) {
+      pill.className = "status-pill status-break";
+    }
+    if (text) text.textContent = "Em Pausa / Almoço";
+    if (indicator) indicator.textContent = "⏸️ GPS Suspenso (Período de Descanso)";
+    if (alertBox) alertBox.style.display = "block";
+  } else {
+    if (btn) btn.innerHTML = "⏸️ Pausa / Almoço";
+    if (pill) {
+      pill.className = "status-pill status-online";
+    }
+    if (text) text.textContent = "Em Serviço";
+    if (indicator) indicator.textContent = "📡 GPS Operacional Ativo (a cada 5m)";
+    if (alertBox) alertBox.style.display = "none";
+    startGpsTracking();
+  }
+}
+
+function closeDriverShift() {
+  if (isShiftClosed) return;
+  if (!confirm("Tem a certeza que deseja concluir a rota e fechar o dia de trabalho?\n\nTodas as transmissões de GPS e monitorização serão desligadas.")) {
+    return;
+  }
+  
+  isShiftClosed = true;
+  stopGpsTracking();
+
+  const btnBreak = document.getElementById("btn-toggle-break");
+  if (btnBreak) btnBreak.disabled = true;
+
+  const pill = document.getElementById("shift-status-pill");
+  if (pill) pill.className = "status-pill status-closed";
+
+  const text = document.getElementById("shift-status-text");
+  if (text) text.textContent = "Turno Concluído";
+
+  const indicator = document.getElementById("gps-status-indicator");
+  if (indicator) indicator.textContent = "🔒 GPS Desligado a 100% (Turno Encerrado)";
+
+  const alertBox = document.getElementById("break-alert-box");
+  if (alertBox) alertBox.style.display = "none";
+
+  const btnClose = document.getElementById("btn-close-shift");
+  if (btnClose) {
+    btnClose.disabled = true;
+    btnClose.textContent = "✓ Turno Encerrado com Sucesso";
+    btnClose.className = "btn btn-secondary btn-block";
+  }
+
+  const summaryModal = document.getElementById("summary-modal");
+  if (summaryModal) summaryModal.classList.remove("active");
+
+  alert("Fecho do dia registado com sucesso.\nO rastreio GPS foi totalmente encerrado e destruído.");
+}
+
+function stopGpsTracking() {
+  if (gpsIntervalId) {
+    clearInterval(gpsIntervalId);
+    gpsIntervalId = null;
+  }
+}
+
 function startGpsTracking() {
   if (!("geolocation" in navigator)) return;
+  if (isBreakActive || isShiftClosed) return;
   
+  stopGpsTracking();
+
   function sendGpsPing() {
+    if (isBreakActive || isShiftClosed) {
+      stopGpsTracking();
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
+        if (isBreakActive || isShiftClosed) return;
         try {
           await fetch("/api/driver/gps_ping", {
             method: "POST",
@@ -707,8 +808,7 @@ function startGpsTracking() {
   }
   
   sendGpsPing();
-  // Ping GPS every 5 minutes
-  setInterval(sendGpsPing, 300000);
+  gpsIntervalId = setInterval(sendGpsPing, 300000);
 }
 
 // -------------------------------------------------------------

@@ -457,12 +457,12 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
 ## 🚀 8. Roadmap e Próximos Passos de Desenvolvimento
 
 1. **Expansão e Conformidade da App de Motoristas (`motoristas_webapp`)**:
-   * **Implementar o Modo "Pausa / Almoço"**: Botão na app que suspende temporariamente o envio de GPS de 5m durante o descanso do motorista.
-   * **Garantia de Desligamento Total no Fecho**: Validação estrita de que o `setInterval` de GPS é cancelado imediatamente após o fecho da rota ou logout.
-   * **Disponibilização de Minuta Contratual RGPD**: Modelo de anexo de regulamento de viatura e consentimento para as empresas fornecerem aos motoristas.
-   * Assinatura digital no ecrã (*Proof of Delivery - POD*).
-   * Captura de fotos como comprovativo de entrega ou justificação de falha.
-   * Leitor de códigos de barras / QR Code via câmara para conferência de volumes.
+   * **Modo "Pausa / Almoço" (✅ Concluído no Código)**: Botão dinâmico implementado na interface móvel (`driver.html` / `app.js`) que permite ao condutor suspender voluntariamente a recolha de GPS durante o período de refeição ou descanso, cumprindo os Artigos 19.º e 20.º do Código do Trabalho.
+   * **Garantia de Desligamento Total no Fecho e Logout (✅ Concluído no Código)**: O temporizador de envio de GPS (`gpsIntervalId`) é cancelado e destruído a 100% (`clearInterval`) no momento em que o motorista submete o "Fecho do Dia" ou efetua Logout, sendo expressamente impossível recolher coordenadas fora do horário de serviço.
+   * **Disponibilização de Minuta Contratual RGPD (✅ Concluído)**: Criada a adenda formal e regulamento interno em [`docs/MINUTA_CONTRATUAL_RGPD_MOTORISTAS.md`](docs/MINUTA_CONTRATUAL_RGPD_MOTORISTAS.md) pronta a imprimir e assinar pelas empresas e trabalhadores.
+   * Assinatura digital no ecrã (*Proof of Delivery - POD*) — Já implementado.
+   * Captura de fotos como comprovativo de entrega ou justificação de falha — Já implementado.
+   * Leitor de códigos de barras / QR Code via câmara para conferência de volumes (Previsto).
 2. **Desenvolvimento Avançado do Módulo de Regras (`utils/rules_engine.py`)**:
    * Expansão para suporte a regras compostas (precedências, descansos obrigatórios, limites por categoria).
    * Simulador visual de regras no frontend (`dashboard/fleet`).

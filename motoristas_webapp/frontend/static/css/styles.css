@@ -555,3 +555,26 @@ body {
   padding: 12px;
   border-bottom: 1px solid var(--border-color);
 }
+
+/* Driver Shift & Break Banner (RGPD Compliance) */
+.driver-shift-banner {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.status-break {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: #d97706 !important;
+  border: 1px solid rgba(245, 158, 11, 0.4) !important;
+}
+
+.status-closed {
+  background-color: rgba(100, 116, 139, 0.15) !important;
+  color: #64748b !important;
+  border: 1px solid rgba(100, 116, 139, 0.4) !important;
+}
+

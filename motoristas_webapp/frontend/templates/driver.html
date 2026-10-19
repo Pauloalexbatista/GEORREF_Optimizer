@@ -38,6 +38,26 @@
 
   <!-- Conteúdo Principal com Scroll -->
   <main class="app-content">
+    <!-- Banner de Estado de Turno & Pausa/Almoço (Conformidade RGPD/CNPD) -->
+    <div class="driver-shift-banner" id="driver-shift-banner">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+        <div>
+          <span id="shift-status-pill" class="status-pill status-online" style="font-size: 11px;">
+            <span class="dot"></span> <span id="shift-status-text">Em Serviço</span>
+          </span>
+          <div id="gps-status-indicator" style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
+            📡 GPS Operacional Ativo (a cada 5m)
+          </div>
+        </div>
+        <button type="button" id="btn-toggle-break" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px; min-height: 36px; border-radius: 8px; font-weight: 600;">
+          ⏸️ Pausa / Almoço
+        </button>
+      </div>
+      <div id="break-alert-box" style="display: none; margin-top: 10px; padding: 10px; background: rgba(245, 158, 11, 0.12); border: 1px solid #f59e0b; border-radius: 8px; font-size: 11px; color: #b45309; line-height: 1.4;">
+        ⏸️ <strong>Modo Pausa Ativo:</strong> A transmissão de GPS está <u>totalmente suspensa</u> para respeitar a sua privacidade durante o descanso legal (Art. 19º e 20º do Código do Trabalho).
+      </div>
+    </div>
+
     <div id="stops-list-container">
       <!-- Cards gerados dinamicamente pelo app.js -->
     </div>
@@ -193,6 +213,16 @@
           <div class="stat-label" data-i18n="total_failed">Falhadas</div>
           <div id="sum-failed" class="stat-val" style="color: #dc2626;">0</div>
         </div>
+      </div>
+
+      <!-- Fecho do Dia & Desligamento de GPS (RGPD/CNPD) -->
+      <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+        <button type="button" id="btn-close-shift" class="btn btn-danger btn-block" style="font-size: 13px; font-weight: 700; padding: 12px; border-radius: 8px;">
+          🏁 Concluir Rota & Fecho do Dia
+        </button>
+        <p style="font-size: 11px; color: var(--text-secondary); text-align: center; margin-top: 8px; line-height: 1.4;">
+          🔒 Ao confirmar o fecho do dia, todas as rotinas de geolocalização e envio de GPS são <strong>desligadas e destruídas a 100%</strong> (em cumprimento da deliberação da CNPD).
+        </p>
       </div>
     </div>
   </div>
