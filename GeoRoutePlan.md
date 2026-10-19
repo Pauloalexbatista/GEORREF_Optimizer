@@ -410,13 +410,20 @@ O sistema dispõe de um módulo dedicado de administração para gestão multi-t
 
 ## 🔒 7. Política de Retenção de Dados, RGPD & Arquitetura da App de Motoristas
 
-### 7.1 Regra de Retenção de 7 Dias (1 Semana) & Limite de 10 Distribuições:
-1. **Ciclo de Vida das Distribuições (7 Dias)**:
-   * Cada projeto/distribuição tem um ciclo de vida ativo no servidor de **7 dias (1 semana)** a contar da data de distribuição.
-   * **Exceção de Segurança**: Projetos com estado ativo na rua (`status = 'active'`) nunca são eliminados automaticamente.
-   * **Responsabilidade do Arquivo**: O cliente descarrega o **Excel Canónico de 9 Abas** para o seu arquivo local/ERP. Como o sistema suporta *roundtrip* completo, se o cliente necessitar de revisitar ou auditar a distribuição no futuro, basta importar novamente o Excel de 9 abas que o sistema reconstrói as rotas e métricas exatamente como estavam.
-2. **Limite de 10 Projetos por Empresa**:
-   * O sistema limita a 10 o número de distribuições simultâneas por empresa no servidor, prevenindo a degradação de espaço e custos no SQLite / VPS Coolify.
+### 7.1 Regra de Retenção de 7 a 10 Dias & Purga Obrigatória do Servidor:
+1. **Referência Temporal pela Data de Distribuição**:
+   * O ciclo de vida de cada projeto/distribuição é contabilizado a partir da **`data_distribuicao`** (o dia efetivo em que as rotas vão para a estrada), e não pela data de criação (`created_at`) do ficheiro no sistema. Caso a data de distribuição não seja fornecida, o sistema assume como salvaguarda o `created_at`.
+2. **Ciclo de Vida Normal (7 Dias) & Tolerância Máxima (10 Dias)**:
+   * **Período Ativo de Consulta**: A distribuição fica plenamente disponível para consulta e monitorização durante **7 dias** após a data de distribuição.
+   * **Aviso Visual de Expiração no Ecrã**: O sistema alerta o operador visualmente no dashboard (*"Esta distribuição expira em X dias. Descarregue o ficheiro Excel canónico de 9 abas para o seu arquivo local"*).
+   * **Tolerância Máxima**: O gestor pode prolongar a permanência no servidor até um máximo absoluto de **10 dias**.
+3. **Purga Obrigatória e Definitiva aos 10 Dias**:
+   * Ultrapassado o limite inegociável de **10 dias**, o projeto e todos os seus dados dependentes (rotas, entregas, consumos temporários) são **definitivamente eliminados da base de dados**, mesmo que o utilizador se tenha esquecido de fechar a distribuição.
+   * **Justificação Operacional**: Prevenir a acumulação descontrolada de dados no SQLite / VPS Coolify, assegurando a máxima velocidade de resposta e custos de infraestrutura controlados.
+4. **Responsabilidade do Arquivo no Cliente (Excel Canónico)**:
+   * É da inteira responsabilidade do cliente exportar e guardar o **Excel Canónico de 9 Abas** no seu arquivo/ERP antes da purga. Se necessitar de auditar ou rever a operação no futuro, o suporte a *roundtrip* total permite reimportar o Excel de 9 abas a qualquer momento, reconstruindo a distribuição fielmente.
+5. **Limite de 10 Projetos Simultâneos por Empresa**:
+   * Em qualquer momento, nenhuma empresa pode ter mais de 10 distribuições ativas no servidor.
 
 ### 7.2 Diretrizes de RGPD & Proteção de Dados Pessoais (Lei n.º 58/2019 e CNPD):
 1. **Minimização de Dados**:
@@ -469,6 +476,10 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
 8. **Preservação Integral do Ficheiro ("O que entra tem de sair") & Alerta de Dados a Zero**:
    * **Inativação em vez de Eliminação**: Veículos avariados ou motoristas ausentes nunca são apagados definitivamente da base de dados; são marcados como `Inativo: Sim/Não`. O solver ignora-os nesse dia, mas ao exportar o Excel final eles continuam lá presentes na lista para o dia seguinte.
    * **Campos Vazios / Peso e Volume a Zero**: Nunca inventar valores padrão artificiais (ex: 50 kg) que deturpem a faturação do cliente. Entregas sem peso ou volume ficam a 0, sendo destacadas a cor de aviso (laranja) no ecrã com alerta visível (*"Existem X entregas sem informação de peso/volume"*). A exportação preserva fielmente os valores reais do cliente.
+9. **Gestão do Ciclo de Vida da Distribuição (7 a 10 Dias), Alerta Visual & Purga Forçada**:
+   * **Campo `data_distribuicao`**: Adicionar a coluna à tabela `projetos` para que a contagem dos 7 dias tenha como referência o dia do serviço e não o momento do upload (`created_at`).
+   * **Aviso Visual no Painel**: Banner ou aviso de contagem decrescente no dashboard (*"Distribuição a expirar em X dias. Guarde o Excel no seu ERP"*).
+   * **Purga Forçada aos 10 Dias**: Eliminação automática e irrevogável no servidor aos 10 dias da distribuição (mesmo se o projeto não tiver sido fechado manualmente), garantindo que a base de dados SQLite não cresce indefinidamente. O cliente preserva os seus dados através do descarregamento do Excel canónico.
 
 ---
 
