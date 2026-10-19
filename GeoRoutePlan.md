@@ -547,6 +547,12 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
     * **Persistência e Respeito no Solver**:
       - A tabela SQLite `entregas` recebeu a coluna `is_active INTEGER DEFAULT 1` via auto-migração (`database.py` e `backend/database.py`).
       - O solver (`backend/api/solver.py`) filtra automaticamente `is_active = 1` tanto para a frota como para as entregas (`WHERE is_active = 1`), preservando os registos inativos na base de dados e no ficheiro Excel de 9 abas timbrado.
+13. **Resolução de Escopo no Tracking & Handler Global de Exceções com CORS (✅ Concluído no Código)**:
+    * **Resolução de `UnboundLocalError` em `backend/api/tracking.py`**:
+      - A variável `has_driver` estava a ser consultada no cálculo de desvios horários da rota antes da sua declaração, provocando erro 500 no endpoint `GET /api/tracking/{id}`.
+      - A resolução e extração de motorista e viatura (`drv_raw`, `has_driver`, `drv_name`, `veh_raw`, `veh_name`) foi antecipada para o início do processamento de cada rota.
+    * **Blindagem CORS em Exceções Globais (`backend/main.py`)**:
+      - Adicionado o `@app.exception_handler(Exception)` global para que qualquer exceção imprevista devolva um `JSONResponse` com código 500 e detalhe explícito do erro, garantindo que a camada de middleware de CORS injete sempre os cabeçalhos `Access-Control-Allow-Origin`, eliminando o falso erro de browser *"Failed to fetch"*.
 
 ---
 
