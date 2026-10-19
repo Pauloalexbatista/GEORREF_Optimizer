@@ -28,10 +28,11 @@ O **GeoRoutePlan** (GEORREF Optimizer) é uma plataforma empresarial integrada d
 
 3. **O Ficheiro Excel como Entrada e Arquivo Final (*Single Source of Truth*)**:
    * **Papéis Claros de Arquitetura**: O **Ficheiro Excel de 9 Abas** é o formato canónico de entrada e o arquivo oficial de saída; a **base de dados SQLite** guarda o estado temporário de trabalho e cálculo no servidor.
+   * **Modelo Soberano e Fechado**: O produto segue estritamente o seu modelo canónico oficial. O nosso ficheiro não suporta abas ou colunas arbitrárias adicionais criadas pelos clientes; quaisquer requisitos específicos de clientes fora do contrato canónico devem ser tratados através de desenvolvimentos ou integrações dedicadas.
    * **Importação Total & Transacional**: O sistema valida e importa todos os campos de todas as 9 abas. Se o ficheiro já contiver rotas na aba `Rotas`, recria-as de imediato.
    * **O Que Entra Tem de Sair**: Nenhuma entidade (viatura, motorista, cliente) é apagada definitivamente do ficheiro por estar inoperacional naquele dia. Em vez de eliminar, o sistema inativa (`is_active = 0`); ao exportar, continuam na lista para que o cliente não tenha de voltar a escrevê-los no dia seguinte.
    * **Preservação Fiel Sem Dados Inventados**: Campos vazios no Excel de origem (ex: peso ou volume não preenchido) mantêm-se a 0/vazios e são assinalados visualmente a cor de aviso no ecrã para o operador corrigir, sem nunca inventar números artificiais que adulterem a faturação do cliente.
-   * **Exportação Fiel (*Roundtrip*)**: Ao descarregar o projeto, o sistema gera o ficheiro com as **9 abas totalmente preenchidas e atualizadas** com o estado exato da operação.
+   * **Exportação Fiel (*Roundtrip*) num Novo Ficheiro**: Ao descarregar, o sistema não grava por cima do ficheiro binário original recebido. O motor gera um **novo ficheiro Excel canónico**, formatado e batizado com o nome da distribuição, data e hora da extração (ex: `GeoRoutePlan_<NomeDistribuição>_YYYYMMDD_HHMMSS.xlsx`), com as **9 abas totalmente preenchidas e atualizadas** com o estado exato da operação.
 
 4. **Idioma e Comunicação**:
    * Toda a documentação, comentários de código estruturais e comunicação devem ser em **Português**.
@@ -473,7 +474,9 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
    * Geração de um modelo preditivo local a custo zero: à medida que as distribuições são executadas, o nosso solver passa a consultar a nossa própria matriz histórica de trânsito 24h, atingindo independência total de APIs pagas.
 7. **Grelha de Auditoria de Importação Transacional (Tudo-ou-Nada)**:
    * Implementação da tabela visual de conferência (Aba / Linhas / Validadas / Estado com linha de erro) no frontend e mecanismo de *Rollback* transacional no backend para rejeitar gravações parciais.
-8. **Preservação Integral do Ficheiro ("O que entra tem de sair") & Alerta de Dados a Zero**:
+8. **Preservação Integral do Ficheiro ("O que entra tem de sair") & Modelo Canónico Fechado**:
+   * **Modelo Soberano e Fechado**: O sistema processa unicamente o modelo oficial canónico de 9 abas. Não aceita nem transporta colunas ou abas arbitrárias fora da especificação; personalizações específicas de clientes devem ser tratadas em integrações à medida.
+   * **Exportação num Novo Ficheiro Timbrado**: Ao exportar, o sistema gera sempre um **novo ficheiro Excel canónico** com o formato de nome `GeoRoutePlan_<NomeDistribuição>_YYYYMMDD_HHMMSS.xlsx`. Não sobrescreve o ficheiro binário original de upload, mas reflete 100% da informação e métricas calculadas.
    * **Inativação em vez de Eliminação**: Veículos avariados ou motoristas ausentes nunca são apagados definitivamente da base de dados; são marcados como `Inativo: Sim/Não`. O solver ignora-os nesse dia, mas ao exportar o Excel final eles continuam lá presentes na lista para o dia seguinte.
    * **Campos Vazios / Peso e Volume a Zero**: Nunca inventar valores padrão artificiais (ex: 50 kg) que deturpem a faturação do cliente. Entregas sem peso ou volume ficam a 0, sendo destacadas a cor de aviso (laranja) no ecrã com alerta visível (*"Existem X entregas sem informação de peso/volume"*). A exportação preserva fielmente os valores reais do cliente.
 9. **Gestão do Ciclo de Vida da Distribuição (7 a 10 Dias), Alerta Visual & Purga Forçada**:
