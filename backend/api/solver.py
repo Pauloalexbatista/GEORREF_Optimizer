@@ -533,7 +533,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         # 2. Load deliveries from database
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM entregas WHERE projeto_id = ? ORDER BY id ASC", (req.project_id,))
+            cursor.execute("SELECT * FROM entregas WHERE projeto_id = ? AND (is_active IS NULL OR is_active = 1) ORDER BY id ASC", (req.project_id,))
             rows = cursor.fetchall()
             
             if not rows:

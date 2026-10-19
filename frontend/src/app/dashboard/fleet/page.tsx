@@ -21,6 +21,7 @@ interface Warehouse {
   close_time?: string;
   load_time?: number;
   contact?: string;
+  is_active?: number;
 }
 
 interface Vehicle {
@@ -47,6 +48,7 @@ interface RuleItem {
   tag_entrega: string;
   permissao: string;
   descricao: string;
+  is_active?: number;
 }
 
 interface Driver {
@@ -92,6 +94,7 @@ interface ClientDeliveryItem {
   fonte_match?: string;
   rota?: string;
   ordem?: number;
+  is_active?: number;
 }
 
 type TabType = "warehouses" | "fleet" | "clients" | "rules" | "drivers" | "reasons";
@@ -231,6 +234,7 @@ export default function FleetPage() {
             fonte_match: c.fonte_match,
             rota: c.rota || "Por Distribuir",
             ordem: c.ordem || 0,
+            is_active: c.is_active !== undefined && c.is_active !== null ? Number(c.is_active) : 1,
           })));
         }
       } catch (err: any) {
@@ -297,10 +301,6 @@ export default function FleetPage() {
       contact: "",
     };
     setWarehouses((prev) => [...prev, newWh]);
-  };
-
-  const deleteWarehouse = (index: number) => {
-    setWarehouses((prev) => prev.filter((_, i) => i !== index));
   };
 
   const geocodeAllWarehouses = async () => {
@@ -379,10 +379,6 @@ export default function FleetPage() {
     setFleet((prev) => [...prev, newVeh]);
   };
 
-  const deleteVehicle = (index: number) => {
-    setFleet((prev) => prev.filter((_, i) => i !== index));
-  };
-
   // --- RULES HANDLERS ---
   const updateRule = (index: number, field: keyof RuleItem, value: any) => {
     setRules((prev) => {
@@ -398,12 +394,9 @@ export default function FleetPage() {
       tag_entrega: "",
       permissao: "SIM",
       descricao: "",
+      is_active: 1,
     };
     setRules((prev) => [...prev, newRule]);
-  };
-
-  const deleteRule = (index: number) => {
-    setRules((prev) => prev.filter((_, i) => i !== index));
   };
 
   // --- DRIVER HANDLERS ---
@@ -429,10 +422,6 @@ export default function FleetPage() {
     setDrivers((prev) => [...prev, newDr]);
   };
 
-  const deleteDriver = (index: number) => {
-    setDrivers((prev) => prev.filter((_, i) => i !== index));
-  };
-
   // --- REASON HANDLERS ---
   const updateReason = (index: number, field: keyof NonDeliveryReason, value: any) => {
     setReasons((prev) => {
@@ -451,10 +440,6 @@ export default function FleetPage() {
       is_active: 1,
     };
     setReasons((prev) => [...prev, newR]);
-  };
-
-  const deleteReason = (index: number) => {
-    setReasons((prev) => prev.filter((_, i) => i !== index));
   };
 
   // --- CLIENTS HANDLERS ---
@@ -488,17 +473,6 @@ export default function FleetPage() {
       ordem: 0,
     };
     setClients((prev) => [newClient, ...prev]);
-  };
-
-  const deleteClient = async (id: number) => {
-    if (!confirm("Tem a certeza que deseja eliminar esta entrega/cliente?")) return;
-    try {
-      await apiRequest(`/api/geocoding/delivery/${id}`, { method: "DELETE" });
-      setClients((prev) => prev.filter((c) => c.id !== id));
-      setFeedback({ type: "success", msg: "Cliente/entrega eliminado com sucesso." });
-    } catch (err: any) {
-      setFeedback({ type: "error", msg: err.message || "Erro ao eliminar cliente." });
-    }
   };
 
   // Filtered lists
@@ -726,13 +700,14 @@ export default function FleetPage() {
                     <th className="py-2 px-1 w-20 text-center border-r border-zinc-800">Abertura</th>
                     <th className="py-2 px-1 w-20 text-center border-r border-zinc-800">Fecho</th>
                     <th className="py-2 px-1 w-16 text-center border-r border-zinc-800">Carga(m)</th>
-                    <th className="py-2 px-2 w-28">Contacto</th>
+                    <th className="py-2 px-2 w-28 border-r border-zinc-800">Contacto</th>
+                    <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {warehouses.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="py-8 text-center text-zinc-500">
+                      <td colSpan={12} className="py-8 text-center text-zinc-500">
                         Nenhum armazém configurado. Clique em "+ Adicionar Armazém".
                       </td>
                     </tr>
@@ -740,7 +715,7 @@ export default function FleetPage() {
                     warehouses.map((wh, idx) => (
                       <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
                         <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center">
                             <button
                               onClick={() => {
                                 setEditingWhIndex(idx);
@@ -750,13 +725,6 @@ export default function FleetPage() {
                               title="Editar Georreferenciação no Mapa"
                             >
                               📍
-                            </button>
-                            <button
-                              onClick={() => deleteWarehouse(idx)}
-                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                              title="Eliminar Armazém"
-                            >
-                              🗑️
                             </button>
                           </div>
                         </td>
@@ -834,13 +802,21 @@ export default function FleetPage() {
                             className="bg-transparent border-none outline-none text-zinc-300 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-                        <td className="py-1 px-2">
+                        <td className="py-1 px-2 border-r border-zinc-800">
                           <input
                             type="text"
                             value={wh.contact || ""}
                             onChange={(e) => updateWarehouse(idx, "contact", e.target.value)}
                             className="bg-transparent border-none outline-none text-zinc-300 font-mono text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                             placeholder="Contacto / Tel"
+                          />
+                        </td>
+                        <td className="py-1 px-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={wh.is_active !== 0}
+                            onChange={(e) => updateWarehouse(idx, "is_active", e.target.checked ? 1 : 0)}
+                            className="w-4 h-4 text-indigo-600 bg-zinc-950 border-zinc-800 rounded focus:ring-indigo-500 cursor-pointer"
                           />
                         </td>
                       </tr>
@@ -889,7 +865,6 @@ export default function FleetPage() {
               <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
-                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
                     <th className="py-2 px-2 border-r border-zinc-800 w-32">Viatura</th>
                     <th className="py-2 px-2 border-r border-zinc-800 w-36">Armazém</th>
                     <th className="py-2 px-1 text-center border-r border-zinc-800 w-20">Cap. KG</th>
@@ -909,7 +884,7 @@ export default function FleetPage() {
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredFleet.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="py-8 text-center text-zinc-500">
+                      <td colSpan={14} className="py-8 text-center text-zinc-500">
                         Nenhuma viatura encontrada. Clique em "+ Adicionar Viatura".
                       </td>
                     </tr>
@@ -918,15 +893,6 @@ export default function FleetPage() {
                       const idx = fleet.indexOf(v);
                       return (
                         <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
-                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
-                            <button
-                              onClick={() => deleteVehicle(idx)}
-                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                              title="Eliminar Viatura"
-                            >
-                              🗑️
-                            </button>
-                          </td>
                           <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
@@ -1126,13 +1092,14 @@ export default function FleetPage() {
                     </th>
                     <th className="py-2.5 px-2 border-r border-zinc-800 w-28">Vendedor</th>
                     <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-20">Cobrar (€)</th>
-                    <th className="py-2.5 px-2 text-center w-28">Rota Atribuída</th>
+                    <th className="py-2.5 px-2 text-center border-r border-zinc-800 w-28">Rota Atribuída</th>
+                    <th className="py-2.5 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredClients.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="py-8 text-center text-zinc-500">
+                      <td colSpan={14} className="py-8 text-center text-zinc-500">
                         Nenhum cliente encontrado com os filtros atuais.
                       </td>
                     </tr>
@@ -1140,20 +1107,13 @@ export default function FleetPage() {
                     filteredClients.map((c) => (
                       <tr key={c.id} className="hover:bg-zinc-850/50 transition-colors">
                         <td className="py-1 px-1.5 text-center border-r border-zinc-800 bg-zinc-900/40">
-                          <div className="flex items-center justify-center space-x-1">
+                          <div className="flex items-center justify-center">
                             <button
                               onClick={() => setEditingClient(c)}
                               className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-amber-950/40 rounded transition-colors cursor-pointer"
                               title="Corrigir Georreferenciação no Mapa"
                             >
                               📍
-                            </button>
-                            <button
-                              onClick={() => deleteClient(c.id)}
-                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                              title="Eliminar Cliente / Entrega"
-                            >
-                              🗑️
                             </button>
                           </div>
                         </td>
@@ -1264,7 +1224,7 @@ export default function FleetPage() {
                             className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
                           />
                         </td>
-                        <td className="py-1 px-2 text-center text-[10.5px]">
+                        <td className="py-1 px-2 text-center text-[10.5px] border-r border-zinc-800">
                           <span
                             className={`px-2 py-0.5 rounded-full font-bold ${
                               c.rota && !c.rota.includes("Distribuir")
@@ -1274,6 +1234,14 @@ export default function FleetPage() {
                           >
                             {c.rota || "Por Distribuir"}
                           </span>
+                        </td>
+                        <td className="py-1 px-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={c.is_active !== 0}
+                            onChange={(e) => updateClientField(c.id, "is_active", e.target.checked ? 1 : 0)}
+                            className="w-4 h-4 text-indigo-600 bg-zinc-950 border-zinc-800 rounded focus:ring-indigo-500 cursor-pointer"
+                          />
                         </td>
                       </tr>
                     ))
@@ -1327,11 +1295,11 @@ export default function FleetPage() {
               <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
-                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Veículo / Frota</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-48">Tag Entrega / Código Postal</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-36 text-center">Permissão</th>
-                    <th className="py-2 px-3">Descrição / Restrição</th>
+                    <th className="py-2 px-3 border-r border-zinc-800">Descrição / Restrição</th>
+                    <th className="py-2 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
@@ -1346,15 +1314,6 @@ export default function FleetPage() {
                       const idx = rules.indexOf(r);
                       return (
                         <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
-                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
-                            <button
-                              onClick={() => deleteRule(idx)}
-                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                              title="Eliminar Regra"
-                            >
-                              🗑️
-                            </button>
-                          </td>
                           <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
@@ -1385,13 +1344,21 @@ export default function FleetPage() {
                               <option value="NAO" className="text-rose-400">NÃO (Proibido)</option>
                             </select>
                           </td>
-                          <td className="py-1 px-2">
+                          <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
                               value={r.descricao}
                               onChange={(e) => updateRule(idx, "descricao", e.target.value)}
                               placeholder="Ex: Pesados proibidos na Baixa ou centro histórico."
                               className="bg-transparent border-none outline-none text-zinc-400 text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={r.is_active !== 0}
+                              onChange={(e) => updateRule(idx, "is_active", e.target.checked ? 1 : 0)}
+                              className="w-4 h-4 text-indigo-600 bg-zinc-950 border-zinc-800 rounded focus:ring-indigo-500 cursor-pointer"
                             />
                           </td>
                         </tr>
@@ -1605,7 +1572,6 @@ export default function FleetPage() {
               <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
-                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
                     <th className="py-2 px-3 border-r border-zinc-800">Nome do Motorista</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-28 text-center">PIN App (4 Dígitos)</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-36">Matrícula</th>
@@ -1618,7 +1584,7 @@ export default function FleetPage() {
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredDrivers.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-zinc-500">
+                      <td colSpan={7} className="py-8 text-center text-zinc-500">
                         Nenhum motorista registado. Clique em "+ Adicionar Motorista".
                       </td>
                     </tr>
@@ -1627,15 +1593,6 @@ export default function FleetPage() {
                       const idx = drivers.indexOf(d);
                       return (
                         <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
-                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
-                            <button
-                              onClick={() => deleteDriver(idx)}
-                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                              title="Eliminar Motorista"
-                            >
-                              🗑️
-                            </button>
-                          </td>
                           <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"
@@ -1741,7 +1698,6 @@ export default function FleetPage() {
               <table className="w-full text-left text-xs border-collapse border border-zinc-800">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/90 text-zinc-300 font-bold uppercase text-[10px]">
-                    <th className="py-2 px-1 text-center w-12 border-r border-zinc-800">Ações</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-28">Código</th>
                     <th className="py-2 px-3 border-r border-zinc-800">Descrição do Motivo</th>
                     <th className="py-2 px-3 border-r border-zinc-800 w-36">Categoria</th>
@@ -1752,7 +1708,7 @@ export default function FleetPage() {
                 <tbody className="divide-y divide-zinc-800/60 font-sans">
                   {filteredReasons.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-zinc-500">
+                      <td colSpan={5} className="py-8 text-center text-zinc-500">
                         Nenhum motivo configurado. Clique em "+ Adicionar Motivo".
                       </td>
                     </tr>
@@ -1761,15 +1717,6 @@ export default function FleetPage() {
                       const idx = reasons.indexOf(r);
                       return (
                         <tr key={idx} className="hover:bg-zinc-850/50 transition-colors">
-                          <td className="py-1 px-1 text-center border-r border-zinc-800 bg-zinc-900/40">
-                            <button
-                              onClick={() => deleteReason(idx)}
-                              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                              title="Eliminar Motivo"
-                            >
-                              🗑️
-                            </button>
-                          </td>
                           <td className="py-1 px-2 border-r border-zinc-800">
                             <input
                               type="text"

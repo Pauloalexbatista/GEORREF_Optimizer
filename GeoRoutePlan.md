@@ -535,6 +535,18 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - Estratégia inicial alterada para `PARALLEL_CHEAPEST_INSERTION` e penalização de descarte elevada para 50.000.000 (muito superior ao custo fixo de ativação da viatura).
       - Tolerância de espera em rota aumentada até 180 min (3 horas) para permitir pausas e transições manhã-tarde.
     * **Impacto Comprovado**: No cenário real de 221 entregas e 19 viaturas (projeto 10027), a ocupação passou de 4 viaturas e 60 entregas para **14 viaturas ativas a 91% de ocupação física de carga e 175 entregas atribuídas**, correspondendo a 100% da capacidade física útil de transporte da frota alocada.
+12. **Padronização Integral de Inativação & Eliminação Definitiva dos Caixotes do Lixo (✅ Concluído no Código)**:
+    * **Eliminação Total dos Caixotes do Lixo (`🗑️`)**: Em cumprimento estrito do modelo canónico de 9 abas ("o que entra tem de sair"), foram eliminados todos os botões de eliminação por caixote de lixo das tabelas de suporte (`frontend/src/app/dashboard/fleet/page.tsx`). Nenhuma viatura, armazém, motorista, cliente ou regra corre o risco de ser apagada acidentalmente do programa ou do histórico.
+    * **Generalização da Opção 'Ativo' em Todas as Tabelas**:
+      - **Armazéns**: Removido o caixote do lixo de Ações (ficando apenas `📍` de mapa); adicionada a coluna `Ativo` com checkbox de inativação.
+      - **Frota & Viaturas**: Removida a coluna redundante "Ações" que apenas continha o caixote do lixo, mantendo-se exclusivamente a coluna `Ativo`.
+      - **Clientes & Encomendas**: Removido o caixote do lixo de Ações (ficando apenas `📍` de mapa); adicionada a coluna `Ativo`.
+      - **Matriz de Regras**: Removida a coluna "Ações" e adicionada a coluna `Ativo` com checkbox.
+      - **Motoristas & PINs**: Removida a coluna "Ações" com caixote do lixo, mantendo a coluna `Ativo`.
+      - **Justificação de Entregas (Motivos)**: Removida a coluna "Ações" com caixote do lixo, mantendo a coluna `Ativo`.
+    * **Persistência e Respeito no Solver**:
+      - A tabela SQLite `entregas` recebeu a coluna `is_active INTEGER DEFAULT 1` via auto-migração (`database.py` e `backend/database.py`).
+      - O solver (`backend/api/solver.py`) filtra automaticamente `is_active = 1` tanto para a frota como para as entregas (`WHERE is_active = 1`), preservando os registos inativos na base de dados e no ficheiro Excel de 9 abas timbrado.
 
 ---
 

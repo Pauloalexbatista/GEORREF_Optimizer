@@ -1192,7 +1192,8 @@ def ensure_entregas_columns():
                 ("ordem_paragem", "INTEGER DEFAULT 0"),
                 ("regras", "TEXT DEFAULT ''"),
                 ("tipo_operacao", "TEXT DEFAULT 'D'"),
-                ("par_id", "TEXT DEFAULT ''")
+                ("par_id", "TEXT DEFAULT ''"),
+                ("is_active", "INTEGER DEFAULT 1")
             ]:
                 if col not in cols:
                     try:

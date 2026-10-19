@@ -1144,7 +1144,8 @@ def ensure_entregas_columns():
                 ("rota", "TEXT DEFAULT ''"),
                 ("ordem", "INTEGER DEFAULT 0"),
                 ("ordem_paragem", "INTEGER DEFAULT 0"),
-                ("regras", "TEXT DEFAULT ''")
+                ("regras", "TEXT DEFAULT ''"),
+                ("is_active", "INTEGER DEFAULT 1")
             ]:
                 if col not in cols:
                     try:

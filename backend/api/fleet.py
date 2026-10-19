@@ -122,6 +122,7 @@ class WarehouseGeocoded(BaseModel):
     close_time: Optional[str] = "22:00:00"
     load_time: Optional[int] = 30
     contact: Optional[str] = ""
+    is_active: Optional[int] = 1
 
 class VehicleItem(BaseModel):
     armazem: Optional[str] = ""
@@ -151,14 +152,18 @@ class DriverItem(BaseModel):
     is_active: Optional[int] = 1
 
 class ReasonItem(BaseModel):
+    code: Optional[str] = ""
     reason: str
     category: Optional[str] = "Geral"
+    action_required: Optional[str] = "Reagendar"
+    is_active: Optional[int] = 1
 
 class RuleItem(BaseModel):
     tag_veiculo: str = ""
     tag_entrega: str = ""
     permissao: Optional[str] = "SIM"
     descricao: Optional[str] = ""
+    is_active: Optional[int] = 1
 
 class FleetSaveRequest(BaseModel):
     fleet: List[VehicleItem] = []
@@ -387,7 +392,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                             "close_time": str(r.get("Hora_Fecho", r.get("close_time", "22:00:00")) or "22:00:00"),
                             "load_time": int(r.get("Tempo_Carga_Min", r.get("load_time", 30)) or 30),
                             "contact": str(r.get("Contacto_Responsavel", r.get("contact", "")) or ""),
-                            "quality": 1 if (lat_w != 0.0 and lon_w != 0.0) else int(r.get("Nivel_Qualidade", r.get("quality", 99)) or 99)
+                            "quality": 1 if (lat_w != 0.0 and lon_w != 0.0) else int(r.get("Nivel_Qualidade", r.get("quality", 99)) or 99),
+                            "is_active": int(r.get("is_active", 1) if r.get("is_active") is not None else 1)
                         })
             
             raw_fleet = _pick_first_valid(
@@ -555,14 +561,20 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                     for r in raw_reasons:
                         if isinstance(r, dict):
                             reasons_res.append({
-                                "reason": str(r.get("reason", r.get("Motivo de N?o Entrega", r.get("motivo", "")))),
-                                "category": str(r.get("category", r.get("Categoria / A??o", r.get("categoria", "Geral"))))
+                                "code": str(r.get("code", r.get("codigo", ""))),
+                                "reason": str(r.get("reason", r.get("Motivo de Não Entrega", r.get("motivo", "")))),
+                                "category": str(r.get("category", r.get("Categoria / Ação", r.get("categoria", "Geral")))),
+                                "action_required": str(r.get("action_required", r.get("Acao_Requerida", "Reagendar"))),
+                                "is_active": int(r.get("is_active", 1) if r.get("is_active") is not None else 1)
                             })
                 elif isinstance(raw_reasons, pd.DataFrame):
                     for _, r in raw_reasons.iterrows():
                         reasons_res.append({
-                            "reason": str(r.get("Motivo de N?o Entrega", r.get("reason", ""))),
-                            "category": str(r.get("Categoria / A??o", r.get("category", "Geral")))
+                            "code": str(r.get("code", r.get("codigo", ""))),
+                            "reason": str(r.get("Motivo de Não Entrega", r.get("reason", ""))),
+                            "category": str(r.get("Categoria / Ação", r.get("category", "Geral"))),
+                            "action_required": str(r.get("action_required", r.get("Acao_Requerida", "Reagendar"))),
+                            "is_active": int(r.get("is_active", 1) if r.get("is_active") is not None else 1)
                         })
 
             # Extract RULES MATRIX
@@ -576,7 +588,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "tag_veiculo": str(r.get("tag_veiculo", r.get("Tag_Veiculo", ""))),
                                 "tag_entrega": str(r.get("tag_entrega", r.get("Tag_Entrega", ""))),
                                 "permissao": str(r.get("permissao", r.get("Permissao", "SIM"))).upper(),
-                                "descricao": str(r.get("descricao", r.get("Descricao", "")))
+                                "descricao": str(r.get("descricao", r.get("Descricao", ""))),
+                                "is_active": int(r.get("is_active", 1) if r.get("is_active") is not None else 1)
                             })
                 elif isinstance(raw_rules, pd.DataFrame):
                     for _, r in raw_rules.iterrows():
@@ -584,7 +597,8 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                             "tag_veiculo": str(r.get("Tag_Veiculo", r.get("tag_veiculo", ""))),
                             "tag_entrega": str(r.get("Tag_Entrega", r.get("tag_entrega", ""))),
                             "permissao": str(r.get("Permissao", r.get("permissao", "SIM"))).upper(),
-                            "descricao": str(r.get("Descricao", r.get("descricao", "")))
+                            "descricao": str(r.get("Descricao", r.get("descricao", ""))),
+                            "is_active": int(r.get("is_active", 1) if r.get("is_active") is not None else 1)
                         })
 
             return {
@@ -635,7 +649,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "Hora_Fecho": getattr(wh, "close_time", "22:00:00") or "22:00:00",
                 "Tempo_Carga_Min": getattr(wh, "load_time", 30) or 30,
                 "Contacto_Responsavel": getattr(wh, "contact", "") or "",
-                "Nivel_Qualidade": 1 if (lat_w != 0.0 and lon_w != 0.0) else int(wh.quality or 99)
+                "Nivel_Qualidade": 1 if (lat_w != 0.0 and lon_w != 0.0) else int(wh.quality or 99),
+                "is_active": int(getattr(wh, "is_active", 1) if getattr(wh, "is_active", None) is not None else 1)
             })
         df_wh = pd.DataFrame(wh_rows)
 
@@ -696,7 +711,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                 "tag_veiculo": vtag,
                 "tag_entrega": etag,
                 "permissao": str(r.permissao or "SIM").strip().upper(),
-                "descricao": str(r.descricao or "").strip()
+                "descricao": str(r.descricao or "").strip(),
+                "is_active": int(getattr(r, "is_active", 1) if getattr(r, "is_active", None) is not None else 1)
             })
         state_dict["rules_matrix"] = rules_list
 
@@ -723,8 +739,11 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
             if not r.reason or not r.reason.strip():
                 continue
             reasons_list.append({
+                "code": str(getattr(r, "code", "") or "").strip(),
                 "reason": str(r.reason).strip(),
-                "category": str(r.category or "Geral").strip()
+                "category": str(r.category or "Geral").strip(),
+                "action_required": str(getattr(r, "action_required", "Reagendar") or "Reagendar").strip(),
+                "is_active": int(getattr(r, "is_active", 1) if getattr(r, "is_active", None) is not None else 1)
             })
         state_dict["reasons"] = reasons_list
         state_dict["failure_reasons"] = reasons_list
@@ -752,7 +771,8 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                                 vendedor = COALESCE(?, vendedor),
                                 telefone = COALESCE(?, telefone),
                                 valor_cobrar = COALESCE(?, valor_cobrar),
-                                armazem = COALESCE(?, armazem)
+                                armazem = COALESCE(?, armazem),
+                                is_active = COALESCE(?, is_active)
                             WHERE id = ? AND projeto_id = ?
                         """, (
                             c.get("codigo_cliente"),
@@ -770,6 +790,7 @@ def save_fleet_config(project_id: int, req: FleetSaveRequest, current_user: User
                             c.get("telefone"),
                             c.get("valor_cobrar"),
                             c.get("armazem"),
+                            c.get("is_active"),
                             c_id,
                             project_id
                         ))
