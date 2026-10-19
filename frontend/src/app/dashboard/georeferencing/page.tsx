@@ -249,7 +249,7 @@ export default function GeoreferencingPage() {
 
   // Filter and sort states
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed" | "zero_load">("all");
   const [sortField, setSortField] = useState<string>("status");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -287,6 +287,8 @@ export default function GeoreferencingPage() {
       result = result.filter(d => !(d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99));
     } else if (statusFilter === "failed") {
       result = result.filter(d => (d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99));
+    } else if (statusFilter === "zero_load") {
+      result = result.filter(d => (Number(d.peso_kg) === 0 || Number(d.volume_m3) === 0));
     }
     result.sort((a, b) => {
       // Prioritize exact or prefix matches on client name and code
@@ -710,8 +712,38 @@ export default function GeoreferencingPage() {
                 >
                   Pendentes de Ajuste ({deliveries.filter(d => d.latitude === 0.0 || d.longitude === 0.0 || d.nivel_qualidade === 99).length})
                 </button>
+                <button
+                  onClick={() => setStatusFilter("zero_load")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                    statusFilter === "zero_load" ? "bg-orange-950 text-orange-300 border border-orange-800/60" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                  title="Entregas onde o cliente não especificou peso ou volume"
+                >
+                  ⚠️ Sem Peso/Vol ({deliveries.filter(d => Number(d.peso_kg) === 0 || Number(d.volume_m3) === 0).length})
+                </button>
               </div>
             </div>
+
+            {/* Banner de Aviso: Carga a Zero Sem Inventar Dados */}
+            {deliveries.some(d => Number(d.peso_kg) === 0 || Number(d.volume_m3) === 0) && (
+              <div className="p-3 bg-orange-500/10 border border-orange-500/25 rounded-2xl flex items-center justify-between text-xs text-orange-300">
+                <div className="flex items-center space-x-2.5">
+                  <span className="text-base">⚠️</span>
+                  <span>
+                    <strong>Informação de Carga Incompleta:</strong> Existem{" "}
+                    <strong>{deliveries.filter(d => Number(d.peso_kg) === 0 || Number(d.volume_m3) === 0).length}</strong> encomendas com peso ou volume a 0.0. O sistema preserva os valores reais do ficheiro sem inventar dados artificiais.
+                  </span>
+                </div>
+                {statusFilter !== "zero_load" && (
+                  <button
+                    onClick={() => setStatusFilter("zero_load")}
+                    className="px-2.5 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap ml-3"
+                  >
+                    Ver Linhas Afetadas
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Table Container with vertical scroll and sticky headers */}
             <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 overflow-hidden shadow-xl max-h-[600px] overflow-y-auto relative">
@@ -721,6 +753,7 @@ export default function GeoreferencingPage() {
                     <th className="py-3 px-3 w-16 text-center">Ações</th>
                     <th onClick={() => handleSort("status")} className="py-3 px-3 cursor-pointer">Estado</th>
                     <th onClick={() => handleSort("codigo_cliente")} className="py-3 px-3 cursor-pointer hover:text-zinc-200">Código / Cliente</th>
+                    <th className="py-3 px-2 w-24 text-center">Peso / Vol</th>
                     <th onClick={() => handleSort("armazem")} className="py-3 px-3 w-40 cursor-pointer hover:text-zinc-200">Armazém</th>
                     <th onClick={() => handleSort("morada")} className="py-3 px-3 cursor-pointer">Morada</th>
                     <th onClick={() => handleSort("codigo_postal")} className="py-3 px-3 w-28 cursor-pointer hover:text-zinc-200">Cód. Postal</th>
@@ -771,6 +804,19 @@ export default function GeoreferencingPage() {
                           </div>
                           {del.nome_cliente && del.nome_cliente !== del.codigo_cliente && (
                             <div className="text-[9px] text-zinc-400 font-mono truncate max-w-[120px]">{del.codigo_cliente}</div>
+                          )}
+                        </td>
+
+                        {/* Peso / Volume */}
+                        <td className="py-1 px-2 text-center">
+                          {Number(del.peso_kg) === 0 || Number(del.volume_m3) === 0 ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-orange-950/70 text-orange-400 border border-orange-700/50" title="Informação de peso ou volume ausente (preservado a 0.0)">
+                              {del.peso_kg || 0}k / {del.volume_m3 || 0}m³
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-zinc-400">
+                              {del.peso_kg}k / {del.volume_m3}m³
+                            </span>
                           )}
                         </td>
 

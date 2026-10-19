@@ -642,8 +642,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
 
             locations.append((c_lat, c_lon))
             location_names.append(row.get("Codigo_Cliente", f"Cliente_{idx}"))
-            demands.append(float(row.get("Peso_KG", 50.0)))
-            volume_demands.append(float(row.get("Volume_m3", 0.1)))
+            demands.append(float(row.get("Peso_KG", 0.0) or 0.0))
+            volume_demands.append(float(row.get("Volume_m3", row.get("Volume_M3", 0.0)) or 0.0))
             
         # Calculate distance matrix
         distance_matrix = calculate_haversine_matrix(locations)

@@ -1270,8 +1270,8 @@ async def import_fleet_warehouses(
                     cp = str(row[col_e_cp]).strip() if col_e_cp and pd.notna(row[col_e_cp]) else ""
                     city = str(row[col_e_city]).strip() if col_e_city and pd.notna(row[col_e_city]) else ""
                     tel = str(row[col_e_tel]).strip() if col_e_tel and pd.notna(row[col_e_tel]) else ""
-                    weight = _clean_coord(row[col_e_weight]) if col_e_weight and pd.notna(row[col_e_weight]) else 50.0
-                    volume = _clean_coord(row[col_e_volume]) if col_e_volume and pd.notna(row[col_e_volume]) else 0.1
+                    weight = _clean_coord(row[col_e_weight]) if col_e_weight and pd.notna(row[col_e_weight]) else 0.0
+                    volume = _clean_coord(row[col_e_volume]) if col_e_volume and pd.notna(row[col_e_volume]) else 0.0
                     j1_s = str(row[col_e_j1_start]).strip() if col_e_j1_start and pd.notna(row[col_e_j1_start]) else "08:00"
                     j1_e = str(row[col_e_j1_end]).strip() if col_e_j1_end and pd.notna(row[col_e_j1_end]) else "18:00"
                     unload_t = int(_clean_coord(row[col_e_unload])) if col_e_unload and pd.notna(row[col_e_unload]) else 15
@@ -1583,8 +1583,8 @@ async def import_fleet_warehouses(
                     "Distancia_Acumulada_KM": 0.0,
                     "Tempo_Viagem_Min": 0.0,
                     "Tempo_Espera_Min": 0.0,
-                    "Carga_Restante_KG": _clean_coord(d.get("Peso_KG", 50.0)),
-                    "Carga_Restante_Vol": _clean_coord(d.get("Volume_M3", 0.1)),
+                    "Carga_Restante_KG": _clean_coord(d.get("Peso_KG", 0.0)),
+                    "Carga_Restante_Vol": _clean_coord(d.get("Volume_M3", 0.0)),
                     "Status": "Pendente",
                     "Notas_Motorista": d.get("Notas_Motorista", d.get("Observacoes", "")),
                     "notas_motorista": d.get("Notas_Motorista", d.get("Observacoes", "")),
@@ -1592,8 +1592,8 @@ async def import_fleet_warehouses(
                     "observacoes": d.get("Observacoes", d.get("Notas_Motorista", "")),
                     "Vendedor": d.get("Vendedor", d.get("vendedor", "")),
                     "vendedor": d.get("Vendedor", d.get("vendedor", "")),
-                    "Peso_KG": _clean_coord(d.get("Peso_KG", 50.0)),
-                    "Volume_m3": _clean_coord(d.get("Volume_M3", 0.1))
+                    "Peso_KG": _clean_coord(d.get("Peso_KG", 0.0)),
+                    "Volume_m3": _clean_coord(d.get("Volume_M3", 0.0))
                 })
 
         # 6. Sheet: Motoristas e Carros
@@ -1745,8 +1745,8 @@ async def import_fleet_warehouses(
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
-                        d.get("CP", ""), d.get("Localidade", ""), _clean_coord(d.get("Peso_KG", 50.0)),
-                        _clean_coord(d.get("Volume_M3", 0.1)), 2, w_s_str,
+                        d.get("CP", ""), d.get("Localidade", ""), _clean_coord(d.get("Peso_KG", 0.0)),
+                        _clean_coord(d.get("Volume_M3", 0.0)), 2, w_s_str,
                         w_e_str, lat_d, lon_d, qual_d, src_d,
                         d.get("Morada", ""), d.get("Armazem", "Armazém Principal"),
                         d.get("Telefone_Cliente", d.get("Telefone", "")),
