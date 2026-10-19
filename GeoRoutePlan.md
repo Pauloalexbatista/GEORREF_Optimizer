@@ -585,6 +585,19 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - **Teto Rigoroso e Penalização no Solver OR-Tools**: `MAX_WAIT_SLACK_SEC` reduzido de 14.400s para 3.600s (60 minutos / 1 hora no máximo para almoço, proibindo qualquer espera ociosa superior a 1 hora) e adição de `time_dimension.SetSlackCostCoefficientForAllVehicles(50)`.
       - **Tolerância de Squeeze Reduzida**: Em `_compress_and_squeeze_routes`, tolerância máxima de espera reduzida de 180 min para 60 min.
     * **Resultado Comprovado**: Em todas as 19 rotas ativas (incluindo V_F4, V_C14, V_C6, V_C3), todas as esperas anómalas de 3h, 4h e 5.4h foram totalmente eliminadas, com pontualidade estrita às horas de abertura (14:00 e 18:00).
+16. **Secção Oficial de Instruções & Manual Interativo no Programa (`/dashboard/instructions`) (✅ Concluído no Código)**:
+    * **Integração no Layout Principal (`DashboardLayout.tsx`)**:
+      - Adicionado o separador *"0. Instruções & Manual"* no topo do menu lateral de navegação com ícone de livro azul.
+      - Adicionado o botão de acesso rápido *"📖 Instruções"* na barra superior do dashboard (ao lado do backup de Excel e do link da app dos motoristas), permitindo consultar o manual em qualquer ecrã com 1 clique.
+    * **Conteúdo Didático Interativo Estruturado em 7 Módulos**:
+      1. *Visão Geral & Fluxo Sequencial*: Cadeia lógica de 3 Fases antes da operação de estrada e fecho de dia.
+      2. *Fase 1 (Georreferenciação)*: Upload do Excel canónico de 9 abas, barreira Tudo-ou-Nada e validação visual de coordenadas (Níveis 0 a 8).
+      3. *Fase 2 (Suporte)*: As 5 tabelas (Armazéns, Frota ativa sem caixotes do lixo, Regras de tags, Motoristas com PIN de 4 dígitos e Motivos oficiais de justificação).
+      4. *Fase 3 (Planeamento Tático & VRPTW)*: Princípios do solver OR-Tools, prioridade de clientes distantes, tolerância zero a atrasos, almoço máximo de 1 hora, sincronização de janelas e mapa destacado em 2º monitor (`detached-map`).
+      5. *Carregamento 3D LIFO Wall-Building*: Regra LIFO rigorosa (fundo da cabine $X=0$ para as portas $X=L$), contiguidade 100% de encomendas, contagem exata de caixas, gravidade e estabilidade por peso.
+      6. *App de Motoristas (PWA)*: Acesso por PIN, navegação GPS (Google Maps/Waze), baixa de guias, modo offline e conformidade RGPD (desligamento de GPS em pausas).
+      7. *Relatórios & Ciclo de Vida*: Manifestos, exportação do Excel canónico timbrado sem expor URLs técnicos, alerta aos 7 dias e auto-arquivo de salvaguarda aos 10 dias com purga da base SQLite.
+    * **Funcionalidades de Usabilidade**: Pesquisa instantânea por palavras-chave, filtros rápidos por tema e secções expansíveis em acordeão.
 
 ---
 
