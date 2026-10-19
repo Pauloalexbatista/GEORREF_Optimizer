@@ -743,6 +743,40 @@ def update_stop_status(project_id: int, payload: UpdateStopPayload, current_user
             "notes": payload.driver_notes or ""
         })
         state_dict["activity_log"] = activity[-50:]
+
+        # Aprendizagem Contínua da Matriz de Trânsito Preditivo 24h (Estratégia Low-Cost)
+        if payload.status == "Entregue":
+            try:
+                from utils.predictive_traffic import record_traffic_segment
+                from utils.distance_calculator import haversine_distance
+                
+                df_curr_route = df_routes[df_routes["Rota"] == payload.route_name].sort_values(
+                    by=["Ordem"] if "Ordem" in df_routes.columns else ["id"]
+                )
+                curr_idx_list = df_curr_route.index[df_curr_route.index.isin(df_routes[mask].index)].tolist()
+                if curr_idx_list:
+                    curr_pos = df_curr_route.index.get_loc(curr_idx_list[0])
+                    if curr_pos > 0:
+                        prev_row = df_curr_route.iloc[curr_pos - 1]
+                        prev_picagem = prev_row.get("Hora_Picagem")
+                        if prev_picagem and str(prev_picagem).strip():
+                            t1 = _parse_time_minutes(str(prev_picagem))
+                            t2 = _parse_time_minutes(now_time)
+                            if t1 is not None and t2 is not None and t2 > t1:
+                                dur_sec = (t2 - t1) * 60
+                                p_lat = float(prev_row.get("Latitude", prev_row.get("Lat", 0.0))) if pd.notna(prev_row.get("Latitude", prev_row.get("Lat", 0.0))) else 0.0
+                                p_lng = float(prev_row.get("Longitude", prev_row.get("Lon", 0.0))) if pd.notna(prev_row.get("Longitude", prev_row.get("Lon", 0.0))) else 0.0
+                                c_lat = float(df_routes.loc[mask, "Latitude"].iloc[0]) if "Latitude" in df_routes.columns and pd.notna(df_routes.loc[mask, "Latitude"].iloc[0]) else 0.0
+                                c_lng = float(df_routes.loc[mask, "Longitude"].iloc[0]) if "Longitude" in df_routes.columns and pd.notna(df_routes.loc[mask, "Longitude"].iloc[0]) else 0.0
+                                
+                                p_cp = str(prev_row.get("CodPostal", prev_row.get("CP", "")))
+                                c_cp = str(df_routes.loc[mask, "CodPostal"].iloc[0]) if "CodPostal" in df_routes.columns else str(df_routes.loc[mask, "CP"].iloc[0]) if "CP" in df_routes.columns else ""
+                                
+                                if p_lat != 0 and c_lat != 0:
+                                    dist_km = haversine_distance(p_lat, p_lng, c_lat, c_lng)
+                                    record_traffic_segment(p_cp, c_cp, dur_sec, dist_km)
+            except Exception as e_telem:
+                print(f"[PREDICTIVE TRAFFIC] Observação ignorada: {e_telem}")
         
         new_payload = serialize_state(state_dict)
         snapshot_name = f"Atualização {matched_client}: {payload.status}"
@@ -751,6 +785,13 @@ def update_stop_status(project_id: int, payload: UpdateStopPayload, current_user
         conn.commit()
         
     return {"status": "success", "message": f"Estado atualizado para '{payload.status}'.", "hora": now_time}
+
+
+@router.get("/traffic/stats")
+def get_predictive_traffic_stats(current_user: UserResponse = Depends(get_current_user)):
+    """Retorna estatísticas da base de dados local de trânsito preditivo 24h."""
+    from utils.predictive_traffic import get_traffic_matrix_stats
+    return get_traffic_matrix_stats()
 
 
 @router.post("/telemetry/{project_id}")

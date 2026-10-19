@@ -494,9 +494,17 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
      - **Coluna de ETA Dinâmico na Sequência de Entregas**: Sub-tabela de paragens com coluna dedicada comparando a Janela Oficial vs. Previsão Dinâmica Real, destacando a paragem com contorno vermelho pulsante em caso de risco.
 5. **Futura Integração da Google Routes Matrix (Condicionada a Clientes Reais)**:
    * A ativação da API de trânsito em tempo real da Google para a matriz do solver fica guardada e planeada, mas **só será implementada quando houver clientes comerciais reais a operar no sistema**.
-6. **Construção de Base de Dados Própria de Trânsito Preditivo 24h (Estratégia Proprietária)**:
-   * Armazenamento incremental em SQLite de cada resposta de trânsito obtida (Google, TomTom ou dados de campo dos motoristas) parametrizada por: *Origem (CP4)*, *Destino (CP4)*, *Dia da Semana*, *Faixa Horária (24h)* e *Velocidade Real Registada*.
-   * Geração de um modelo preditivo local a custo zero: à medida que as distribuições são executadas, o nosso solver passa a consultar a nossa própria matriz histórica de trânsito 24h, atingindo independência total de APIs pagas.
+6. **Construção de Base de Dados Própria de Trânsito Preditivo 24h (Estratégia Proprietária Low-Cost) (✅ Concluído no Código)**:
+   * **Tabela SQLite Dedicada (`predictive_traffic_matrix`)**:
+     - Schema com indexação otimizada por `(origem_cp4, destino_cp4, dia_semana, faixa_horaria)`, guardando `velocidade_kmh`, `amostras`, `tempo_medio_segundos` e `distancia_media_km`.
+   * **Aprendizagem Contínua e Automática no Terreno**:
+     - No endpoint `POST /api/tracking/stop/{project_id}`, sempre que um motorista pica uma entrega na app móvel (`Entregue`), o sistema calcula a velocidade desenvolvida e tempo decorrido desde a paragem anterior e calibra a média ponderada do par de CPs na hora correspondente sem qualquer custo de API.
+   * **Motor de Inferência Preditiva (`utils/predictive_traffic.py`)**:
+     - Devolve a velocidade esperada para qualquer par de CPs a qualquer hora do dia (0h às 23h), recorrendo ao histórico real acumulado e a perfis dinâmicos horários calibrados para o tráfego urbano de Portugal (Lisboa 1xxx, Porto 4xxx, cintura suburbana 2xxx, e interurbano).
+   * **Integração no Solver e Recálculo de Horários**:
+     - A rotina `recalculate_route_stops` em `backend/api/solver.py` e o painel tático passam a calcular os tempos de viagem segmento a segmento com base na velocidade preditiva horária (`get_predictive_speed`), eliminando a estimativa estática genérica e tornando as rotas e ETAs muito mais realistas.
+   * **Endpoint de Telemetria e Métricas**:
+     - Endpoint `GET /api/tracking/traffic/stats` que reporta o total de rotas aprendidas, amostras reais acumuladas e velocidade média observada.
 7. **Grelha de Auditoria de Importação Transacional (Tudo-ou-Nada) (✅ Concluído no Código)**:
    * **Auditoria Prévia em Memória**: Antes de persistir qualquer byte no disco ou na base de dados SQLite, o endpoint `/api/fleet/import/{project_id}` em `backend/api/fleet.py` audita as 9 abas canónicas linha a linha contra o modelo oficial. Verifica colunas obrigatórias e campos mandatórios (ex: moradas vazias, códigos postais em falta, PINs de motoristas por definir).
    * **Mecanismo Tudo-ou-Nada (Rollback Preventivo)**: Se for detetada qualquer inconformidade crítica em qualquer linha ou aba, a gravação é **abortada a 100%**. Nenhuma encomenda antiga é eliminada nem novos dados são inseridos (`status: audit_failed`).

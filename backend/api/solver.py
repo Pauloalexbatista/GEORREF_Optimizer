@@ -370,7 +370,12 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             travel_min = float(g_legs[idx]["duration_min"])
         else:
             dist = haversine_distance(p_lat, p_lon, c_lat, c_lon) * 1.30
-            segment_speed = get_segment_speed(dist, avg_speed)
+            # Trânsito preditivo 24h: velocidade calibrada pela zona postal e hora de partida
+            from utils.predictive_traffic import get_predictive_speed
+            p_cp = str(stop_dict.get("CodPostal", stop_dict.get("CP", "")))
+            hour_of_day = int(cur_time_min // 60) % 24
+            pred_speed = get_predictive_speed(p_cp, p_cp, departure_hour=hour_of_day, fallback_speed=avg_speed)
+            segment_speed = get_segment_speed(dist, pred_speed)
             travel_min = (dist / segment_speed) * 60.0
         cumul_dist += dist
         arr_min = cur_time_min + travel_min

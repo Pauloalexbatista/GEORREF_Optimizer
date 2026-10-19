@@ -243,6 +243,27 @@ def init_database():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Tabela de Matriz Histórica e Preditiva de Trânsito 24h (Low-Cost)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS predictive_traffic_matrix (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                origem_cp4 TEXT NOT NULL,
+                destino_cp4 TEXT NOT NULL,
+                dia_semana INTEGER NOT NULL, -- 0=Segunda ... 6=Domingo
+                faixa_horaria INTEGER NOT NULL, -- 0 a 23 (hora do dia)
+                velocidade_kmh REAL NOT NULL,
+                amostras INTEGER DEFAULT 1,
+                tempo_medio_segundos INTEGER,
+                distancia_media_km REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(origem_cp4, destino_cp4, dia_semana, faixa_horaria)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_traffic_cp_time 
+            ON predictive_traffic_matrix (origem_cp4, destino_cp4, dia_semana, faixa_horaria)
+        """)
         
         # Auto-Migrações para bases de dados SQLite já existentes no VPS/Produção
         def add_column_if_missing(table, col, col_type):
