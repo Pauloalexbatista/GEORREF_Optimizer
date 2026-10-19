@@ -450,9 +450,9 @@ class AdvancedRouteOptimizer:
 
         # 6. Time Dimension in SECONDS with Per-Vehicle Speed Model
         HORIZON_SEC = 24 * 3600
-        # Folga de espera máxima entre paragens consecutivas: até 90 min (5400s)
-        # Permite pausa de almoço e transições normais, mas proíbe terminantemente paragens com 4 horas de espera à porta do cliente.
-        MAX_WAIT_SLACK_SEC = 5400
+        # Folga de espera máxima entre paragens consecutivas: rigorosamente até 60 min (3600s, almoço 1h no máximo)
+        # Permite pausa de almoço de 1h, mas proíbe qualquer espera ociosa superior a 1 hora.
+        MAX_WAIT_SLACK_SEC = 3600
         time_cb_cache = {}
         vehicle_time_cb_indices = []
 

@@ -343,7 +343,7 @@ O ecossistema GeoRoutePlan é composto pelos seguintes módulos:
   4. *Operações Mistas (Carga Dinâmica)*: Suporta Entregas (*Dropoff*), Recolhas/Devoluções (*Pickup*) e Trocas Simultâneas (*Pickup & Delivery*) com validação instantânea de espaço livre ao longo do trajeto.
 * **Gestão Rigorosa de Janelas Horárias (VRPTW Estrito)**:
   1. *Horários dos Clientes*: Entregas matinais (ex: `09:00 - 13:00`) no período da manhã; entregas vespertinas (ex: `14:00 - 18:00`) à tarde ou em 2ª volta.
-  2. *Proibição de Espera Prolongada (`MAX_WAIT_SLACK_SEC = 5400` + Slack Cost)*: A folga de espera máxima entre paragens consecutivas está limitada a **90 minutos** no solver (com penalização ativa de ociosidade `SetSlackCostCoefficientForAllVehicles(50)`). O carro **nunca** é colocado a aguardar horas parado à porta do cliente. Sincronização inteligente de saída entre janelas de manhã e tarde assegura que a viatura chega às 14:00 (abertura) em vez de chegar às 09:40 e esperar 4h20 parado na rua.
+  2. *Proibição de Espera Prolongada (`MAX_WAIT_SLACK_SEC = 3600` + Slack Cost)*: A folga de espera máxima entre paragens consecutivas está rigorosamente limitada a **60 minutos (1 hora no máximo para almoço)** no solver (com penalização ativa de ociosidade `SetSlackCostCoefficientForAllVehicles(50)`). O carro **nunca** é colocado a aguardar horas parado à porta do cliente. Sincronização inteligente de saída entre janelas de manhã e tarde assegura que a viatura chega às 14:00 (abertura) em vez de chegar às 09:40 e esperar horas parado na rua.
   3. *Tempos de Serviço*: Contempla o tempo de descarga específico (`Tempo_Descarga_Min`, ex: 10 a 20 min).
   4. *Jornada de Trabalho*: As viaturas arrancam na sua `Hora_Inicio_Turno` e regressam obrigatoriamente ao armazém antes da `Hora_Fim_Turno`.
 * **Operação Multi-Turno / 2ªs Voltas (`2ª Volta = Sim`)**:
@@ -582,7 +582,7 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
         3. Na heurística de compressão local (`_compress_and_squeeze_routes`), tolerava-se esperas até 180 min (3h).
     * **Correções Implementadas**:
       - **Sincronização Ativa em `recalculate_route_stops` e `sequence_route_with_time_windows`**: Sempre que a viatura chegaria com avanço face à abertura da janela horária do cliente (`(cur_time_min + travel_min) < win_s - 15`), o horário de partida é sincronizado para `win_s - travel_min`. O motorista efetua a pausa/almoço/espera no ponto de descanso e arranca para chegar confortavelmente às **14:00**, reduzindo o tempo de espera à porta para 0 minutos.
-      - **Teto Rigoroso e Penalização no Solver OR-Tools**: `MAX_WAIT_SLACK_SEC` reduzido de 14.400s para 5.400s (90 minutos, permitindo intervalo de almoço sem autorizar estagnações de 4 horas) e adição de `time_dimension.SetSlackCostCoefficientForAllVehicles(50)`.
+      - **Teto Rigoroso e Penalização no Solver OR-Tools**: `MAX_WAIT_SLACK_SEC` reduzido de 14.400s para 3.600s (60 minutos / 1 hora no máximo para almoço, proibindo qualquer espera ociosa superior a 1 hora) e adição de `time_dimension.SetSlackCostCoefficientForAllVehicles(50)`.
       - **Tolerância de Squeeze Reduzida**: Em `_compress_and_squeeze_routes`, tolerância máxima de espera reduzida de 180 min para 60 min.
     * **Resultado Comprovado**: Em todas as 19 rotas ativas (incluindo V_F4, V_C14, V_C6, V_C3), todas as esperas anómalas de 3h, 4h e 5.4h foram totalmente eliminadas, com pontualidade estrita às horas de abertura (14:00 e 18:00).
 
