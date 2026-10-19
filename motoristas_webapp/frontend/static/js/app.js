@@ -10,6 +10,13 @@ let activeStopForPod = null;
 let currentPodPhotoBase64 = null;
 let currentFailPhotoBase64 = null;
 
+// Barcode & QR Scanner State
+let html5QrScannerInstance = null;
+let activeScannerStopId = null;
+let isTorchActive = false;
+let isScannerRunning = false;
+let audioCtx = null;
+
 // Signature Canvas State
 let sigCanvas = null;
 let sigCtx = null;
@@ -85,6 +92,29 @@ function initUI() {
 
   const btnClearSig = document.getElementById("btn-clear-sig");
   if (btnClearSig) btnClearSig.addEventListener("click", clearSignature);
+
+  // Modal events (Scanner de Códigos de Barras / QR Code)
+  const btnOpenScanner = document.getElementById("btn-open-scanner");
+  if (btnOpenScanner) {
+    btnOpenScanner.addEventListener("click", () => openBarcodeScanner(null));
+  }
+
+  const btnToggleTorch = document.getElementById("btn-toggle-torch");
+  if (btnToggleTorch) {
+    btnToggleTorch.addEventListener("click", toggleScannerTorch);
+  }
+
+  const btnSubmitManual = document.getElementById("btn-submit-manual-barcode");
+  const manualInput = document.getElementById("manual-barcode-input");
+  if (btnSubmitManual && manualInput) {
+    btnSubmitManual.addEventListener("click", submitManualBarcode);
+    manualInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitManualBarcode();
+      }
+    });
+  }
 }
 
 // -------------------------------------------------------------
@@ -430,6 +460,18 @@ function renderStops(stops) {
         ${stop.weight ? `<span class="meta-chip">⚖️ ${stop.weight} kg</span>` : ""}
         ${stop.cod_amount > 0 ? `<span class="meta-chip" style="color:#b91c1c; font-weight:700">💰 Cobrar: ${Number(stop.cod_amount).toFixed(2)} €</span>` : ""}
         ${stop.seller ? `<span class="meta-chip">👤 ${escapeHtml(stop.seller)}</span>` : ""}
+        ${(stop.doc_id || stop.barcode) ? `<span class="meta-chip" style="font-family:monospace;">🏷️ ${escapeHtml(stop.doc_id || stop.barcode)}</span>` : ""}
+      </div>
+      
+      <!-- Indicador / Botão de Conferência de Volume por Barcode -->
+      <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
+        ${stop.is_scanned ? `
+          <span class="badge-scanned">✓ Volume Conferido (${escapeHtml(stop.scanned_barcode || stop.barcode || "OK")})</span>
+        ` : `
+          <button type="button" class="btn btn-secondary" onclick="openBarcodeScanner(${stop.id})" style="font-size:11px; padding:4px 10px; border-radius:6px; display:inline-flex; align-items:center; gap:4px; font-weight:600; border-color:#4f46e5; color:#4f46e5; cursor:pointer;">
+            📷 Validar Volume (Barcode/QR)
+          </button>
+        `}
       </div>
       
       ${stop.notes ? `<div style="margin-top:10px; font-size:12px; color:var(--text-secondary); background:var(--bg-surface-alt); padding:6px 10px; border-radius:var(--radius-sm)"><strong>Instruções:</strong> ${escapeHtml(stop.notes)}</div>` : ""}
@@ -845,4 +887,281 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// -------------------------------------------------------------
+// Barcode & QR Code Camera Scanner (Html5Qrcode + Native Beep)
+// -------------------------------------------------------------
+
+function playBeepSound(type = "success") {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!audioCtx) audioCtx = new AudioContextClass();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    if (type === "success") {
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.16);
+    } else {
+      // Erro / Alerta
+      osc.frequency.setValueAtTime(320, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.26);
+    }
+  } catch (e) {
+    console.warn("AudioContext não suportado ou bloqueado:", e);
+  }
+}
+
+async function openBarcodeScanner(stopId = null) {
+  activeScannerStopId = stopId;
+  const modal = document.getElementById("scanner-modal");
+  const title = document.getElementById("scanner-modal-title");
+  const subtitle = document.getElementById("scanner-modal-subtitle");
+  const statusBadge = document.getElementById("scanner-status-badge");
+  const resultBox = document.getElementById("scanner-result-box");
+  const manualInput = document.getElementById("manual-barcode-input");
+
+  if (resultBox) {
+    resultBox.style.display = "none";
+    resultBox.innerHTML = "";
+  }
+  if (manualInput) manualInput.value = "";
+
+  if (stopId) {
+    const st = localStops.find((s) => s.id === stopId);
+    if (title) title.textContent = `📷 Validar Volume - Paragem #${st?.sequence || ""}`;
+    if (subtitle) subtitle.textContent = `Aponte para o código da encomenda de ${st?.client_name || ""}`;
+  } else {
+    if (title) title.textContent = "📷 Scanner de Volumes (Localizador)";
+    if (subtitle) subtitle.textContent = "Aponte para a caixa para localizar automaticamente o cliente";
+  }
+
+  if (modal) modal.classList.add("active");
+
+  if (statusBadge) statusBadge.textContent = "A iniciar câmara...";
+
+  // Iniciar Html5Qrcode
+  try {
+    if (typeof Html5Qrcode === "undefined") {
+      throw new Error("Biblioteca do scanner a carregar. Tente novamente em breves segundos.");
+    }
+
+    if (!html5QrScannerInstance) {
+      html5QrScannerInstance = new Html5Qrcode("barcode-reader-viewport");
+    }
+
+    const config = {
+      fps: 15,
+      qrbox: { width: 220, height: 160 },
+      aspectRatio: 1.333334
+    };
+
+    await html5QrScannerInstance.start(
+      { facingMode: "environment" },
+      config,
+      (decodedText) => onBarcodeDetected(decodedText),
+      () => {} // Ignorar frames sem leitura
+    );
+
+    isScannerRunning = true;
+    if (statusBadge) statusBadge.textContent = "🟢 Câmara Ativa: Aponte à etiqueta";
+  } catch (err) {
+    console.error("Erro ao iniciar câmara do scanner:", err);
+    isScannerRunning = false;
+    if (statusBadge) {
+      statusBadge.textContent = "⚠️ Câmara indisponível. Utilize a validação manual abaixo.";
+      statusBadge.style.color = "#dc2626";
+    }
+  }
+}
+
+async function closeBarcodeScanner() {
+  const modal = document.getElementById("scanner-modal");
+  if (modal) modal.classList.remove("active");
+
+  if (html5QrScannerInstance && isScannerRunning) {
+    try {
+      await html5QrScannerInstance.stop();
+    } catch (e) {
+      console.warn("Erro ao parar scanner:", e);
+    }
+    isScannerRunning = false;
+  }
+  isTorchActive = false;
+  activeScannerStopId = null;
+}
+
+async function toggleScannerTorch() {
+  if (!html5QrScannerInstance || !isScannerRunning) return;
+  try {
+    isTorchActive = !isTorchActive;
+    await html5QrScannerInstance.applyVideoConstraints({
+      advanced: [{ torch: isTorchActive }]
+    });
+    const btnTorch = document.getElementById("btn-toggle-torch");
+    if (btnTorch) {
+      btnTorch.style.background = isTorchActive ? "#fbbf24" : "";
+      btnTorch.style.color = isTorchActive ? "#000" : "";
+    }
+  } catch (e) {
+    alert("Lanterna não suportada neste dispositivo/navegador.");
+  }
+}
+
+let lastScanTime = 0;
+async function onBarcodeDetected(codeText) {
+  const now = Date.now();
+  if (now - lastScanTime < 1800) return; // Evitar leituras duplicadas rápidas
+  lastScanTime = now;
+
+  const cleanCode = String(codeText || "").trim();
+  if (!cleanCode) return;
+
+  const resultBox = document.getElementById("scanner-result-box");
+  const driverId = driverData?.driver_id || driverData?.id;
+
+  try {
+    const res = await fetch("/api/driver/scan_barcode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        driver_id: driverId,
+        barcode: cleanCode,
+        stop_id: activeScannerStopId
+      })
+    });
+    const data = await res.json();
+
+    if (data.match || data.found) {
+      playBeepSound("success");
+      if (navigator.vibrate) navigator.vibrate(100);
+
+      // Atualizar localStops
+      const targetId = data.stop_id || activeScannerStopId;
+      const st = localStops.find((s) => s.id === targetId);
+      if (st) {
+        st.is_scanned = 1;
+        st.scanned_barcode = cleanCode;
+        localStorage.setItem("geo_stops", JSON.stringify(localStops));
+        renderStops(localStops);
+      }
+
+      if (resultBox) {
+        resultBox.style.display = "block";
+        resultBox.style.background = "#dcfce7";
+        resultBox.style.color = "#15803d";
+        resultBox.style.border = "1px solid #86efac";
+        resultBox.innerHTML = `
+          <div style="font-weight:700; font-size:13px; margin-bottom:4px;">${escapeHtml(data.message)}</div>
+          <div style="font-size:11px;">Código: <code>${escapeHtml(cleanCode)}</code></div>
+          <div style="margin-top:8px;">
+            <button class="btn btn-success" onclick="closeBarcodeScanner()" style="font-size:11px; padding:4px 12px; width:100%;">
+              ✓ Concluir Conferência
+            </button>
+          </div>
+        `;
+      }
+    } else {
+      playBeepSound("error");
+      if (navigator.vibrate) navigator.vibrate([150, 100, 150]);
+
+      if (resultBox) {
+        resultBox.style.display = "block";
+        resultBox.style.background = "#fee2e2";
+        resultBox.style.color = "#991b1b";
+        resultBox.style.border = "1px solid #fca5a5";
+        resultBox.innerHTML = `
+          <div style="font-weight:700; font-size:13px; margin-bottom:4px;">${escapeHtml(data.message)}</div>
+          <div style="font-size:11px;">Código lido: <code>${escapeHtml(cleanCode)}</code></div>
+        `;
+      }
+    }
+  } catch (err) {
+    console.error("Erro na validação de barcode:", err);
+    // Modo Offline de contingência
+    handleOfflineBarcodeCheck(cleanCode, activeScannerStopId, resultBox);
+  }
+}
+
+function handleOfflineBarcodeCheck(cleanCode, stopId, resultBox) {
+  const upperCode = cleanCode.toUpperCase();
+  let matched = false;
+  let targetStop = null;
+
+  if (stopId) {
+    const st = localStops.find((s) => s.id === stopId);
+    if (st) {
+      const expBar = (st.barcode || "").toUpperCase();
+      const expDoc = (st.doc_id || "").toUpperCase();
+      const expCli = (st.client_name || "").toUpperCase();
+      if (upperCode === expBar || upperCode === expDoc || expCli.includes(upperCode)) {
+        matched = true;
+        targetStop = st;
+      }
+    }
+  } else {
+    targetStop = localStops.find((s) => {
+      const expBar = (s.barcode || "").toUpperCase();
+      const expDoc = (s.doc_id || "").toUpperCase();
+      const expCli = (s.client_name || "").toUpperCase();
+      return upperCode === expBar || upperCode === expDoc || expCli.includes(upperCode);
+    });
+    if (targetStop) matched = true;
+  }
+
+  if (matched && targetStop) {
+    playBeepSound("success");
+    if (navigator.vibrate) navigator.vibrate(100);
+    targetStop.is_scanned = 1;
+    targetStop.scanned_barcode = cleanCode;
+    localStorage.setItem("geo_stops", JSON.stringify(localStops));
+    renderStops(localStops);
+
+    if (resultBox) {
+      resultBox.style.display = "block";
+      resultBox.style.background = "#dcfce7";
+      resultBox.style.color = "#15803d";
+      resultBox.style.border = "1px solid #86efac";
+      resultBox.innerHTML = `
+        <div style="font-weight:700;">✓ Volume validado offline para ${escapeHtml(targetStop.client_name)}!</div>
+        <div style="font-size:11px;">Código: <code>${escapeHtml(cleanCode)}</code></div>
+      `;
+    }
+  } else {
+    playBeepSound("error");
+    if (navigator.vibrate) navigator.vibrate([150, 100, 150]);
+    if (resultBox) {
+      resultBox.style.display = "block";
+      resultBox.style.background = "#fee2e2";
+      resultBox.style.color = "#991b1b";
+      resultBox.style.border = "1px solid #fca5a5";
+      resultBox.innerHTML = `
+        <div style="font-weight:700;">⚠️ Código não corresponde (Modo Offline).</div>
+        <div style="font-size:11px;">Código: <code>${escapeHtml(cleanCode)}</code></div>
+      `;
+    }
+  }
+}
+
+function submitManualBarcode() {
+  const manualInput = document.getElementById("manual-barcode-input");
+  if (!manualInput) return;
+  const val = manualInput.value.trim();
+  if (!val) {
+    alert("Por favor, digite o código de barras ou número da guia.");
+    return;
+  }
+  onBarcodeDetected(val);
 }

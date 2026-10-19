@@ -146,6 +146,8 @@ def parse_and_import_excel(file_path: str, original_filename: str) -> Dict[str, 
     col_cod = find_col(["cobranca", "cobrar", "valor", "preco", "cod", "pagamento"])
     col_op_type = find_col(["tipo_operacao", "tipo_op", "movimento", "operacao", "tipo"])
     col_par_id = find_col(["par_id", "par", "pair_id"])
+    col_doc_id = find_col(["doc_id", "doc", "documento", "guia", "fatura", "ft", "venda", "encomenda", "id_cliente", "codigo_cliente"])
+    col_barcode = find_col(["barcode", "codigo_barras", "cod_barras", "ean", "ean13", "qr_code", "etiqueta"])
 
     total_stops = 0
     unique_routes = set()
@@ -176,14 +178,17 @@ def parse_and_import_excel(file_path: str, original_filename: str) -> Dict[str, 
         raw_op = clean_str(row.get(col_op_type)) if col_op_type else "D"
         op_norm = "P" if raw_op.upper() in ["P", "PICKUP", "SUCATA"] else "From" if raw_op.upper() in ["FROM", "LOJA_LEV"] else "To" if raw_op.upper() in ["TO", "LOJA_ENT"] else "D"
         par_id = clean_str(row.get(col_par_id)) if col_par_id else ""
+        doc_id = clean_str(row.get(col_doc_id)) if col_doc_id else f"CLI_{idx+1}"
+        barcode = clean_str(row.get(col_barcode)) if col_barcode else doc_id
         
         cursor.execute("""
             INSERT INTO route_stops (
                 route_id, sequence, client_name, address, postal_code, city,
                 phone, contact_person, volume, weight, packages, seller,
-                notes, cod_amount, status, operation_type, par_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendente', ?, ?)
-        """, (route_id, seq, client, address, postal, city, phone, contact, vol, weight, packages, seller, notes, cod, op_norm, par_id))
+                notes, cod_amount, status, operation_type, par_id,
+                doc_id, barcode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendente', ?, ?, ?, ?)
+        """, (route_id, seq, client, address, postal, city, phone, contact, vol, weight, packages, seller, notes, cod, op_norm, par_id, doc_id, barcode))
 
     drivers_count = 0
     if df_drivers is not None:

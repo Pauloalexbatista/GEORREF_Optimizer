@@ -66,7 +66,11 @@ def init_db():
         receiver_name TEXT,
         photo_data TEXT,
         operation_type TEXT DEFAULT 'D',
-        par_id TEXT
+        par_id TEXT,
+        doc_id TEXT DEFAULT '',
+        barcode TEXT DEFAULT '',
+        scanned_barcode TEXT DEFAULT '',
+        is_scanned INTEGER DEFAULT 0
     )
     """)
 
@@ -77,6 +81,10 @@ def init_db():
         ("photo_data", "TEXT"),
         ("operation_type", "TEXT DEFAULT 'D'"),
         ("par_id", "TEXT"),
+        ("doc_id", "TEXT DEFAULT ''"),
+        ("barcode", "TEXT DEFAULT ''"),
+        ("scanned_barcode", "TEXT DEFAULT ''"),
+        ("is_scanned", "INTEGER DEFAULT 0"),
     ]
     for col_name, col_def in new_cols:
         try:

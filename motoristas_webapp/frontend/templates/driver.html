@@ -21,6 +21,11 @@
       </div>
     </div>
     <div class="header-controls">
+      <!-- Botão Rápido de Scanner de Volumes (Barcode / QR) -->
+      <button id="btn-open-scanner" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 4px; border-color: #4f46e5; color: #4f46e5;" title="Ler Código de Barras / QR Code">
+        📷 Scan
+      </button>
+
       <!-- Status Badge (Online/Offline/Sync) -->
       <div id="network-status-badge" class="status-pill status-online">
         <span class="dot"></span>
@@ -227,6 +232,58 @@
     </div>
   </div>
 
+  <!-- Modal Leitor de Códigos de Barras e QR Code -->
+  <div id="scanner-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 480px; padding: 16px;">
+      <div class="modal-header" style="margin-bottom: 12px;">
+        <div>
+          <h3 class="modal-title" id="scanner-modal-title">📷 Scanner de Volumes</h3>
+          <p id="scanner-modal-subtitle" style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
+            Aponte a câmara para o código de barras (1D) ou QR Code (2D)
+          </p>
+        </div>
+        <button class="modal-close" onclick="closeBarcodeScanner()">&times;</button>
+      </div>
+
+      <!-- Viewport da Câmara com Mira Laser -->
+      <div class="scanner-camera-wrapper">
+        <div id="barcode-reader-viewport"></div>
+        <div class="scanner-reticle">
+          <div class="scanner-laser"></div>
+        </div>
+      </div>
+
+      <!-- Controlos da Câmara (Flash e Alternar) -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+        <button type="button" id="btn-toggle-torch" class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px; display: flex; align-items: center; gap: 4px;">
+          🔦 <span>Lanterna</span>
+        </button>
+        <span id="scanner-status-badge" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">
+          A iniciar câmara...
+        </span>
+      </div>
+
+      <!-- Feedback da Leitura (Sucesso / Alerta) -->
+      <div id="scanner-result-box" style="display: none; margin-top: 12px; padding: 12px; border-radius: 8px; font-size: 12px;"></div>
+
+      <!-- Entrada Manual de Código de Contingência -->
+      <div style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+        <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Ou digite o código manualmente:</label>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="manual-barcode-input" placeholder="Ex: 560123456789 ou CLI_10" class="form-input" style="font-size: 12px; padding: 6px 10px;">
+          <button type="button" id="btn-submit-manual-barcode" class="btn btn-secondary" style="font-size: 11px; font-weight: 600; padding: 6px 12px;">
+            Validar
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 14px;">
+        <button type="button" class="btn btn-secondary" onclick="closeBarcodeScanner()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/html5-qrcode.min.js"></script>
   <script src="/static/js/i18n.js"></script>
   <script src="/static/js/app.js"></script>
 </body>

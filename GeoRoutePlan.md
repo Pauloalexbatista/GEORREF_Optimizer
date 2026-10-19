@@ -461,8 +461,14 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
    * **Garantia de Desligamento Total no Fecho e Logout (✅ Concluído no Código)**: O temporizador de envio de GPS (`gpsIntervalId`) é cancelado e destruído a 100% (`clearInterval`) no momento em que o motorista submete o "Fecho do Dia" ou efetua Logout, sendo expressamente impossível recolher coordenadas fora do horário de serviço.
    * **Disponibilização de Minuta Contratual RGPD (✅ Concluído)**: Criada a adenda formal e regulamento interno em [`docs/MINUTA_CONTRATUAL_RGPD_MOTORISTAS.md`](docs/MINUTA_CONTRATUAL_RGPD_MOTORISTAS.md) pronta a imprimir e assinar pelas empresas e trabalhadores.
    * Assinatura digital no ecrã (*Proof of Delivery - POD*) — Já implementado.
-   * Captura de fotos como comprovativo de entrega ou justificação de falha — Já implementado.
-   * Leitor de códigos de barras / QR Code via câmara para conferência de volumes (Previsto).
+   * **Leitor de Códigos de Barras e QR Code via Câmara na App de Motoristas (✅ Concluído no Código)**:
+     - **Motor de Leitura 100% Offline e Custo Zero**: Integração da biblioteca local minificada `html5-qrcode.min.js` e API nativa de câmara, funcionando de forma autónoma sem ligação de dados no telemóvel do condutor.
+     - **Suporte Amplo de Formatos**: Leitura instantânea de códigos 1D (Code 128, EAN-13, EAN-8, Code 39) e 2D (QR Code) impressos nas guias ou etiquetas das caixas.
+     - **Interface e Ergonomia Operacional**: Viewport com mira reticular de enquadramento, feixe laser animado e botão para acionar a **lanterna (*flashlight/torch*)** da carrinha ou armazém escuro.
+     - **Dois Modos de Trabalho**: 
+       * *Validação Específica*: No card da paragem ou no ato de entrega (POD), o motorista bipa a caixa e o sistema valida se a etiqueta corresponde ao `doc_id` / `barcode` daquela paragem. Se o volume pertencer a outra carrinha ou cliente, dispara aviso visual e sonoro de volume trocado (*"⚠️ Atenção: Volume pertence à Paragem #X"*).
+       * *Localizador Contínuo na Carrinha*: O condutor aponta para qualquer caixa dentro do baú e a app faz scroll automático e abre a paragem correspondente.
+     - **Feedback Multissensorial**: Som de *Beep* sintetizado localmente via Web Audio API e vibração háptica tátil ao confirmar com sucesso. Entrada manual de contingência caso a etiqueta esteja rasgada ou suja.
 2. **Desenvolvimento Avançado do Módulo de Regras (`utils/rules_engine.py`)**:
    * Expansão para suporte a regras compostas (precedências, descansos obrigatórios, limites por categoria).
    * Simulador visual de regras no frontend (`dashboard/fleet`).

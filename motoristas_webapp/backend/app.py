@@ -77,6 +77,13 @@ class StopUpdateRequest(BaseModel):
     signature_data: Optional[str] = None
     receiver_name: Optional[str] = None
     photo_data: Optional[str] = None
+    scanned_barcode: Optional[str] = None
+    is_scanned: Optional[int] = None
+
+class ScanBarcodeRequest(BaseModel):
+    driver_id: int
+    barcode: str
+    stop_id: Optional[int] = None
 
 class GpsPingRequest(BaseModel):
     driver_id: int
@@ -300,7 +307,9 @@ async def api_update_stop(req: StopUpdateRequest):
             delivered_lng = ?,
             signature_data = COALESCE(NULLIF(?, ''), signature_data),
             receiver_name = COALESCE(NULLIF(?, ''), receiver_name),
-            photo_data = COALESCE(NULLIF(?, ''), photo_data)
+            photo_data = COALESCE(NULLIF(?, ''), photo_data),
+            scanned_barcode = COALESCE(NULLIF(?, ''), scanned_barcode),
+            is_scanned = COALESCE(?, is_scanned)
         WHERE id = ?
     """, (
         req.status, 
@@ -312,6 +321,8 @@ async def api_update_stop(req: StopUpdateRequest):
         req.signature_data or "",
         req.receiver_name or "",
         req.photo_data or "",
+        req.scanned_barcode or "",
+        req.is_scanned,
         req.stop_id
     ))
     
@@ -336,6 +347,108 @@ async def api_update_stop(req: StopUpdateRequest):
     
     conn.commit()
     conn.close()
+
+@app.post("/api/driver/scan_barcode")
+async def api_scan_barcode(req: ScanBarcodeRequest):
+    """
+    Valida código de barras ou QR Code lido pela câmara.
+    Se stop_id for fornecido, valida correspondência para essa paragem.
+    Se não for fornecido, pesquisa na rota do motorista qual a paragem correspondente.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    code = str(req.barcode or "").strip().upper()
+
+    cursor.execute("SELECT * FROM drivers WHERE id = ?", (req.driver_id,))
+    driver = cursor.fetchone()
+    if not driver:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Motorista não encontrado")
+
+    route_id = driver["assigned_route_id"]
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Caso 1: Validação de paragem específica
+    if req.stop_id:
+        cursor.execute("SELECT * FROM route_stops WHERE id = ?", (req.stop_id,))
+        stop = cursor.fetchone()
+        if not stop:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Paragem não encontrada")
+
+        expected_barcode = str(stop["barcode"] or "").strip().upper()
+        expected_doc = str(stop["doc_id"] or "").strip().upper()
+        expected_client = str(stop["client_name"] or "").strip().upper()
+
+        # Verifica se corresponde
+        is_match = (code == expected_barcode) or (code == expected_doc) or (code in expected_client)
+        
+        # Se não correspondeu, verificar se pertence a OUTRO cliente da mesma rota
+        other_stop = None
+        if not is_match and route_id:
+            cursor.execute("""
+                SELECT id, sequence, client_name, address FROM route_stops 
+                WHERE route_id = ? AND (UPPER(barcode) = ? OR UPPER(doc_id) = ? OR UPPER(client_name) LIKE ?)
+                LIMIT 1
+            """, (route_id, code, code, f"%{code}%"))
+            other_stop = cursor.fetchone()
+
+        if is_match:
+            cursor.execute("""
+                UPDATE route_stops 
+                SET is_scanned = 1, scanned_barcode = ?, updated_at = ?
+                WHERE id = ?
+            """, (code, now_str, req.stop_id))
+            conn.commit()
+            conn.close()
+            return {
+                "match": True,
+                "stop_id": stop["id"],
+                "sequence": stop["sequence"],
+                "client_name": stop["client_name"],
+                "message": f"✓ Volume conferido com sucesso para {stop['client_name']}!"
+            }
+        else:
+            conn.close()
+            warning_msg = f"⚠️ Volume trocado! Pertence à Paragem #{other_stop['sequence']}: {other_stop['client_name']}" if other_stop else f"Código '{code}' não corresponde a este cliente."
+            return {
+                "match": False,
+                "wrong_stop": dict(other_stop) if other_stop else None,
+                "message": warning_msg
+            }
+
+    # Caso 2: Leitura contínua / Localizador na carrinha
+    cursor.execute("""
+        SELECT * FROM route_stops 
+        WHERE route_id = ? AND (UPPER(barcode) = ? OR UPPER(doc_id) = ? OR UPPER(client_name) LIKE ?)
+        LIMIT 1
+    """, (route_id, code, code, f"%{code}%"))
+    found = cursor.fetchone()
+    
+    if found:
+        cursor.execute("""
+            UPDATE route_stops 
+            SET is_scanned = 1, scanned_barcode = ?, updated_at = ?
+            WHERE id = ?
+        """, (code, now_str, found["id"]))
+        conn.commit()
+        conn.close()
+        return {
+            "found": True,
+            "stop_id": found["id"],
+            "sequence": found["sequence"],
+            "client_name": found["client_name"],
+            "address": found["address"],
+            "packages": found["packages"],
+            "weight": found["weight"],
+            "message": f"Localizado: Paragem #{found['sequence']} - {found['client_name']}"
+        }
+
+    conn.close()
+    return {
+        "found": False,
+        "message": f"Código '{code}' não encontrado nesta rota."
+    }
     
     return {"success": True, "updated_at": now_str, "status": req.status}
 
