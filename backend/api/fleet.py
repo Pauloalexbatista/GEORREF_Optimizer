@@ -844,17 +844,238 @@ async def import_fleet_warehouses(
         db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), DB_GEO_PATH)
         geocoder = WaterfallGeocoder(db_path, google_api_key=google_api_key)
         
+        # =========================================================================
+        # PRÉ-VALIDAÇÃO AUDITORIA CANÓNICA DAS 9 ABAS (TUDO-OU-NADA)
+        # =========================================================================
+        audit_grid = []
+        has_critical_error = False
+
+        # Helper para encontrar folhas
+        def _find_sheet(keywords):
+            for s in xls.sheet_names:
+                sn = _norm_col(s)
+                if any(k in sn for k in keywords):
+                    return s
+            return None
+
+        # 1. Auditoria Armazéns
+        s_wh_name = _find_sheet(['armaz', 'warehouse', 'depot', 'origem'])
+        wh_errs = []
+        df_wh_audit = pd.DataFrame()
+        if not s_wh_name:
+            wh_errs.append("Aba 'Armazéns' em falta no ficheiro.")
+        else:
+            df_wh_audit = pd.read_excel(xls, sheet_name=s_wh_name)
+            c_name = _match_col(df_wh_audit.columns, ['Nome_Armazem', 'Nome_Armazém', 'Armazem', 'Armazém', 'Warehouse', 'Nome'])
+            c_addr = _match_col(df_wh_audit.columns, ['Morada', 'Endereço', 'Address', 'Rua', 'Morada_Armazem'])
+            c_cp = _match_col(df_wh_audit.columns, ['CP', 'Código Postal', 'Codigo_Postal', 'Postal Code', 'Postal_Code', 'CodPostal'])
+            if not c_name or not c_addr:
+                wh_errs.append("Colunas obrigatórias em falta (Nome_Armazem ou Morada).")
+            else:
+                for idx, r in df_wh_audit.iterrows():
+                    row_num = idx + 2
+                    if pd.isna(r.get(c_name)) or str(r.get(c_name)).strip() == "":
+                        wh_errs.append(f"Linha {row_num}: 'Nome_Armazem' não pode estar vazio.")
+                    if pd.isna(r.get(c_addr)) or str(r.get(c_addr)).strip() == "":
+                        wh_errs.append(f"Linha {row_num}: 'Morada' não pode estar vazia.")
+                    if c_cp and (pd.isna(r.get(c_cp)) or str(r.get(c_cp)).strip() == ""):
+                        wh_errs.append(f"Linha {row_num}: 'CP' não pode estar vazio.")
+        
+        audit_grid.append({
+            "sheet": "Armazéns",
+            "required": True,
+            "total_rows": len(df_wh_audit),
+            "valid_rows": len(df_wh_audit) if not wh_errs else max(0, len(df_wh_audit) - len(wh_errs)),
+            "status": "ERRO" if wh_errs else "OK",
+            "errors": wh_errs[:5]
+        })
+        if wh_errs: has_critical_error = True
+
+        # 2. Auditoria Frota
+        s_fleet_name = _find_sheet(['frota', 'veicul', 'viatur', 'fleet', 'vehicle', 'carro'])
+        fleet_errs = []
+        df_fl_audit = pd.DataFrame()
+        if not s_fleet_name:
+            fleet_errs.append("Aba 'Frota' em falta no ficheiro.")
+        else:
+            df_fl_audit = pd.read_excel(xls, sheet_name=s_fleet_name)
+            c_v = _match_col(df_fl_audit.columns, ['Veiculo', 'Veículo', 'Vehicle', 'Nome', 'Matricula', 'Viatura'])
+            c_cap = _match_col(df_fl_audit.columns, ['Capacidade_KG', 'Capacidade_kg', 'Capacidade (kg)', 'Capacity_KG', 'Peso_Max', 'Capacidade'])
+            c_ini = _match_col(df_fl_audit.columns, ['Hora_Inicio_Turno', 'Horario_Inicio', 'Hora Início', 'Start_Time', 'Inicio'])
+            c_fim = _match_col(df_fl_audit.columns, ['Hora_Fim_Turno', 'Horario_Fim', 'Hora Fim', 'End_Time', 'Fim'])
+            if not c_v or not c_cap:
+                fleet_errs.append("Colunas obrigatórias em falta (Veiculo ou Capacidade_KG).")
+            else:
+                for idx, r in df_fl_audit.iterrows():
+                    row_num = idx + 2
+                    if pd.isna(r.get(c_v)) or str(r.get(c_v)).strip() == "":
+                        fleet_errs.append(f"Linha {row_num}: 'Veiculo' não pode estar vazio.")
+                    if pd.isna(r.get(c_cap)):
+                        fleet_errs.append(f"Linha {row_num}: 'Capacidade_KG' não pode estar vazia.")
+                    if c_ini and (pd.isna(r.get(c_ini)) or str(r.get(c_ini)).strip() == ""):
+                        fleet_errs.append(f"Linha {row_num}: 'Hora_Inicio_Turno' vazia.")
+                    if c_fim and (pd.isna(r.get(c_fim)) or str(r.get(c_fim)).strip() == ""):
+                        fleet_errs.append(f"Linha {row_num}: 'Hora_Fim_Turno' vazia.")
+
+        audit_grid.append({
+            "sheet": "Frota",
+            "required": True,
+            "total_rows": len(df_fl_audit),
+            "valid_rows": len(df_fl_audit) if not fleet_errs else max(0, len(df_fl_audit) - len(fleet_errs)),
+            "status": "ERRO" if fleet_errs else "OK",
+            "errors": fleet_errs[:5]
+        })
+        if fleet_errs: has_critical_error = True
+
+        # 3. Auditoria Entregas
+        s_del_name = _find_sheet(['entreg', 'client', 'order', 'delivery', 'encomend'])
+        del_errs = []
+        df_del_audit = pd.DataFrame()
+        if not s_del_name:
+            del_errs.append("Aba 'Entregas' em falta no ficheiro.")
+        else:
+            df_del_audit = pd.read_excel(xls, sheet_name=s_del_name)
+            c_mor = _match_col(df_del_audit.columns, ['Morada', 'Endereço', 'Address', 'Rua', 'Morada_Entrega'])
+            c_dcp = _match_col(df_del_audit.columns, ['CP', 'Codigo_Postal', 'Código Postal', 'Postal_Code', 'Cod_Postal', 'Postal Code', 'CodPostal'])
+            if not c_mor or not c_dcp:
+                del_errs.append("Colunas obrigatórias em falta (Morada ou CP).")
+            else:
+                for idx, r in df_del_audit.iterrows():
+                    row_num = idx + 2
+                    if pd.isna(r.get(c_mor)) or str(r.get(c_mor)).strip() == "":
+                        del_errs.append(f"Linha {row_num}: 'Morada' não pode estar vazia.")
+                    if pd.isna(r.get(c_dcp)) or str(r.get(c_dcp)).strip() == "":
+                        del_errs.append(f"Linha {row_num}: 'CP' não pode estar vazio.")
+
+        audit_grid.append({
+            "sheet": "Entregas",
+            "required": True,
+            "total_rows": len(df_del_audit),
+            "valid_rows": len(df_del_audit) if not del_errs else max(0, len(df_del_audit) - len(del_errs)),
+            "status": "ERRO" if del_errs else "OK",
+            "errors": del_errs[:5]
+        })
+        if del_errs: has_critical_error = True
+
+        # 4. Auditoria Regras
+        s_rules_name = _find_sheet(['regr', 'rule', 'restri', 'matriz'])
+        df_rules_audit = pd.DataFrame()
+        rules_errs = []
+        if s_rules_name:
+            df_rules_audit = pd.read_excel(xls, sheet_name=s_rules_name)
+            c_rtag = _match_col(df_rules_audit.columns, ['Tag_Veiculo', 'Tag_Viatura', 'Veiculo_Tag', 'Tag Veiculo'])
+            c_perm = _match_col(df_rules_audit.columns, ['Permissao', 'Permitido', 'Status', 'Regra'])
+            c_etag = _match_col(df_rules_audit.columns, ['Tag_Entrega', 'Tag_Cliente', 'Entrega_Tag', 'Tag Entrega'])
+            for idx, r in df_rules_audit.iterrows():
+                row_num = idx + 2
+                vt = str(r.get(c_rtag)).strip() if c_rtag and pd.notna(r.get(c_rtag)) else ""
+                et = str(r.get(c_etag)).strip() if c_etag and pd.notna(r.get(c_etag)) else ""
+                if vt and not et and not c_perm:
+                    rules_errs.append(f"Linha {row_num}: Regra sem tag de entrega ou permissão definida.")
+        audit_grid.append({
+            "sheet": "Regras",
+            "required": False,
+            "total_rows": len(df_rules_audit),
+            "valid_rows": len(df_rules_audit) if not rules_errs else max(0, len(df_rules_audit) - len(rules_errs)),
+            "status": "ERRO" if rules_errs else "OK",
+            "errors": rules_errs[:5]
+        })
+        if rules_errs: has_critical_error = True
+
+        # 5. Auditoria Rotas
+        s_rotas_name = _find_sheet(['rotas', 'rota', 'routes', 'route', 'planeamento', 'plano', 'planorotas'])
+        df_rotas_audit = pd.DataFrame()
+        if s_rotas_name and 'frota' not in _norm_col(s_rotas_name):
+            df_rotas_audit = pd.read_excel(xls, sheet_name=s_rotas_name)
+        audit_grid.append({
+            "sheet": "Rotas",
+            "required": False,
+            "total_rows": len(df_rotas_audit),
+            "valid_rows": len(df_rotas_audit),
+            "status": "OK",
+            "errors": []
+        })
+
+        # 6. Auditoria Manifestos
+        s_manif_name = _find_sheet(['manif', 'resumo'])
+        df_manif_audit = pd.DataFrame()
+        if s_manif_name:
+            df_manif_audit = pd.read_excel(xls, sheet_name=s_manif_name)
+        audit_grid.append({
+            "sheet": "Manifestos",
+            "required": False,
+            "total_rows": len(df_manif_audit),
+            "valid_rows": len(df_manif_audit),
+            "status": "OK",
+            "errors": []
+        })
+
+        # 7. Auditoria Motoristas e Carros
+        s_dr_name = _find_sheet(['motorista', 'driver', 'condutor', 'equipa'])
+        df_dr_audit = pd.DataFrame()
+        dr_errs = []
+        if s_dr_name:
+            df_dr_audit = pd.read_excel(xls, sheet_name=s_dr_name)
+            c_dn = _match_col(df_dr_audit.columns, ['Motorista', 'Nome', 'Nome_Motorista', 'Driver', 'Driver_Name'])
+            c_dp = _match_col(df_dr_audit.columns, ['PIN/Password', 'PIN', 'Password', 'Pin', 'Senha', 'Codigo', 'Pin_Code'])
+            for idx, r in df_dr_audit.iterrows():
+                row_num = idx + 2
+                dn_val = str(r.get(c_dn)).strip() if c_dn and pd.notna(r.get(c_dn)) else ""
+                dp_val = str(r.get(c_dp)).strip() if c_dp and pd.notna(r.get(c_dp)) else ""
+                if dn_val and dn_val.lower() != 'nan':
+                    if not dp_val or dp_val.lower() == 'nan':
+                        dr_errs.append(f"Linha {row_num}: Motorista '{dn_val}' não tem PIN/Password definido.")
+        audit_grid.append({
+            "sheet": "Motoristas e Carros",
+            "required": False,
+            "total_rows": len(df_dr_audit),
+            "valid_rows": len(df_dr_audit) if not dr_errs else max(0, len(df_dr_audit) - len(dr_errs)),
+            "status": "ERRO" if dr_errs else "OK",
+            "errors": dr_errs[:5]
+        })
+        if dr_errs: has_critical_error = True
+
+        # 8. Auditoria Justificação entregas
+        s_reasons_name = _find_sheet(['justifica', 'motivo', 'reason', 'falha', 'nao entrega', 'recusa'])
+        df_reasons_audit = pd.DataFrame()
+        if s_reasons_name:
+            df_reasons_audit = pd.read_excel(xls, sheet_name=s_reasons_name)
+        audit_grid.append({
+            "sheet": "Justificação entregas",
+            "required": False,
+            "total_rows": len(df_reasons_audit),
+            "valid_rows": len(df_reasons_audit),
+            "status": "OK",
+            "errors": []
+        })
+
+        # 9. Auditoria Instruções
+        s_inst_name = _find_sheet(['instru', 'ajuda', 'help', 'guia'])
+        df_inst_audit = pd.DataFrame()
+        if s_inst_name:
+            df_inst_audit = pd.read_excel(xls, sheet_name=s_inst_name)
+        audit_grid.append({
+            "sheet": "Instruções",
+            "required": False,
+            "total_rows": len(df_inst_audit),
+            "valid_rows": len(df_inst_audit),
+            "status": "OK",
+            "errors": []
+        })
+
+        # SE EXISTIR ERRO CRÍTICO: TUDO-OU-NADA! Interromper sem tocar na base de dados!
+        if has_critical_error:
+            return {
+                "status": "audit_failed",
+                "message": "Auditoria de Importação rejeitou o ficheiro devido a erros de validação.",
+                "audit_grid": audit_grid
+            }
+
         # 1. Sheet: Armazéns
-        sheet_wh = None
-        for s in xls.sheet_names:
-            sn = _norm_col(s)
-            if any(k in sn for k in ['armaz', 'warehouse', 'depot', 'origem']):
-                sheet_wh = s
-                break
-                
+        sheet_wh = s_wh_name
         wh_rows = []
         if sheet_wh:
-            df_wh_raw = pd.read_excel(xls, sheet_name=sheet_wh)
+            df_wh_raw = df_wh_audit
             if not df_wh_raw.empty:
                 col_wh_name = _match_col(df_wh_raw.columns, ['Nome_Armazem', 'Nome_Armazém', 'Armazem', 'Armazém', 'Warehouse', 'Nome'])
                 col_wh_addr = _match_col(df_wh_raw.columns, ['Morada', 'Endereço', 'Address', 'Rua', 'Morada_Armazem'])
@@ -1375,11 +1596,119 @@ async def import_fleet_warehouses(
                     "Volume_m3": _clean_coord(d.get("Volume_M3", 0.1))
                 })
 
-        # --- D. SAVE DELIVERIES TO SQLITE DB FOR PHASE 1 GEOREFERENCING ---
-        if deliveries_list:
-            ensure_entregas_columns()
-            with get_db() as conn:
-                cursor = conn.cursor()
+        # 6. Sheet: Motoristas e Carros
+        sheet_drivers = s_dr_name
+        drivers_list = []
+        if sheet_drivers and not df_dr_audit.empty:
+            df_drivers_raw = df_dr_audit
+            col_dr_name = _match_col(df_drivers_raw.columns, ['Motorista', 'Nome', 'Nome_Motorista', 'Driver', 'Driver_Name'])
+            col_dr_pin = _match_col(df_drivers_raw.columns, ['PIN/Password', 'PIN', 'Password', 'Pin', 'Senha', 'Codigo', 'Pin_Code'])
+            col_dr_veh = _match_col(df_drivers_raw.columns, ['Viatura', 'Veiculo', 'Veiculo', 'Vehicle', 'Carro', 'Nome_Veiculo'])
+            col_dr_mat = _match_col(df_drivers_raw.columns, ['Matricula', 'Matricula', 'Plate', 'License_Plate'])
+            col_dr_tel = _match_col(df_drivers_raw.columns, ['Telemovel', 'Telemovel', 'Telefone', 'Phone', 'Contacto', 'Driver_Phone', 'Telemovel_Motorista'])
+            col_dr_route = _match_col(df_drivers_raw.columns, ['Rota Atribuida', 'Rota_Atribuida', 'Rota', 'Route', 'Plano'])
+            
+            for idx, r_row in df_drivers_raw.iterrows():
+                dr_name = str(r_row[col_dr_name]).replace("_x000D_", "").strip() if col_dr_name and pd.notna(r_row[col_dr_name]) else ""
+                if not dr_name or dr_name.lower() == 'nan':
+                    continue
+                
+                dr_pin = str(r_row[col_dr_pin]).strip() if col_dr_pin and pd.notna(r_row[col_dr_pin]) else "1234"
+                if dr_pin.endswith('.0'):
+                    dr_pin = dr_pin[:-2]
+                dr_veh = str(r_row[col_dr_veh]).strip() if col_dr_veh and pd.notna(r_row[col_dr_veh]) else ""
+                if dr_veh.lower() == 'nan':
+                    dr_veh = ""
+                dr_tel = str(r_row[col_dr_tel]).strip() if col_dr_tel and pd.notna(r_row[col_dr_tel]) else ""
+                if dr_tel.lower() == 'nan':
+                    dr_tel = ""
+                dr_mat = str(r_row[col_dr_mat]).strip() if col_dr_mat and pd.notna(r_row[col_dr_mat]) else ""
+                if dr_mat.lower() == 'nan':
+                    dr_mat = ""
+                dr_route = str(r_row[col_dr_route]).strip() if col_dr_route and pd.notna(r_row[col_dr_route]) else ""
+                if dr_route.lower() == 'nan':
+                    dr_route = ""
+                    
+                drivers_list.append({
+                    "name": dr_name,
+                    "pin": dr_pin,
+                    "phone": dr_tel,
+                    "vehicle": dr_veh,
+                    "matricula": dr_mat,
+                    "route": dr_route,
+                    "is_active": 1
+                })
+                
+        # Fallback for drivers from fleet if no Sheet 7
+        if not drivers_list and fleet_dict:
+            for v_name, v_data in fleet_dict.items():
+                m_name = getattr(v_data, 'motorista_nome', '') if hasattr(v_data, 'motorista_nome') else (v_data.get('motorista_nome', '') if isinstance(v_data, dict) else '')
+                m_tel = getattr(v_data, 'motorista_telemovel', '') if hasattr(v_data, 'motorista_telemovel') else (v_data.get('motorista_telemovel', '') if isinstance(v_data, dict) else '')
+                if m_name and m_name.lower() != 'nan':
+                    drivers_list.append({
+                        "name": m_name,
+                        "pin": "1111",
+                        "phone": m_tel or "910000000",
+                        "vehicle": v_name,
+                        "matricula": "",
+                        "route": "",
+                        "is_active": 1
+                    })
+
+        # 7. Sheet: Justificação entregas
+        sheet_reasons = s_reasons_name
+        reasons_list = []
+        if sheet_reasons and not df_reasons_audit.empty:
+            df_reasons_raw = df_reasons_audit
+            col_rs_reason = _match_col(df_reasons_raw.columns, ['Motivo de Nao Entrega', 'Motivo de N?o Entrega', 'Motivo', 'Reason', 'Descricao', 'Justificacao', 'Motivo_Falha'])
+            col_rs_cat = _match_col(df_reasons_raw.columns, ['Categoria / Acao', 'Categoria / A??o', 'Categoria', 'Category', 'Acao', 'Tipo'])
+            
+            for idx, r_row in df_reasons_raw.iterrows():
+                r_val = str(r_row[col_rs_reason]).strip() if col_rs_reason and pd.notna(r_row[col_rs_reason]) else ""
+                if not r_val or r_val.lower() == 'nan':
+                    continue
+                c_val = str(r_row[col_rs_cat]).strip() if col_rs_cat and pd.notna(r_row[col_rs_cat]) else "Geral"
+                if c_val.lower() == 'nan':
+                    c_val = "Geral"
+                reasons_list.append({
+                    "reason": r_val,
+                    "category": c_val
+                })
+
+        # Prepara snapshot do estado
+        df_wh = pd.DataFrame(wh_rows) if wh_rows else pd.DataFrame()
+        df_routes_imported = pd.DataFrame(routes_solution_list) if routes_solution_list else pd.DataFrame()
+        has_routes = not df_routes_imported.empty
+        
+        state_dict = {
+            "warehouses_geocoded": df_wh,
+            "fleet_config": fleet_dict,
+            "rules_matrix": rules_matrix,
+            "clients_geocoded": pd.DataFrame(deliveries_list) if deliveries_list else pd.DataFrame(),
+            "routes_solution": df_routes_imported if has_routes else None,
+            "routes_df": df_routes_imported if has_routes else None,
+            "drivers": drivers_list,
+            "motoristas": drivers_list,
+            "reasons": reasons_list,
+            "failure_reasons": reasons_list,
+            "phase_1_complete": bool(deliveries_list),
+            "phase_2_complete": bool(fleet_dict),
+            "phase_3_complete": has_routes
+        }
+        
+        payload = serialize_state(state_dict)
+        fase_num = 3 if has_routes else 2
+        snapshot_name = f"Importação GeoRoutePlan ({datetime.now().strftime('%H:%M:%S')})"
+
+        # =========================================================================
+        # 8. PERSISTÊNCIA ATÓMICA TOTAL (TUDO-OU-NADA EM SQLite)
+        # =========================================================================
+        ensure_entregas_columns()
+        with get_db() as conn:
+            cursor = conn.cursor()
+
+            # A. Gravar entregas na BD
+            if deliveries_list:
                 cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
                 for d in deliveries_list:
                     lat_d = _clean_coord(d.get("Latitude", 0.0))
@@ -1427,154 +1756,40 @@ async def import_fleet_warehouses(
                         int(_clean_coord(d.get("Ordem", 1)) or 1),
                         str(d.get("Regras", d.get("regras", "")) or "")
                     ))
-                conn.commit()
 
-        # --- E. SAVE FLEET TO SQLITE DB FOR PHASE 2 FLEET ---
-        if fleet_dict:
-            from database import save_frota_projeto
-            fleet_rows_for_db = []
-            for v_name, v_data in fleet_dict.items():
-                fleet_rows_for_db.append({
-                    "veiculo": v_name,
-                    "capacidade_kg": v_data.capacidade_kg,
-                    "capacidade_volume": getattr(v_data, "capacidade_vol", 10.0),
-                    "custo_km": v_data.custo_km,
-                    "velocidade_media": v_data.velocidade_media,
-                    "horario_inicio": v_data.horario_inicio,
-                    "horario_fim": v_data.horario_fim,
-                    "armazem": getattr(v_data, "armazem", ""),
-                    "regras": str(getattr(v_data, "regras", "") or "")
-                })
-            save_frota_projeto(project_id, fleet_rows_for_db)
+            # B. Gravar frota na BD
+            if fleet_dict:
+                cursor.execute("DELETE FROM frota WHERE projeto_id = ?", (project_id,))
+                for v_name, v_data in fleet_dict.items():
+                    cursor.execute("""
+                        INSERT INTO frota (
+                            projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
+                            velocidade_media, horario_inicio, horario_fim, armazem, regras,
+                            max_entregas, motorista_nome, motorista_telemovel, is_active,
+                            codigo_veiculo, codigo_motorista, segunda_volta
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        project_id, v_name, float(v_data.capacidade_kg or 1000.0),
+                        float(getattr(v_data, "capacidade_vol", 10.0) or 10.0), float(v_data.custo_km or 0.65),
+                        float(v_data.velocidade_media or 50.0), str(v_data.horario_inicio or '08:00:00'), str(v_data.horario_fim or '18:00:00'),
+                        str(getattr(v_data, "armazem", "") or ""), str(getattr(v_data, "regras", "") or ""),
+                        int(getattr(v_data, "max_entregas", 30) or 30),
+                        str(getattr(v_data, "motorista_nome", "") or ""),
+                        str(getattr(v_data, "motorista_telemovel", "") or ""),
+                        1, "", "", str(getattr(v_data, "segunda_volta", "Não") or "Não")
+                    ))
 
-        # 6. Sheet: Motoristas e Carros
-        sheet_drivers = None
-        for s in xls.sheet_names:
-            sn = _norm_col(s)
-            if 'motorista' in sn or 'driver' in sn or 'condutor' in sn or 'equipa' in sn:
-                sheet_drivers = s
-                break
-                
-        drivers_list = []
-        if sheet_drivers:
-            df_drivers_raw = pd.read_excel(xls, sheet_name=sheet_drivers)
-            if not df_drivers_raw.empty:
-                col_dr_name = _match_col(df_drivers_raw.columns, ['Motorista', 'Nome', 'Nome_Motorista', 'Driver', 'Driver_Name'])
-                col_dr_pin = _match_col(df_drivers_raw.columns, ['PIN/Password', 'PIN', 'Password', 'Pin', 'Senha', 'Codigo', 'Pin_Code'])
-                col_dr_veh = _match_col(df_drivers_raw.columns, ['Viatura', 'Veiculo', 'Veiculo', 'Vehicle', 'Carro', 'Nome_Veiculo'])
-                col_dr_mat = _match_col(df_drivers_raw.columns, ['Matricula', 'Matricula', 'Plate', 'License_Plate'])
-                col_dr_tel = _match_col(df_drivers_raw.columns, ['Telemovel', 'Telemovel', 'Telefone', 'Phone', 'Contacto', 'Driver_Phone', 'Telemovel_Motorista'])
-                col_dr_route = _match_col(df_drivers_raw.columns, ['Rota Atribuida', 'Rota_Atribuida', 'Rota', 'Route', 'Plano'])
-                
-                for idx, r_row in df_drivers_raw.iterrows():
-                    dr_name = str(r_row[col_dr_name]).replace("_x000D_", "").strip() if col_dr_name and pd.notna(r_row[col_dr_name]) else ""
-                    if not dr_name or dr_name.lower() == 'nan':
-                        continue
-                    
-                    dr_pin = str(r_row[col_dr_pin]).strip() if col_dr_pin and pd.notna(r_row[col_dr_pin]) else "1234"
-                    if dr_pin.endswith('.0'):
-                        dr_pin = dr_pin[:-2]
-                    dr_veh = str(r_row[col_dr_veh]).strip() if col_dr_veh and pd.notna(r_row[col_dr_veh]) else ""
-                    if dr_veh.lower() == 'nan':
-                        dr_veh = ""
-                    dr_tel = str(r_row[col_dr_tel]).strip() if col_dr_tel and pd.notna(r_row[col_dr_tel]) else ""
-                    if dr_tel.lower() == 'nan':
-                        dr_tel = ""
-                    dr_mat = str(r_row[col_dr_mat]).strip() if col_dr_mat and pd.notna(r_row[col_dr_mat]) else ""
-                    if dr_mat.lower() == 'nan':
-                        dr_mat = ""
-                    dr_route = str(r_row[col_dr_route]).strip() if col_dr_route and pd.notna(r_row[col_dr_route]) else ""
-                    if dr_route.lower() == 'nan':
-                        dr_route = ""
-                        
-                    drivers_list.append({
-                        "name": dr_name,
-                        "pin": dr_pin,
-                        "phone": dr_tel,
-                        "vehicle": dr_veh,
-                        "matricula": dr_mat,
-                        "route": dr_route,
-                        "is_active": 1
-                    })
-                    
-        # Fallback for drivers from fleet if no Sheet 7
-        if not drivers_list and fleet_dict:
-            for v_name, v_data in fleet_dict.items():
-                m_name = getattr(v_data, 'motorista_nome', '') if hasattr(v_data, 'motorista_nome') else (v_data.get('motorista_nome', '') if isinstance(v_data, dict) else '')
-                m_tel = getattr(v_data, 'motorista_telemovel', '') if hasattr(v_data, 'motorista_telemovel') else (v_data.get('motorista_telemovel', '') if isinstance(v_data, dict) else '')
-                if m_name and m_name.lower() != 'nan':
-                    drivers_list.append({
-                        "name": m_name,
-                        "pin": "1111",
-                        "phone": m_tel or "910000000",
-                        "vehicle": v_name,
-                        "matricula": "",
-                        "route": "",
-                        "is_active": 1
-                    })
-
-        # 7. Sheet: Justifica??o entregas
-        sheet_reasons = None
-        for s in xls.sheet_names:
-            sn = _norm_col(s)
-            if 'justifica' in sn or 'motivo' in sn or 'reason' in sn or 'falha' in sn or 'nao entrega' in sn or 'recusa' in sn:
-                sheet_reasons = s
-                break
-                
-        reasons_list = []
-        if sheet_reasons:
-            df_reasons_raw = pd.read_excel(xls, sheet_name=sheet_reasons)
-            if not df_reasons_raw.empty:
-                col_rs_reason = _match_col(df_reasons_raw.columns, ['Motivo de Nao Entrega', 'Motivo de N?o Entrega', 'Motivo', 'Reason', 'Descricao', 'Justificacao', 'Motivo_Falha'])
-                col_rs_cat = _match_col(df_reasons_raw.columns, ['Categoria / Acao', 'Categoria / A??o', 'Categoria', 'Category', 'Acao', 'Tipo'])
-                
-                for idx, r_row in df_reasons_raw.iterrows():
-                    r_val = str(r_row[col_rs_reason]).strip() if col_rs_reason and pd.notna(r_row[col_rs_reason]) else ""
-                    if not r_val or r_val.lower() == 'nan':
-                        continue
-                    c_val = str(r_row[col_rs_cat]).strip() if col_rs_cat and pd.notna(r_row[col_rs_cat]) else "Geral"
-                    if c_val.lower() == 'nan':
-                        c_val = "Geral"
-                    reasons_list.append({
-                        "reason": r_val,
-                        "category": c_val
-                    })
-
-        # 8. Persist Complete Snapshot
-        df_wh = pd.DataFrame(wh_rows) if wh_rows else pd.DataFrame()
-        df_routes_imported = pd.DataFrame(routes_solution_list) if routes_solution_list else pd.DataFrame()
-        has_routes = not df_routes_imported.empty
-        
-        state_dict = {
-            "warehouses_geocoded": df_wh,
-            "fleet_config": fleet_dict,
-            "rules_matrix": rules_matrix,
-            "clients_geocoded": pd.DataFrame(deliveries_list) if deliveries_list else pd.DataFrame(),
-            "routes_solution": df_routes_imported if has_routes else None,
-            "routes_df": df_routes_imported if has_routes else None,
-            "drivers": drivers_list,
-            "motoristas": drivers_list,
-            "reasons": reasons_list,
-            "failure_reasons": reasons_list,
-            "phase_1_complete": bool(deliveries_list),
-            "phase_2_complete": bool(fleet_dict),
-            "phase_3_complete": has_routes
-        }
-        
-        payload = serialize_state(state_dict)
-        fase_num = 3 if has_routes else 2
-        snapshot_name = f"Importação GeoRoutePlan ({datetime.now().strftime('%H:%M:%S')})"
-        
-        with get_db() as conn:
-            cursor = conn.cursor()
+            # C. Gravar snapshot completo
             cursor.execute("INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)", 
                            (project_id, current_user.id, fase_num, snapshot_name, payload))
+            
+            # Commit atómico único
             conn.commit()
             
-        # Check if warehouses need geocoding
+        # Verificar armazéns sem coordenadas
         wh_needs_geo = [w["Nome_Armazem"] for w in wh_rows if float(w.get("Latitude", 0)) == 0]
         
-        msg = f"Ficheiro importado com sucesso ({len(wh_rows)} armaz?ns, {len(fleet_dict)} ve?culos, {len(deliveries_list)} entregas georreferenciadas, {len(drivers_list)} motoristas, {len(reasons_list)} motivos de n?o entrega, {len(routes_solution_list)} paragens atribu?das)."
+        msg = f"Ficheiro validado e importado com sucesso ({len(wh_rows)} armazéns, {len(fleet_dict)} veículos, {len(deliveries_list)} entregas georreferenciadas, {len(drivers_list)} motoristas, {len(reasons_list)} motivos de não entrega, {len(routes_solution_list)} paragens atribuídas)."
         if wh_needs_geo:
             msg += f" ⚠️ Atenção: O armazém '{wh_needs_geo[0]}' precisa de confirmação da morada na aba Frota e Armazéns."
             
@@ -1585,7 +1800,8 @@ async def import_fleet_warehouses(
             "num_warehouses": len(wh_rows),
             "num_vehicles": len(fleet_dict),
             "num_deliveries": len(deliveries_list),
-            "num_routes": len(routes_solution_list)
+            "num_routes": len(routes_solution_list),
+            "audit_grid": audit_grid
         }
         
     except HTTPException as he:

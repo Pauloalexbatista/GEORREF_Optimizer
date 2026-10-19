@@ -375,9 +375,26 @@ export default function GeoreferencingPage() {
     loadDeliveries();
   }, [selectedProject]);
 
+  // Audit Grid State
+  interface AuditSheetItem {
+    sheet: string;
+    required: boolean;
+    total_rows: number;
+    valid_rows: number;
+    status: "OK" | "ERRO";
+    errors: string[];
+  }
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [auditGrid, setAuditGrid] = useState<AuditSheetItem[]>([]);
+  const [auditStatus, setAuditStatus] = useState<"success" | "audit_failed">("success");
+  const [auditMessage, setAuditMessage] = useState("");
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedProject) return;
+
+    // Reset input so same file can be selected again
+    const inputEl = e.target;
 
     setLoading(true);
     setStep("geocoding");
@@ -389,14 +406,29 @@ export default function GeoreferencingPage() {
         method: "POST",
         body: formData,
       });
-      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
-      setDeliveries(data);
-      setStep("results");
+
+      if (importRes && importRes.status === "audit_failed") {
+        setAuditGrid(importRes.audit_grid || []);
+        setAuditStatus("audit_failed");
+        setAuditMessage(importRes.message || "Auditoria de importação rejeitou o ficheiro devido a erros de validação.");
+        setAuditModalOpen(true);
+        setStep("upload");
+      } else {
+        // Success
+        setAuditGrid(importRes.audit_grid || []);
+        setAuditStatus("success");
+        setAuditMessage(importRes.message || "Ficheiro validado e importado com sucesso!");
+        setAuditModalOpen(true);
+        const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+        setDeliveries(data);
+        setStep("results");
+      }
     } catch (err: any) {
       alert(err.message || "Erro ao importar GeoRoutePlan.xlsx. Certifique-se de que utiliza o modelo oficial.");
       setStep("upload");
     } finally {
       setLoading(false);
+      if (inputEl) inputEl.value = "";
     }
   };
 
@@ -1068,13 +1100,120 @@ export default function GeoreferencingPage() {
               });
               const res = await apiRequest(`/api/geocoding/${selectedProject.id}`);
               setDeliveries(res);
-              setEditingDelivery(null);
             } catch (err: any) {
               alert("Erro ao guardar georreferenciação: " + (err.message || "Erro desconhecido"));
             }
           }}
           onClose={() => setEditingDelivery(null)}
         />
+      )}
+
+      {/* Audit Grid Modal (Tudo-ou-Nada) */}
+      {auditModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4">
+              <div className="flex items-center space-x-3">
+                <span className={`text-2xl p-2 rounded-xl ${auditStatus === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
+                  {auditStatus === "success" ? "✅" : "❌"}
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    {auditStatus === "success" ? "Auditoria Concluída: Ficheiro Válido" : "Falha na Auditoria: Gravação Rejeitada"}
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">{auditMessage}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAuditModalOpen(false)}
+                className="text-zinc-400 hover:text-white text-lg cursor-pointer px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Grelha das 9 Abas */}
+            <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/40">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-zinc-900 text-zinc-400 border-b border-zinc-800 uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="py-2.5 px-3">Aba Canónica</th>
+                    <th className="py-2.5 px-3 text-center">Tipo</th>
+                    <th className="py-2.5 px-3 text-center">Total Linhas</th>
+                    <th className="py-2.5 px-3 text-center">Validadas</th>
+                    <th className="py-2.5 px-3 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 font-sans">
+                  {auditGrid.map((item, idx) => (
+                    <React.Fragment key={idx}>
+                      <tr className={item.status === "ERRO" ? "bg-red-950/20" : "hover:bg-zinc-900/30"}>
+                        <td className="py-2.5 px-3 font-semibold text-zinc-200 flex items-center space-x-1.5">
+                          <span>{item.status === "OK" ? "📄" : "⚠️"}</span>
+                          <span>{item.sheet}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${item.required ? "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20" : "bg-zinc-800 text-zinc-400"}`}>
+                            {item.required ? "Obrigatória" : "Opcional"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-zinc-300 font-mono">{item.total_rows}</td>
+                        <td className="py-2.5 px-3 text-center text-zinc-300 font-mono">{item.valid_rows}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            item.status === "OK"
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              : "bg-red-500/10 text-red-400 border border-red-500/20"
+                          }`}>
+                            {item.status}
+                          </span>
+                        </td>
+                      </tr>
+                      {item.errors && item.errors.length > 0 && (
+                        <tr className="bg-red-950/30 border-b border-red-900/30">
+                          <td colSpan={5} className="py-2 px-4 text-[11px] text-red-300">
+                            <div className="font-semibold mb-1 flex items-center space-x-1">
+                              <span>🚨</span>
+                              <span>Inconformidades detetadas (requer correção no Excel):</span>
+                            </div>
+                            <ul className="list-disc pl-5 space-y-0.5 font-mono text-[10px] text-red-200">
+                              {item.errors.map((err, eIdx) => (
+                                <li key={eIdx}>{err}</li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {auditStatus === "audit_failed" && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300 text-xs flex items-start space-x-2">
+                <span className="text-base mt-0.5">🛡️</span>
+                <span>
+                  <strong>Mecanismo Tudo-ou-Nada Ativado:</strong> Nenhuma alteração foi gravada na base de dados (Rollback preventivo). Corrija as linhas indicadas no seu Excel e volte a carregar o ficheiro.
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setAuditModalOpen(false)}
+                className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  auditStatus === "success"
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
+                    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                }`}
+              >
+                {auditStatus === "success" ? "Avançar para Encomendas" : "Fechar e Rever Ficheiro"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   </DashboardLayout>
