@@ -396,7 +396,7 @@ export default function TacticalPage() {
   const [solvingSeconds, setSolvingSeconds] = useState(0);
   const [auditData, setAuditData] = useState<{
     total_violations: number;
-    routes_status: Record<string, { is_valid: boolean; violations_count: number; violations: ViolationItem[] }>;
+    routes_status: Record<string, { is_valid: boolean; errors_count?: number; warnings_count?: number; violations_count: number; violations: ViolationItem[] }>;
     all_violations: ViolationItem[];
   }>({
     total_violations: 0,
@@ -1116,7 +1116,7 @@ export default function TacticalPage() {
     }
 
     const allViolations: ViolationItem[] = [];
-    const routesStatus: Record<string, { is_valid: boolean; violations_count: number; violations: ViolationItem[] }> = {};
+    const routesStatus: Record<string, { is_valid: boolean; errors_count?: number; warnings_count?: number; violations_count: number; violations: ViolationItem[] }> = {};
     const uniqueRoutes = Array.from(new Set(routes.map((r) => r.Rota).filter((r) => !isPendingRoute(r))));
 
     uniqueRoutes.forEach((rName) => {
@@ -1246,8 +1246,13 @@ export default function TacticalPage() {
         }
       }
 
+      const errors = rViolations.filter((v) => v.severity === "error");
+      const warnings = rViolations.filter((v) => v.severity === "warning");
+
       routesStatus[rName] = {
-        is_valid: rViolations.length === 0,
+        is_valid: errors.length === 0,
+        errors_count: errors.length,
+        warnings_count: warnings.length,
         violations_count: rViolations.length,
         violations: rViolations,
       };
@@ -2161,7 +2166,8 @@ export default function TacticalPage() {
 
                       const totalDurationStr = allStops.length > 0 ? calculateDurationString(startTimeStr, returnArrivalTimeStr) : "0h 0m";
                       const routeAudit = auditData?.routes_status?.[routeName];
-                      const hasRouteErrors = routeAudit && !routeAudit.is_valid;
+                      const hasRouteErrors = routeAudit && !routeAudit.is_valid && (routeAudit.errors_count || 0) > 0;
+                      const hasRouteWarnings = routeAudit && (routeAudit.warnings_count || 0) > 0 && (routeAudit.errors_count || 0) === 0;
 
                       return (
                         <React.Fragment key={routeName}>
@@ -2307,7 +2313,18 @@ export default function TacticalPage() {
                                   className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-600 hover:bg-rose-500 text-white shadow flex items-center justify-center gap-1 cursor-pointer mx-auto"
                                   title="Clique para ver relatório detalhado de erros"
                                 >
-                                  🚨 {routeAudit.violations_count} {routeAudit.violations_count === 1 ? "Erro" : "Erros"}
+                                  🚨 {routeAudit?.errors_count || 1} {(routeAudit?.errors_count || 1) === 1 ? "Erro" : "Erros"}
+                                </button>
+                              ) : hasRouteWarnings ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setAuditModalOpen(true);
+                                  }}
+                                  className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-600 hover:bg-amber-500 text-white shadow flex items-center justify-center gap-1 cursor-pointer mx-auto"
+                                  title="Clique para ver avisos operacionais (ex: chegadas antecipadas com espera)"
+                                >
+                                  ⚠️ {routeAudit?.warnings_count} {routeAudit?.warnings_count === 1 ? "Aviso" : "Avisos"}
                                 </button>
                               ) : isPending ? (
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 font-bold border border-amber-800/60">

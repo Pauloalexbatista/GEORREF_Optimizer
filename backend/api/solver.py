@@ -360,6 +360,19 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
     cumul_load = 0.0
     cumul_vol = 0.0
     
+    # Sincronização inteligente da saída do armazém com a abertura do 1º cliente:
+    # Se o primeiro cliente só abre às 09:00 e a viagem demora 15 min, a viatura arranca às 08:45,
+    # evitando ficar 2h15 parada à espera na rua e eliminando chegadas prematuras artificiais.
+    if stops_list:
+        first_s = stops_list[0]
+        f_lat = float(first_s.get("Latitude", depot_lat) or depot_lat)
+        f_lon = float(first_s.get("Longitude", depot_lon) or depot_lon)
+        f_dist = haversine_distance(depot_lat, depot_lon, f_lat, f_lon) * 1.30
+        f_trav = (f_dist / max(20.0, avg_speed)) * 60.0
+        f_win_s, _ = parse_time_window_str(str(first_s.get("Janela_Horaria", "Qualquer") or "Qualquer"))
+        if f_win_s > 0 and (cur_time_min + f_trav) < (f_win_s - 15):
+            cur_time_min = max(cur_time_min, f_win_s - f_trav)
+
     order = 1
     for idx, stop_dict in enumerate(stops_list):
         c_lat = float(stop_dict.get("Latitude", p_lat))
@@ -377,11 +390,18 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
             pred_speed = get_predictive_speed(p_cp, p_cp, departure_hour=hour_of_day, fallback_speed=avg_speed)
             segment_speed = get_segment_speed(dist, pred_speed)
             travel_min = (dist / segment_speed) * 60.0
-        cumul_dist += dist
-        arr_min = cur_time_min + travel_min
-        
+
         win_str = str(stop_dict.get("Janela_Horaria", "Qualquer") or "Qualquer")
         win_s, win_e = parse_time_window_str(win_str)
+
+        # Pausa de Almoço / Intervalo Operacional entre Janelas (ex: manhã -> tarde):
+        # Se a saída da paragem anterior + tempo de viagem chegar com mais de 15 minutos de avanço face à abertura da janela,
+        # o motorista efetua a pausa/almoço, iniciando a viagem de modo a chegar sincronizado com a abertura do cliente.
+        if win_s > 0 and (cur_time_min + travel_min) < (win_s - 15):
+            cur_time_min = max(cur_time_min, win_s - travel_min)
+
+        cumul_dist += dist
+        arr_min = cur_time_min + travel_min
         
         # Calculate waiting time if arrived before opening
         wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0

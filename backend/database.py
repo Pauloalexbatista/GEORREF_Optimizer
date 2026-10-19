@@ -1145,7 +1145,11 @@ def ensure_entregas_columns():
                 ("ordem", "INTEGER DEFAULT 0"),
                 ("ordem_paragem", "INTEGER DEFAULT 0"),
                 ("regras", "TEXT DEFAULT ''"),
-                ("is_active", "INTEGER DEFAULT 1")
+                ("tipo_operacao", "TEXT DEFAULT 'D'"),
+                ("par_id", "TEXT DEFAULT ''"),
+                ("is_active", "INTEGER DEFAULT 1"),
+                ("hora_inicio_servico", "TEXT DEFAULT ''"),
+                ("hora_fim_servico", "TEXT DEFAULT ''")
             ]:
                 if col not in cols:
                     try:
