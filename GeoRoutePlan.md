@@ -553,6 +553,15 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - A resolução e extração de motorista e viatura (`drv_raw`, `has_driver`, `drv_name`, `veh_raw`, `veh_name`) foi antecipada para o início do processamento de cada rota.
     * **Blindagem CORS em Exceções Globais (`backend/main.py`)**:
       - Adicionado o `@app.exception_handler(Exception)` global para que qualquer exceção imprevista devolva um `JSONResponse` com código 500 e detalhe explícito do erro, garantindo que a camada de middleware de CORS injete sempre os cabeçalhos `Access-Control-Allow-Origin`, eliminando o falso erro de browser *"Failed to fetch"*.
+14. **Sincronização de Horários de Saída/Almoço & Correção do Botão '⚡ Ordenar' (✅ Concluído no Código)**:
+    * **Resolução do Erro SQLite 'no such column: hora_inicio_servico'**:
+      - O endpoint `optimize_single_route` (acionado pelo botão "⚡ Ordenar") tentava persistir `hora_inicio_servico` e `hora_fim_servico` na tabela `entregas`, as quais não constavam no esquema SQLite original.
+      - As colunas foram adicionadas via auto-migração `ensure_entregas_columns()` em `database.py` e `backend/database.py`.
+    * **Eliminação dos Falsos Erros por Chegada Prematura**:
+      - As viaturas iniciavam o turno às 06:30, mas as entregas abriam apenas às 09:00 ou 14:00. O recálculo estático colocava as carrinhas a chegar às 06:39 e 10:21 (esperas de 2h15m), disparando falsos erros de violação horária (`Chegada Prematura`) no dashboard tático.
+      - Sincronização inteligente implementada em `recalculate_route_stops`: a viatura arranca do armazém alinhada com a abertura do primeiro cliente (`win_s - travel_min`) e realiza a pausa de almoço/descanso antes de janelas da tarde (14:00), eliminando os 44 falsos erros de avanço e reduzindo as rotas a 0 erros.
+    * **Diferenciação Visual entre Erros Bloqueantes e Avisos**:
+      - O dashboard tático (`frontend/src/app/dashboard/tactical/page.tsx`) passou a distinguir erros reais (`severity: 'error'`: atrasos após fecho, excesso de kg/m³, violação de regras) de simples avisos informativos (`severity: 'warning'`: chegadas antes da abertura), exibindo badges diferenciados (`🚨 X Erros` em vermelho vs. `⚠️ X Avisos` em âmbar).
 
 ---
 
