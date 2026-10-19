@@ -83,6 +83,9 @@ def init_database():
                 empresa_id INTEGER NOT NULL,
                 nome TEXT NOT NULL,
                 descricao TEXT,
+                data_distribuicao TEXT,
+                status TEXT DEFAULT 'draft',
+                is_active BOOLEAN DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (empresa_id) REFERENCES empresas (id)
@@ -280,6 +283,7 @@ def init_database():
         add_column_if_missing("empresas", "driver_password", "TEXT DEFAULT ''")
         add_column_if_missing("projetos", "is_active", "BOOLEAN DEFAULT 0")
         add_column_if_missing("projetos", "status", "TEXT DEFAULT 'draft'")
+        add_column_if_missing("projetos", "data_distribuicao", "TEXT")
         add_column_if_missing("empresas", "api_key_google", "TEXT DEFAULT ''")
         
         add_column_if_missing("utilizadores", "is_superadmin", "BOOLEAN DEFAULT 0")
@@ -437,14 +441,16 @@ def autenticar(email, password):
 
 # ============ PROJETOS ============
 
-def criar_projeto(empresa_id, nome, descricao=''):
-    """Criar novo projeto"""
+def criar_projeto(empresa_id, nome, descricao='', data_distribuicao=None):
+    """Criar novo projeto com data de distribuição associada"""
+    if not data_distribuicao:
+        data_distribuicao = datetime.now().strftime("%Y-%m-%d")
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO projetos (empresa_id, nome, descricao)
-            VALUES (?, ?, ?)
-        """, (empresa_id, nome, descricao))
+            INSERT INTO projetos (empresa_id, nome, descricao, data_distribuicao, status)
+            VALUES (?, ?, ?, ?, 'draft')
+        """, (empresa_id, nome, descricao, data_distribuicao))
         conn.commit()
         return cursor.lastrowid
 
