@@ -450,7 +450,9 @@ class AdvancedRouteOptimizer:
 
         # 6. Time Dimension in SECONDS with Per-Vehicle Speed Model
         HORIZON_SEC = 24 * 3600
-        MAX_WAIT_SLACK_SEC = 14400  # Até 4 horas de espera/pausa (almoço e transição entre janelas manhã/tarde)
+        # Folga de espera máxima entre paragens consecutivas: até 90 min (5400s)
+        # Permite pausa de almoço e transições normais, mas proíbe terminantemente paragens com 4 horas de espera à porta do cliente.
+        MAX_WAIT_SLACK_SEC = 5400
         time_cb_cache = {}
         vehicle_time_cb_indices = []
 
@@ -479,6 +481,10 @@ class AdvancedRouteOptimizer:
             "Time"
         )
         time_dimension = routing.GetDimensionOrDie("Time")
+        # Penalização estrita de tempo de espera/ociosidade do veículo (VRPTW otimizado):
+        # Cada segundo de espera ociosa tem custo positivo na função objetivo,
+        # obrigando o solver a empacotar rotas compactas e penalizar lacunas temporais artificiais.
+        time_dimension.SetSlackCostCoefficientForAllVehicles(50)
 
         if respect_time_windows:
             for node in range(num_warehouses, num_nodes):
@@ -770,8 +776,8 @@ class AdvancedRouteOptimizer:
                     if arr > w_e:
                         return False, 0.0
                     if arr < w_s:
-                        # Permitir pausa de almoço ou espera entre manhãs e tardes (até 180 min)
-                        if (w_s - arr) > 180:
+                        # Permitir pausa de almoço ou espera moderada (máximo 60 min)
+                        if (w_s - arr) > 60:
                             return False, 0.0
                         arr = float(w_s)
 

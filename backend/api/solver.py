@@ -397,10 +397,11 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         win_str = str(stop_dict.get("Janela_Horaria", "Qualquer") or "Qualquer")
         win_s, win_e = parse_time_window_str(win_str)
 
-        # Pausa de Almoço / Intervalo Operacional entre Janelas (ex: manhã -> tarde):
-        # Se a saída da paragem anterior + tempo de viagem chegar com avanço face à abertura de uma janela vespertina (após 12h/13h),
-        # o motorista efetua a pausa/almoço, iniciando a viagem de modo a chegar sincronizado com a abertura do cliente.
-        if idx > 0 and cur_time_min >= 720 and win_s >= 780 and (cur_time_min + travel_min) < (win_s - 15):
+        # Sincronização Operacional e Pausa/Almoço entre Janelas:
+        # Se a viatura chegar com avanço face à abertura da janela horária do cliente (ex: transição manhã -> tarde ou tarde -> noite),
+        # o motorista efetua a respetiva pausa/almoço/espera operacional no ponto de descanso/armazém,
+        # iniciando a viagem para chegar sincronizado com a abertura do cliente (eliminando a anomalia de viaturas paradas horas à porta).
+        if win_s > 0 and (cur_time_min + travel_min) < (win_s - 15):
             cur_time_min = max(cur_time_min, win_s - travel_min)
 
         cumul_dist += dist
@@ -519,6 +520,9 @@ def sequence_route_with_time_windows(
 
         win_str = str(selected.get("Janela_Horaria", "Qualquer") or "Qualquer")
         win_s, win_e = parse_time_window_str(win_str)
+        if win_s > 0 and (curr_time_min + travel_time_min) < (win_s - 15):
+            curr_time_min = max(curr_time_min, win_s - travel_time_min)
+        arr_min = curr_time_min + travel_time_min
         wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0
         serv_start_min = arr_min + wait_min
         serv_time = float(selected.get("Tempo_Entrega", 15.0) or 15.0)
