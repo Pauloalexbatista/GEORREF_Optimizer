@@ -36,8 +36,13 @@ interface StopItem {
   janela_fim?: string;
   window_end?: string;
   status: string;
-  hora_entrega_real?: string | null;
+  expected_arrival?: string;
   actual_arrival_time?: string | null;
+  hora_entrega_real?: string | null;
+  dynamic_eta?: string;
+  delay_minutes?: number;
+  delay_risk?: boolean;
+  punctuality_status?: string;
   motivo_falha?: string | null;
   fail_reason?: string | null;
   notas_motorista?: string | null;
@@ -74,6 +79,9 @@ interface RouteItem {
   last_lng?: number | null;
   last_gps_time?: string;
   speed?: number;
+  current_delay_min?: number;
+  risk_stops_count?: number;
+  punctuality_status?: string;
 }
 
 export default function TrackingPage() {
@@ -87,6 +95,7 @@ export default function TrackingPage() {
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [expandedRoutes, setExpandedRoutes] = useState<Record<string, boolean>>({});
   const [searchFilter, setSearchFilter] = useState<string>("");
+  const [filterOnlyRisk, setFilterOnlyRisk] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<"split" | "map" | "table">("split");
 
   // Multi-seleção de Viaturas para exibição no Mapa
@@ -274,6 +283,10 @@ export default function TrackingPage() {
         const rPct = Number(r.percent_complete ?? (rTot > 0 ? Math.round((rEnt / rTot) * 100) : 0));
         const hasDrv = Boolean(r.has_driver && r.driver_name && r.driver_name.trim() !== "");
 
+        const curDelay = Number(r.current_delay_min ?? 0);
+        const riskStops = Number(r.risk_stops_count ?? 0);
+        const punctStatus = r.punctuality_status || (curDelay > 15 ? "atrasado" : curDelay < -10 ? "adiantado" : "no_horario");
+
         return {
           ...r,
           route_name: rName,
@@ -287,6 +300,9 @@ export default function TrackingPage() {
           falhadas: rFal,
           pendentes: rPen,
           percent_complete: rPct,
+          current_delay_min: curDelay,
+          risk_stops_count: riskStops,
+          punctuality_status: punctStatus,
           stops: (r.stops || []).map((s, sIdx) => ({
             ...s,
             sequence: Number(s.sequence ?? sIdx + 1),
@@ -299,6 +315,11 @@ export default function TrackingPage() {
             telefone: s.telefone || s.phone || "",
             phone: s.phone || s.telefone || "",
             status: s.status || "Pendente",
+            expected_arrival: s.expected_arrival || "",
+            dynamic_eta: s.dynamic_eta || s.expected_arrival || "",
+            delay_minutes: Number(s.delay_minutes ?? curDelay),
+            delay_risk: Boolean(s.delay_risk),
+            punctuality_status: s.punctuality_status || "no_horario",
           })),
         };
       })
@@ -327,19 +348,25 @@ export default function TrackingPage() {
   const totalPendentes = activeRoutes.reduce((acc, r) => acc + (r.pendentes || 0), 0);
   const globalPercent = totalStops > 0 ? Math.round((totalEntregues / totalStops) * 100) : 0;
   const routesWithDriver = activeRoutes.filter((r) => r.has_driver).length;
+  const totalRiskStops = data?.totals?.total_risk_stops ?? activeRoutes.reduce((acc, r) => acc + (r.risk_stops_count || 0), 0);
+  const avgFleetDelay = data?.totals?.avg_delay_min ?? (activeRoutes.length > 0 ? Math.round(activeRoutes.reduce((acc, r) => acc + (r.current_delay_min || 0), 0) / activeRoutes.length) : 0);
 
-  // Filtragem por pesquisa de texto
+  // Filtragem por pesquisa de texto e filtro de risco
   const filteredTableRoutes = useMemo(() => {
-    if (!searchFilter.trim()) return activeRoutes;
+    let list = activeRoutes;
+    if (filterOnlyRisk) {
+      list = list.filter((r) => (r.risk_stops_count || 0) > 0 || (r.current_delay_min || 0) > 10);
+    }
+    if (!searchFilter.trim()) return list;
     const q = searchFilter.toLowerCase();
-    return activeRoutes.filter(
+    return list.filter(
       (r) =>
         (r.route_name || "").toLowerCase().includes(q) ||
         (r.vehicle_id || "").toLowerCase().includes(q) ||
         (r.driver_name || "").toLowerCase().includes(q) ||
         (r.next_stop?.cliente || "").toLowerCase().includes(q)
     );
-  }, [activeRoutes, searchFilter]);
+  }, [activeRoutes, searchFilter, filterOnlyRisk]);
 
   const allSelected =
     activeRoutes.length > 0 && selectedRouteIds.length === activeRoutes.length;
@@ -508,7 +535,7 @@ export default function TrackingPage() {
         </div>
 
         {/* Resumo Global de KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
             <span className="text-xs opacity-70 font-medium block">Total Paragens</span>
             <span className="text-2xl font-black mt-1 block">{totalStops}</span>
@@ -545,7 +572,41 @@ export default function TrackingPage() {
             <span className="text-[11px] opacity-70 mt-1 block">Próximas entregas na fila</span>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl col-span-2 sm:col-span-4 lg:col-span-1">
+          {/* Card de Alertas de Janela / ETA Dinâmico */}
+          <div className={`p-4 rounded-xl border transition-all ${
+            totalRiskStops > 0 
+              ? "bg-rose-950/20 border-rose-700/60 shadow-sm" 
+              : "bg-zinc-900 border-zinc-800"
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-bold block ${totalRiskStops > 0 ? "text-rose-400" : "opacity-70"}`}>
+                🚨 Risco de Janela
+              </span>
+              {totalRiskStops > 0 && (
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              )}
+            </div>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className={`text-2xl font-black ${totalRiskStops > 0 ? "text-rose-400" : ""}`}>
+                {totalRiskStops}
+              </span>
+              <span className="text-[11px] font-semibold opacity-80">
+                {avgFleetDelay > 0 ? `+${avgFleetDelay}m desvio` : avgFleetDelay < 0 ? `${avgFleetDelay}m` : "Pontual"}
+              </span>
+            </div>
+            <button
+              onClick={() => setFilterOnlyRisk(!filterOnlyRisk)}
+              className={`text-[10px] font-bold px-2 py-0.5 mt-2 rounded transition-colors cursor-pointer border ${
+                filterOnlyRisk
+                  ? "bg-rose-600 text-white border-rose-500"
+                  : "bg-zinc-850 hover:bg-zinc-800 text-zinc-300 border-zinc-700"
+              }`}
+            >
+              {filterOnlyRisk ? "✕ Ver Todas" : "Filtrar em Risco"}
+            </button>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
             <span className="text-xs opacity-70 font-medium block">Filtro no Mapa</span>
             <div className="flex items-center gap-1.5 mt-2">
               <span className="text-xs font-bold bg-indigo-500/10 text-indigo-500 border border-indigo-500/30 px-2 py-1 rounded-lg">
@@ -720,13 +781,34 @@ export default function TrackingPage() {
 
                               {/* Rota / Viatura */}
                               <td className="py-2.5 px-3">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="bg-indigo-600 text-white font-extrabold text-[11px] px-2 py-0.5 rounded shadow-sm">
-                                    {rName}
-                                  </span>
-                                  <span className="font-mono text-[10px] opacity-75">
-                                    {route.vehicle_id || "-"}
-                                  </span>
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="bg-indigo-600 text-white font-extrabold text-[11px] px-2 py-0.5 rounded shadow-sm">
+                                      {rName}
+                                    </span>
+                                    <span className="font-mono text-[10px] opacity-75">
+                                      {route.vehicle_id || "-"}
+                                    </span>
+                                  </div>
+                                  {hasDriver && (
+                                    (route.risk_stops_count || 0) > 0 ? (
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse w-fit">
+                                        ⚠️ {route.risk_stops_count} em risco (Desvio: {route.current_delay_min && route.current_delay_min > 0 ? `+${route.current_delay_min}m` : `${route.current_delay_min}m`})
+                                      </span>
+                                    ) : (route.current_delay_min || 0) > 10 ? (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 w-fit">
+                                        +{route.current_delay_min}m atraso
+                                      </span>
+                                    ) : (route.current_delay_min || 0) < -10 ? (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/40 w-fit">
+                                        {route.current_delay_min}m adiantado
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 w-fit">
+                                        ✓ No horário
+                                      </span>
+                                    )
+                                  )}
                                 </div>
                               </td>
 
@@ -780,10 +862,21 @@ export default function TrackingPage() {
                                   </span>
                                 ) : nextStop ? (
                                   <div className="flex items-center justify-between gap-1.5">
-                                    <div className="truncate max-w-[140px]">
-                                      <span className="font-extrabold text-[11px] text-sky-600 dark:text-sky-400">
-                                        #{nextStop.sequence} {nextStop.cliente || nextStop.client_name}
-                                      </span>
+                                    <div className="truncate max-w-[160px]">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-extrabold text-[11px] text-sky-600 dark:text-sky-400">
+                                          #{nextStop.sequence} {nextStop.cliente || nextStop.client_name}
+                                        </span>
+                                        {nextStop.dynamic_eta && (
+                                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded font-mono ${
+                                            nextStop.delay_risk
+                                              ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                                              : "bg-zinc-800 text-zinc-300"
+                                          }`}>
+                                            ETA {nextStop.dynamic_eta}
+                                          </span>
+                                        )}
+                                      </div>
                                       <span className="block text-[10px] opacity-70 truncate">
                                         {nextStop.morada}
                                       </span>
@@ -827,9 +920,16 @@ export default function TrackingPage() {
                                   <div className="rounded-xl border border-zinc-800 overflow-hidden">
                                     <div className="p-2 bg-zinc-850 border-b border-zinc-800 flex items-center justify-between text-[11px] font-bold">
                                       <span>📋 Sequência de Entregas da {rName} ({route.stops.length} Paragens)</span>
-                                      <span className="opacity-75">
-                                        Carga: {Math.round(route.stops.reduce((a, s) => a + (s.peso_kg || s.weight_kg || 0), 0))} kg
-                                      </span>
+                                      <div className="flex items-center gap-3">
+                                        {(route.risk_stops_count || 0) > 0 && (
+                                          <span className="text-rose-400 text-xs font-black">
+                                            🚨 {route.risk_stops_count} Paragens com Risco de Atraso
+                                          </span>
+                                        )}
+                                        <span className="opacity-75">
+                                          Carga: {Math.round(route.stops.reduce((a, s) => a + (s.peso_kg || s.weight_kg || 0), 0))} kg
+                                        </span>
+                                      </div>
                                     </div>
 
                                     <table className="w-full text-left text-xs border-collapse">
@@ -839,6 +939,7 @@ export default function TrackingPage() {
                                           <th className="py-2 px-3">Cliente</th>
                                           <th className="py-2 px-3">Morada & Localidade</th>
                                           <th className="py-2 px-2 text-center">Janela</th>
+                                          <th className="py-2 px-2 text-center">ETA Dinâmico</th>
                                           <th className="py-2 px-2 text-center">Estado</th>
                                           <th className="py-2 px-2 text-center">Ação</th>
                                         </tr>
@@ -848,12 +949,17 @@ export default function TrackingPage() {
                                           const isDone = stop.status === "Entregue";
                                           const isFail = stop.status === "Não Entregue" || stop.status === "Nao Entregue";
                                           const isNext = nextStop?.sequence === stop.sequence;
+                                          const isRisk = Boolean(stop.delay_risk && !isDone && !isFail);
 
                                           return (
                                             <tr
                                               key={`substop-${rName}-${stop.sequence}`}
                                               className={`hover:bg-zinc-850/40 transition-colors ${
-                                                isNext ? "bg-sky-500/10" : ""
+                                                isRisk
+                                                  ? "bg-rose-500/10 border-l-2 border-rose-500"
+                                                  : isNext
+                                                  ? "bg-sky-500/10"
+                                                  : ""
                                               }`}
                                             >
                                               <td className="py-2 px-3 text-center font-bold font-mono">
@@ -863,6 +969,8 @@ export default function TrackingPage() {
                                                       ? "bg-emerald-500 text-white"
                                                       : isFail
                                                       ? "bg-rose-500 text-white"
+                                                      : isRisk
+                                                      ? "bg-rose-600 text-white animate-pulse"
                                                       : isNext
                                                       ? "bg-sky-500 text-white ring-2 ring-sky-300"
                                                       : "bg-zinc-800 opacity-80"
@@ -892,6 +1000,28 @@ export default function TrackingPage() {
                                                 {stop.janela_inicio || "08:00"} - {stop.janela_fim || "18:00"}
                                               </td>
 
+                                              {/* ETA Dinâmico com Previsão Real */}
+                                              <td className="py-2 px-2 text-center">
+                                                {isDone ? (
+                                                  <span className="text-[10px] font-bold text-emerald-400 font-mono">
+                                                    {stop.hora_entrega_real || stop.actual_arrival_time || "Feito"}
+                                                  </span>
+                                                ) : isRisk ? (
+                                                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 font-mono inline-block">
+                                                    ⚠️ {stop.dynamic_eta || stop.expected_arrival} (Atraso)
+                                                  </span>
+                                                ) : stop.dynamic_eta ? (
+                                                  <span className="text-[10px] font-semibold text-sky-400 font-mono">
+                                                    {stop.dynamic_eta}
+                                                    {(stop.delay_minutes || 0) > 5 && (
+                                                      <span className="text-[9px] text-amber-400 ml-1">+{stop.delay_minutes}m</span>
+                                                    )}
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[10px] opacity-60 font-mono">{stop.expected_arrival || "-"}</span>
+                                                )}
+                                              </td>
+
                                               <td className="py-2 px-2 text-center">
                                                 <span
                                                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -899,10 +1029,12 @@ export default function TrackingPage() {
                                                       ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                                                       : isFail
                                                       ? "bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                                                      : isRisk
+                                                      ? "bg-rose-500/20 text-rose-400 font-black"
                                                       : "bg-sky-500/20 text-sky-600 dark:text-sky-400"
                                                   }`}
                                                 >
-                                                  {stop.status}
+                                                  {isRisk ? "⚠️ Em Risco" : stop.status}
                                                 </span>
                                                 {stop.hora_entrega_real && (
                                                   <span className="block text-[9px] opacity-60 font-mono">

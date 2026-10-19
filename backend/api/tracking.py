@@ -20,6 +20,33 @@ from database import get_db, get_projeto
 from backend.api.auth import get_current_user, UserResponse
 from utils.persistence_manager import serialize_state, deserialize_state
 
+def _parse_time_minutes(t_str: Any) -> Optional[int]:
+    """Converte 'HH:MM' ou 'HH:MM:SS' para minutos desde a meia-noite."""
+    if not t_str or not isinstance(t_str, str):
+        return None
+    t_clean = t_str.strip()
+    if "T" in t_clean:
+        t_clean = t_clean.split("T")[-1]
+    elif " " in t_clean:
+        t_clean = t_clean.split(" ")[-1]
+        
+    try:
+        parts = t_clean.split(":")
+        if len(parts) >= 2:
+            h = int(parts[0])
+            m = int(parts[1])
+            return h * 60 + m
+    except Exception:
+        return None
+    return None
+
+def _minutes_to_time(m_val: int) -> str:
+    """Converte minutos desde a meia-noite para 'HH:MM'."""
+    m_val = max(0, min(int(m_val), 24 * 60 - 1))
+    h = m_val // 60
+    m = m_val % 60
+    return f"{h:02d}:{m:02d}"
+
 router = APIRouter(prefix="/tracking", tags=["tracking"])
 
 class AssignDriverPayload(BaseModel):
@@ -323,6 +350,74 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                         "lng": lng_val,
                     })
                 
+                # 4.1 Cálculo do Desvio Atual (Delay) e ETA Dinâmico para a Rota
+                current_delay_min = 0
+                has_calculated_delay = False
+                
+                # Procurar a paragem mais recente finalizada com hora de picagem e previsão
+                for s in reversed(stops):
+                    if s["actual_arrival_time"] and s["expected_arrival"]:
+                        act_m = _parse_time_minutes(s["actual_arrival_time"])
+                        exp_m = _parse_time_minutes(s["expected_arrival"])
+                        if act_m is not None and exp_m is not None:
+                            current_delay_min = act_m - exp_m
+                            has_calculated_delay = True
+                            break
+                            
+                # Se ainda não houver paragens concluídas, mas tiver motorista e já passou da hora prevista da 1ª paragem:
+                if not has_calculated_delay and has_driver and stops:
+                    first_exp_m = _parse_time_minutes(stops[0]["expected_arrival"])
+                    now_m = datetime.now().hour * 60 + datetime.now().minute
+                    if first_exp_m is not None and now_m > first_exp_m:
+                        current_delay_min = max(0, min(120, now_m - first_exp_m))
+
+                # Atualizar cada paragem com o ETA dinâmico e estado de pontualidade/risco de janela
+                for s in stops:
+                    exp_m = _parse_time_minutes(s["expected_arrival"])
+                    act_m = _parse_time_minutes(s["actual_arrival_time"])
+                    w_end_m = _parse_time_minutes(s["window_end"])
+                    w_start_m = _parse_time_minutes(s["window_start"])
+                    
+                    if s["status"] in ["Entregue", "Não Entregue", "Nao Entregue", "Falhada"]:
+                        s["dynamic_eta"] = s["actual_arrival_time"] or s["expected_arrival"]
+                        s["delay_minutes"] = (act_m - exp_m) if (act_m is not None and exp_m is not None) else 0
+                        if act_m is not None and w_end_m is not None and act_m > w_end_m:
+                            s["punctuality_status"] = "concluido_com_atraso"
+                            s["delay_risk"] = True
+                        else:
+                            s["punctuality_status"] = "concluido_no_horario"
+                            s["delay_risk"] = False
+                    else: # Pendente
+                        if exp_m is not None:
+                            proj_m = exp_m + current_delay_min
+                            s["dynamic_eta"] = _minutes_to_time(proj_m)
+                            s["delay_minutes"] = current_delay_min
+                            if w_end_m is not None and proj_m > w_end_m:
+                                s["punctuality_status"] = "risco"
+                                s["delay_risk"] = True
+                            elif current_delay_min > 15:
+                                s["punctuality_status"] = "atrasado"
+                                s["delay_risk"] = False
+                            elif current_delay_min < -10:
+                                s["punctuality_status"] = "adiantado"
+                                s["delay_risk"] = False
+                            else:
+                                s["punctuality_status"] = "no_horario"
+                                s["delay_risk"] = False
+                        else:
+                            s["dynamic_eta"] = s["expected_arrival"] or "09:00"
+                            s["delay_minutes"] = current_delay_min
+                            s["punctuality_status"] = "no_horario"
+                            s["delay_risk"] = False
+
+                risk_stops_count = sum(1 for s in stops if s["status"] == "Pendente" and s.get("delay_risk", False))
+                if current_delay_min > 15 or risk_stops_count > 0:
+                    punctuality_status = "atrasado"
+                elif current_delay_min < -10:
+                    punctuality_status = "adiantado"
+                else:
+                    punctuality_status = "no_horario"
+
                 # Motorista e Viatura
                 drv_raw = str(df_r.iloc[0].get("Motorista", df_r.iloc[0].get("driver_name", ""))) if "Motorista" in df_r.columns and pd.notna(df_r.iloc[0].get("Motorista")) else ""
                 has_driver = bool(drv_raw.strip() and drv_raw.lower() not in ["não atribuído", "nao atribuido", "nan", "none", ""])
@@ -415,16 +510,26 @@ def get_project_tracking(project_id: int, current_user: UserResponse = Depends(g
                     "last_lat": last_lat,
                     "last_lng": last_lng,
                     "last_gps_time": last_gps_time or "Sem sinal GPS",
-                    "speed": speed_val
+                    "speed": speed_val,
+                    "current_delay_min": int(current_delay_min),
+                    "risk_stops_count": int(risk_stops_count),
+                    "punctuality_status": punctuality_status
                 })
             
+        total_risk_stops = sum(r.get("risk_stops_count", 0) for r in routes_list)
+        routes_with_delay = sum(1 for r in routes_list if r.get("current_delay_min", 0) > 10)
+        avg_delay = round(sum(r.get("current_delay_min", 0) for r in routes_list) / len(routes_list), 1) if routes_list else 0.0
+
         return {
             "totals": {
                 "total_stops": total_stops,
                 "entregues": entregues,
                 "falhadas": falhadas,
                 "pendentes": pendentes,
-                "rate": rate
+                "rate": rate,
+                "total_risk_stops": total_risk_stops,
+                "routes_with_delay": routes_with_delay,
+                "avg_delay_min": avg_delay
             },
             "routes": routes_list,
             "drivers": drivers_list_res,

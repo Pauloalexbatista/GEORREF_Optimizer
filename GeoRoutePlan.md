@@ -481,8 +481,17 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
      - **API de Simulação Dedicada**: Endpoint `POST /api/fleet/{project_id}/rules/simulate` em `backend/api/fleet.py` para testes rápidos sem persistência nem recálculo de rotas.
 3. **Evolução da Ferramenta de Zonas & Códigos Postais**:
    * Integração com a Google Maps JavaScript API para desenho dinâmico de polígonos, clustering de entregas por CP4/CP7 e mapa de calor de densidade.
-4. **Torre de Controlo e ETA Dinâmico**:
-   * Recálculo automático de previsões de chegada (ETA) no painel de tráfego com base em ocorrências de campo reportadas pelos motoristas.
+4. **Torre de Controlo e ETA Dinâmico (`/dashboard/tracking` e `backend/api/tracking.py`) (✅ Concluído no Código)**:
+   * **Cálculo de Desvio (Delay) & Projeção Contínua de Horários**:
+     - O backend compara em tempo real a hora efetiva de picagem (`actual_arrival_time` / `Hora_Picagem`) com a hora inicialmente calculada pelo solver (`expected_arrival`), determinando o desvio acumulado em minutos (`current_delay_min`).
+     - Propagação dinâmica do desvio para todas as paragens pendentes da rota: cálculo automático do **`dynamic_eta`** (previsão atualizada de chegada).
+   * **Deteção Preventiva de Risco de Janela Horária (`delay_risk`)**:
+     - Sempre que o novo ETA projetado ultrapassa a hora limite da janela do cliente (`dynamic_eta > window_end`), a paragem é classificada imediatamente como `🚨 Risco de Atraso`.
+     - Permite aos operadores de tráfego intervir antecipadamente (telefonar ao cliente ou transferir paragens) antes de o incumprimento acontecer.
+   * **Visualização Tática e Filtro Rápido no Dashboard**:
+     - **Card KPI de Risco de Janela**: Exibe o número total de entregas em risco na frota com indicador luminoso animado e botão rápido *"🚨 Filtrar em Risco"* para isolar na tabela apenas as viaturas que requerem atenção urgente.
+     - **Badges de Pontualidade por Carrinha**: Indicação direta na tabela de viaturas (`✓ No Horário`, `⚠️ X em risco (+Ym)`, `+Xm atraso`, `Xm adiantado`).
+     - **Coluna de ETA Dinâmico na Sequência de Entregas**: Sub-tabela de paragens com coluna dedicada comparando a Janela Oficial vs. Previsão Dinâmica Real, destacando a paragem com contorno vermelho pulsante em caso de risco.
 5. **Futura Integração da Google Routes Matrix (Condicionada a Clientes Reais)**:
    * A ativação da API de trânsito em tempo real da Google para a matriz do solver fica guardada e planeada, mas **só será implementada quando houver clientes comerciais reais a operar no sistema**.
 6. **Construção de Base de Dados Própria de Trânsito Preditivo 24h (Estratégia Proprietária)**:
