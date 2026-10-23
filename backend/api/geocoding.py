@@ -1204,7 +1204,11 @@ def get_deliveries(project_id: int, current_user: UserResponse = Depends(get_cur
                     "valor_cobrar": r["valor_cobrar"] if "valor_cobrar" in r.keys() else 0.0,
                     "observacoes": r["observacoes"] if "observacoes" in r.keys() else "",
                     "rota": r["rota"] if "rota" in r.keys() else "Por Distribuir",
-                    "ordem": r["ordem"] if "ordem" in r.keys() else 0
+                    "ordem": r["ordem"] if "ordem" in r.keys() else 0,
+                    "cx_ambiente": int(r["cx_ambiente"]) if "cx_ambiente" in r.keys() and r["cx_ambiente"] is not None else 0,
+                    "cx_frio": int(r["cx_frio"]) if "cx_frio" in r.keys() and r["cx_frio"] is not None else 0,
+                    "cx_congelado": int(r["cx_congelado"]) if "cx_congelado" in r.keys() and r["cx_congelado"] is not None else 0,
+                    "total_cx": int(r["total_cx"]) if "total_cx" in r.keys() and r["total_cx"] is not None else 0
                 })
 
             return res

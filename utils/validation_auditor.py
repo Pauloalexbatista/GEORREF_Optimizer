@@ -251,14 +251,81 @@ def audit_route_plan(
                     r_violations.append(v_item)
                     all_violations.append(v_item)
 
-        # 4 & 5. Check Dynamic Vehicle Loads (Curva de Carga a Bordo KG e Volume m3)
+        # 4 & 5. Check Dynamic Vehicle Loads (Curva de Carga a Bordo KG, Volume m3 ou Caixas Alimentares)
         stops_records = df_r.to_dict(orient="records")
         dyn_load = calculate_dynamic_route_loads(stops_records, vehicle_cap_kg=v_max_kg, vehicle_cap_vol=v_max_vol)
         peak_kg = dyn_load.get("peak_load_kg", total_kg)
         peak_vol = dyn_load.get("peak_load_vol", total_vol)
 
-        # 4. Check Weight Capacity (KG a Bordo)
-        if dyn_load.get("has_kg_overload", peak_kg > v_max_kg):
+        # 4.A Check Caixas Alimentar (Cx_Ambiente, Cx_Frio, Cx_Congelado, Total_Cx)
+        total_cx = sum(float(_safe_scalar(row.get("Total_Cx", row.get("total_cx", 0)), 0)) for _, row in df_r.iterrows())
+        total_amb = sum(float(_safe_scalar(row.get("Cx_Ambiente", row.get("cx_ambiente", 0)), 0)) for _, row in df_r.iterrows())
+        total_frio = sum(float(_safe_scalar(row.get("Cx_Frio", row.get("cx_frio", 0)), 0)) for _, row in df_r.iterrows())
+        total_cong = sum(float(_safe_scalar(row.get("Cx_Congelado", row.get("cx_congelado", 0)), 0)) for _, row in df_r.iterrows())
+        
+        v_max_cx = float(v_conf.get("cap_cx_total", v_conf.get("capacidade_total_cx", 0)) or 0)
+        v_cap_amb = float(v_conf.get("cap_cx_ambiente", 0) or 0)
+        v_cap_frio = float(v_conf.get("cap_cx_frio", 0) or 0)
+        v_cap_cong = float(v_conf.get("cap_cx_congelado", 0) or 0)
+        
+        is_alimentar_cx = (total_cx > 0 or v_max_cx > 0 or (total_kg == 0 and total_vol == 0))
+
+        if is_alimentar_cx and v_max_cx > 0:
+            if total_cx > v_max_cx:
+                v_item = {
+                    "type": "capacity_cx",
+                    "severity": "error",
+                    "route": r_name,
+                    "title": f"Excesso de Caixas na Viatura {r_name}",
+                    "message": f"Total de {total_cx:.0f} caixas a bordo excede a capacidade máxima de {v_max_cx:.0f} caixas (+{total_cx - v_max_cx:.0f} cx de excesso).",
+                    "total_cx": total_cx,
+                    "max_cx": v_max_cx,
+                    "excess_cx": round(total_cx - v_max_cx, 0)
+                }
+                r_violations.append(v_item)
+                all_violations.append(v_item)
+                
+            if v_cap_amb > 0 and total_amb > v_cap_amb:
+                v_item = {
+                    "type": "capacity_compartment_amb",
+                    "severity": "error",
+                    "route": r_name,
+                    "title": f"Excesso Compartimento Ambiente ({r_name})",
+                    "message": f"{total_amb:.0f} caixas de ambiente excedem a capacidade de {v_cap_amb:.0f} cx (+{total_amb - v_cap_amb:.0f} cx).",
+                    "total_amb": total_amb,
+                    "max_amb": v_cap_amb
+                }
+                r_violations.append(v_item)
+                all_violations.append(v_item)
+
+            if v_cap_frio > 0 and total_frio > v_cap_frio:
+                v_item = {
+                    "type": "capacity_compartment_frio",
+                    "severity": "error",
+                    "route": r_name,
+                    "title": f"Excesso Compartimento Frio ({r_name})",
+                    "message": f"{total_frio:.0f} caixas de frio excedem a capacidade de {v_cap_frio:.0f} cx (+{total_frio - v_cap_frio:.0f} cx).",
+                    "total_frio": total_frio,
+                    "max_frio": v_cap_frio
+                }
+                r_violations.append(v_item)
+                all_violations.append(v_item)
+
+            if v_cap_cong > 0 and total_cong > v_cap_cong:
+                v_item = {
+                    "type": "capacity_compartment_cong",
+                    "severity": "error",
+                    "route": r_name,
+                    "title": f"Excesso Compartimento Congelado ({r_name})",
+                    "message": f"{total_cong:.0f} caixas de congelados excedem a capacidade de {v_cap_cong:.0f} cx (+{total_cong - v_cap_cong:.0f} cx).",
+                    "total_cong": total_cong,
+                    "max_cong": v_cap_cong
+                }
+                r_violations.append(v_item)
+                all_violations.append(v_item)
+
+        # 4. Check Weight Capacity (KG a Bordo) - apenas se houver peso real
+        if not (is_alimentar_cx and peak_kg == 0) and dyn_load.get("has_kg_overload", peak_kg > v_max_kg):
             v_item = {
                 "type": "capacity_kg",
                 "severity": "error",
@@ -272,8 +339,8 @@ def audit_route_plan(
             r_violations.append(v_item)
             all_violations.append(v_item)
 
-        # 5. Check Volume Capacity (m3 a Bordo)
-        if dyn_load.get("has_vol_overload", peak_vol > v_max_vol):
+        # 5. Check Volume Capacity (m3 a Bordo) - apenas se houver volume real
+        if not (is_alimentar_cx and peak_vol == 0) and dyn_load.get("has_vol_overload", peak_vol > v_max_vol):
             v_item = {
                 "type": "capacity_vol",
                 "severity": "error",

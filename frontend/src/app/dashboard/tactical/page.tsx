@@ -50,6 +50,14 @@ interface RouteNode {
   Observacoes?: string;
   Vendedor?: string;
   vendedor?: string;
+  Cx_Ambiente?: number;
+  Cx_Frio?: number;
+  Cx_Congelado?: number;
+  Total_Cx?: number;
+  cx_ambiente?: number;
+  cx_frio?: number;
+  cx_congelado?: number;
+  total_cx?: number;
 }
 
 interface Delivery {
@@ -83,6 +91,10 @@ interface VehicleData {
   horario_fim: string;
   regras?: string;
   regresso_armazem?: string;
+  cap_cx_ambiente?: number;
+  cap_cx_frio?: number;
+  cap_cx_congelado?: number;
+  cap_cx_total?: number;
 }
 
 const routeColors = [
@@ -2238,6 +2250,14 @@ export default function TacticalPage() {
                       const kgPct = Math.round((totalKg / maxKg) * 100);
                       const volPct = Math.round((totalVol / maxVol) * 100);
 
+                      const totalAmb = allStops.reduce((sum, item) => sum + (Number(item.Cx_Ambiente ?? item.cx_ambiente) || 0), 0);
+                      const totalFrio = allStops.reduce((sum, item) => sum + (Number(item.Cx_Frio ?? item.cx_frio) || 0), 0);
+                      const totalCong = allStops.reduce((sum, item) => sum + (Number(item.Cx_Congelado ?? item.cx_congelado) || 0), 0);
+                      const totalCx = allStops.reduce((sum, item) => sum + (Number(item.Total_Cx ?? item.total_cx) || (Number(item.Cx_Ambiente ?? item.cx_ambiente) || 0) + (Number(item.Cx_Frio ?? item.cx_frio) || 0) + (Number(item.Cx_Congelado ?? item.cx_congelado) || 0)), 0);
+                      const maxCx = Number(vConfig?.cap_cx_total) || 0;
+                      const hasCaixas = totalCx > 0 || maxCx > 0 || (totalKg === 0 && totalVol === 0 && allStops.length > 0);
+                      const cxPct = maxCx > 0 ? Math.round((totalCx / maxCx) * 100) : 0;
+
                       const vObj = fleetList.find((f) => f.veiculo === routeName);
                       const returnsToDepot = vObj ? !["não", "nao", "false", "0", "no"].includes(String(vObj.regresso_armazem || "Sim").trim().toLowerCase()) : true;
 
@@ -2351,49 +2371,84 @@ export default function TacticalPage() {
                               {!isPending && !isEmptyVehicle ? `${totalRouteKm.toFixed(1)} km` : "--"}
                             </td>
 
-                            {/* Carga Peso */}
+                            {/* Carga Peso / Caixas */}
                             <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
                               {!isPending && !isEmptyVehicle ? (
-                                <div className="w-32">
-                                  <div className="flex justify-between text-[10px] font-mono mb-0.5">
-                                    <span className="text-zinc-400">{totalKg.toFixed(0)}/{maxKg}kg</span>
-                                    <span className={`font-bold ${kgPct > 100 ? "text-rose-400" : kgPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
-                                      {kgPct}%
-                                    </span>
+                                hasCaixas ? (
+                                  <div className="w-32">
+                                    <div className="flex justify-between text-[10px] font-mono mb-0.5">
+                                      <span className="text-zinc-200 font-bold">📦 {totalCx}{maxCx > 0 ? `/${maxCx}` : ""} Cx</span>
+                                      {maxCx > 0 && (
+                                        <span className={`font-bold ${cxPct > 100 ? "text-rose-400" : cxPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                                          {cxPct}%
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full transition-all ${
+                                          cxPct > 100 ? "bg-rose-500" : cxPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                                        }`}
+                                        style={{ width: `${Math.min(cxPct || 100, 100)}%` }}
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                                    <div
-                                      className={`h-full rounded-full transition-all ${
-                                        kgPct > 100 ? "bg-rose-500" : kgPct > 80 ? "bg-amber-500" : "bg-emerald-500"
-                                      }`}
-                                      style={{ width: `${Math.min(kgPct, 100)}%` }}
-                                    />
+                                ) : (
+                                  <div className="w-32">
+                                    <div className="flex justify-between text-[10px] font-mono mb-0.5">
+                                      <span className="text-zinc-400">{totalKg.toFixed(0)}/{maxKg}kg</span>
+                                      <span className={`font-bold ${kgPct > 100 ? "text-rose-400" : kgPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                                        {kgPct}%
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full transition-all ${
+                                          kgPct > 100 ? "bg-rose-500" : kgPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                                        }`}
+                                        style={{ width: `${Math.min(kgPct, 100)}%` }}
+                                      />
+                                    </div>
                                   </div>
-                                </div>
+                                )
                               ) : (
                                 <span className="text-zinc-600 text-[10px]">--</span>
                               )}
                             </td>
 
-                            {/* Volume */}
+                            {/* Volume / Compartimentos */}
                             <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
                               {!isPending && !isEmptyVehicle ? (
-                                <div className="w-32">
-                                  <div className="flex justify-between text-[10px] font-mono mb-0.5">
-                                    <span className="text-zinc-400">{totalVol.toFixed(1)}/{maxVol}m³</span>
-                                    <span className={`font-bold ${volPct > 100 ? "text-rose-400" : volPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
-                                      {volPct}%
+                                hasCaixas ? (
+                                  <div className="flex items-center gap-1 text-[10px] font-mono">
+                                    <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 shadow-sm" title={`Ambiente: ${totalAmb} Cx`}>
+                                      📦 {totalAmb}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/60 shadow-sm" title={`Frio: ${totalFrio} Cx`}>
+                                      🧊 {totalFrio}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 shadow-sm" title={`Congelado: ${totalCong} Cx`}>
+                                      ❄️ {totalCong}
                                     </span>
                                   </div>
-                                  <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                                    <div
-                                      className={`h-full rounded-full transition-all ${
-                                        volPct > 100 ? "bg-rose-500" : volPct > 80 ? "bg-amber-500" : "bg-emerald-500"
-                                      }`}
-                                      style={{ width: `${Math.min(volPct, 100)}%` }}
-                                    />
+                                ) : (
+                                  <div className="w-32">
+                                    <div className="flex justify-between text-[10px] font-mono mb-0.5">
+                                      <span className="text-zinc-400">{totalVol.toFixed(1)}/{maxVol}m³</span>
+                                      <span className={`font-bold ${volPct > 100 ? "text-rose-400" : volPct > 80 ? "text-amber-400" : "text-emerald-400"}`}>
+                                        {volPct}%
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full transition-all ${
+                                          volPct > 100 ? "bg-rose-500" : volPct > 80 ? "bg-amber-500" : "bg-emerald-500"
+                                        }`}
+                                        style={{ width: `${Math.min(volPct, 100)}%` }}
+                                      />
+                                    </div>
                                   </div>
-                                </div>
+                                )
                               ) : (
                                 <span className="text-zinc-600 text-[10px]">--</span>
                               )}
@@ -2750,13 +2805,30 @@ export default function TacticalPage() {
                                                   </div>
                                                 </td>
 
-                                                {/* Carga / A Bordo */}
+                                                {/* Carga / A Bordo ou Caixas */}
                                                 <td className="py-2 px-2 text-center font-mono text-zinc-300">
-                                                  <div className="font-semibold text-zinc-100">{stop.Peso_KG || 0} kg</div>
-                                                  <div className="text-[9px] text-indigo-300 font-bold" title="Carga física restante a bordo da viatura após esta paragem">
-                                                    A Bordo: {stop.Carga_Acum !== undefined ? Math.round(stop.Carga_Acum) : Math.round(stop.Peso_KG || 0)} kg
-                                                  </div>
-                                                  <div className="text-[8px] text-zinc-500">{(stop.Volume_m3 || 0).toFixed(2)} m³</div>
+                                                  {Number(stop.Total_Cx ?? stop.total_cx ?? 0) > 0 || (Number(stop.Peso_KG || 0) === 0 && ((Number(stop.Cx_Ambiente ?? stop.cx_ambiente ?? 0) > 0) || (Number(stop.Cx_Frio ?? stop.cx_frio ?? 0) > 0) || (Number(stop.Cx_Congelado ?? stop.cx_congelado ?? 0) > 0))) ? (
+                                                    <div>
+                                                      <div className="font-bold text-amber-300 text-xs">
+                                                        📦 {Number(stop.Total_Cx ?? stop.total_cx ?? ((Number(stop.Cx_Ambiente ?? stop.cx_ambiente ?? 0)) + (Number(stop.Cx_Frio ?? stop.cx_frio ?? 0)) + (Number(stop.Cx_Congelado ?? stop.cx_congelado ?? 0))))} Cx
+                                                      </div>
+                                                      <div className="text-[9px] flex items-center justify-center gap-1 mt-0.5 font-sans">
+                                                        <span className="text-zinc-400" title="Ambiente">Amb: {Number(stop.Cx_Ambiente ?? stop.cx_ambiente ?? 0)}</span>
+                                                        <span>•</span>
+                                                        <span className="text-blue-300" title="Frio">Frio: {Number(stop.Cx_Frio ?? stop.cx_frio ?? 0)}</span>
+                                                        <span>•</span>
+                                                        <span className="text-cyan-300" title="Congelado">Cong: {Number(stop.Cx_Congelado ?? stop.cx_congelado ?? 0)}</span>
+                                                      </div>
+                                                    </div>
+                                                  ) : (
+                                                    <div>
+                                                      <div className="font-semibold text-zinc-100">{stop.Peso_KG || 0} kg</div>
+                                                      <div className="text-[9px] text-indigo-300 font-bold" title="Carga física restante a bordo da viatura após esta paragem">
+                                                        A Bordo: {stop.Carga_Acum !== undefined ? Math.round(stop.Carga_Acum) : Math.round(stop.Peso_KG || 0)} kg
+                                                      </div>
+                                                      <div className="text-[8px] text-zinc-500">{(stop.Volume_m3 || 0).toFixed(2)} m³</div>
+                                                    </div>
+                                                  )}
                                                 </td>
 
                                                 {/* Distância */}

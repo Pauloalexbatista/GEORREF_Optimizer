@@ -421,7 +421,11 @@ def get_fleet_config(project_id: int, current_user: UserResponse = Depends(get_c
                                 "motorista_telemovel": str(getattr(veh, "motorista_telemovel", "") or ""),
                                 "is_active": int(getattr(veh, "is_active", 1) if getattr(veh, "is_active", None) is not None else 1),
                                 "segunda_volta": str(getattr(veh, "segunda_volta", "Não") or "Não"),
-                                "regresso_armazem": str(getattr(veh, "regresso_armazem", "Sim") or "Sim")
+                                "regresso_armazem": str(getattr(veh, "regresso_armazem", "Sim") or "Sim"),
+                                "cap_cx_ambiente": int(getattr(veh, "cap_cx_ambiente", 0) or 0),
+                                "cap_cx_frio": int(getattr(veh, "cap_cx_frio", 0) or 0),
+                                "cap_cx_congelado": int(getattr(veh, "cap_cx_congelado", 0) or 0),
+                                "cap_cx_total": int(getattr(veh, "cap_cx_total", 0) or 0)
                             })
                         elif isinstance(veh, dict):
                             fleet_res.append({
@@ -2149,10 +2153,18 @@ async def import_mobiliario_files(
                 "Longitude": lon,
                 "Telefone_Cliente": "",
                 "Telefone": "",
-                "Peso_KG": weight,
-                "Peso": weight,
-                "Volume_M3": volume,
-                "Volume_m3": volume,
+                "Peso_KG": 0.0,
+                "Peso": 0.0,
+                "Volume_M3": 0.0,
+                "Volume_m3": 0.0,
+                "Cx_Ambiente": cx_amb,
+                "Cx_Frio": cx_frio,
+                "Cx_Congelado": cx_cong,
+                "Total_Cx": total_cx,
+                "cx_ambiente": cx_amb,
+                "cx_frio": cx_frio,
+                "cx_congelado": cx_cong,
+                "total_cx": total_cx,
                 "Janela_Inicio": j1_start,
                 "Janela_Fim": j1_end,
                 "Janela_Horaria": f"{j1_start} - {j1_end}",
@@ -2527,8 +2539,19 @@ async def import_alimentar_files(
             v_rules = parts[5].strip() if len(parts) > 5 else ""
             v_start = parts[15].strip() if len(parts) > 15 and parts[15].strip() else "08:00:00"
             v_end = parts[16].strip() if len(parts) > 16 and parts[16].strip() else "20:00:00"
-            v_kg = _parse_flt(parts[10], 1000.0) if len(parts) > 10 else 1000.0
-            v_vol = 10.0
+            cap_amb = int(_parse_flt(parts[29])) if len(parts) > 29 and parts[29].strip() else 0
+            cap_frio = int(_parse_flt(parts[30])) if len(parts) > 30 and parts[30].strip() else 0
+            cap_cong = int(_parse_flt(parts[31])) if len(parts) > 31 and parts[31].strip() else 0
+
+            raw_cap10 = _parse_flt(parts[10], 0.0) if len(parts) > 10 else 0.0
+            cap_total_cx = int(raw_cap10) if raw_cap10 > 0 else max(cap_amb, cap_frio, cap_cong, 100)
+            if cap_amb == 0 and cap_frio == 0 and cap_cong == 0 and cap_total_cx > 0:
+                cap_amb = cap_total_cx
+                cap_frio = cap_total_cx
+                cap_cong = cap_total_cx
+
+            v_kg = 0.0
+            v_vol = 0.0
 
             target_wh = (
                 find_matching_warehouse_name([v_store_key, v_rules, fleet_filename], wh_rows) or
@@ -2551,6 +2574,11 @@ async def import_alimentar_files(
             v_obj.codigo_veiculo = v_id
             v_obj.codigo_motorista = d_id
             v_obj.segunda_volta = "Não"
+            v_obj.cap_cx_ambiente = cap_amb
+            v_obj.cap_cx_frio = cap_frio
+            v_obj.cap_cx_congelado = cap_cong
+            v_obj.cap_cx_total = cap_total_cx
+
             fleet_dict[v_name] = v_obj
             veh_code_to_name[v_id] = v_name
 
@@ -2570,7 +2598,11 @@ async def import_alimentar_files(
                 "codigo_veiculo": v_id,
                 "codigo_motorista": d_id,
                 "is_active": 1,
-                "segunda_volta": "Não"
+                "segunda_volta": "Não",
+                "cap_cx_ambiente": cap_amb,
+                "cap_cx_frio": cap_frio,
+                "cap_cx_congelado": cap_cong,
+                "cap_cx_total": cap_total_cx
             })
 
             if d_name:
@@ -2625,8 +2657,12 @@ async def import_alimentar_files(
             j1_start = parts[28].strip() if len(parts) > 28 and parts[28].strip() else "08:00"
             j1_end = parts[29].strip() if len(parts) > 29 and parts[29].strip() else "20:00"
             unload_min = _parse_time_min(parts[30]) if len(parts) > 30 else 15
-            weight = _parse_flt(parts[34], 50.0) if len(parts) > 34 else 50.0
-            volume = round(weight / 100.0, 2) if weight > 0 else 1.0
+            cx_amb = int(_parse_flt(parts[3])) if len(parts) > 3 and parts[3].strip() else 0
+            cx_frio = int(_parse_flt(parts[4])) if len(parts) > 4 and parts[4].strip() else 0
+            cx_cong = int(_parse_flt(parts[5])) if len(parts) > 5 and parts[5].strip() else 0
+            total_cx = cx_amb + cx_frio + cx_cong
+            weight = 0.0
+            volume = 0.0
 
             lat, lon = 0.0, 0.0
             if lat_str and lon_str:
@@ -2700,15 +2736,17 @@ async def import_alimentar_files(
                             projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
                             peso_kg, volume_m3, prioridade, janela_inicio, janela_fim, tempo_descarga_min,
                             latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem,
-                            telefone, observacoes, vendedor, rota, ordem_paragem, regras
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            telefone, observacoes, vendedor, rota, ordem_paragem, regras,
+                            cx_ambiente, cx_frio, cx_congelado, total_cx
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         project_id, d["Doc_ID"], d["Cliente"], d["Morada"],
-                        d["CP"], d["Localidade"], float(d.get("Peso_KG", 50.0)),
-                        float(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
+                        d["CP"], d["Localidade"], float(d.get("Peso_KG", 0.0)),
+                        float(d.get("Volume_M3", 0.0)), 2, d.get("Janela_Inicio", "08:00"),
                         d.get("Janela_Fim", "18:00"), int(d.get("Tempo_Descarga_Min", 15)),
                         lat_d, lon_d, qual_d, src_d, d["Morada"], d["Armazem"],
-                        "", "", "", d["Rota"], d["Ordem"], d["Regras"]
+                        "", "", "", d["Rota"], d["Ordem"], d["Regras"],
+                        int(d.get("Cx_Ambiente", 0)), int(d.get("Cx_Frio", 0)), int(d.get("Cx_Congelado", 0)), int(d.get("Total_Cx", 0))
                     ))
                 conn.commit()
 

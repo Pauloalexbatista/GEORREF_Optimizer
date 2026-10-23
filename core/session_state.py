@@ -35,6 +35,10 @@ class FleetVehicle:
     regresso_armazem: str = "Sim"
     codigo_veiculo: str = ""
     codigo_motorista: str = ""
+    cap_cx_ambiente: int = 0
+    cap_cx_frio: int = 0
+    cap_cx_congelado: int = 0
+    cap_cx_total: int = 0
 
 
 @dataclass

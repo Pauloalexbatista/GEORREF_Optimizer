@@ -630,8 +630,9 @@ def save_frota_projeto(projeto_id, frota_data):
                     projeto_id, veiculo, capacidade_kg, capacidade_volume, custo_km,
                     velocidade_media, horario_inicio, horario_fim, armazem, regras,
                     max_entregas, motorista_nome, motorista_telemovel, is_active,
-                    codigo_veiculo, codigo_motorista, segunda_volta
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    codigo_veiculo, codigo_motorista, segunda_volta,
+                    cap_cx_ambiente, cap_cx_frio, cap_cx_congelado, cap_cx_total
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 projeto_id, f.get('veiculo'), float(f.get('capacidade_kg') or 1000.0),
                 float(f.get('capacidade_volume') or f.get('capacidade_vol') or 5.0), float(f.get('custo_km') or 0.5),
@@ -643,7 +644,11 @@ def save_frota_projeto(projeto_id, frota_data):
                 int(f.get('is_active', 1) if f.get('is_active') is not None else 1),
                 str(f.get('codigo_veiculo') or ''),
                 str(f.get('codigo_motorista') or ''),
-                str(f.get('segunda_volta') or 'Não')
+                str(f.get('segunda_volta') or 'Não'),
+                int(f.get('cap_cx_ambiente', 0) or 0),
+                int(f.get('cap_cx_frio', 0) or 0),
+                int(f.get('cap_cx_congelado', 0) or 0),
+                int(f.get('cap_cx_total', 0) or 0)
             ))
         
         conn.commit()
@@ -1195,7 +1200,11 @@ def ensure_entregas_columns():
                 ("par_id", "TEXT DEFAULT ''"),
                 ("is_active", "INTEGER DEFAULT 1"),
                 ("hora_inicio_servico", "TEXT DEFAULT ''"),
-                ("hora_fim_servico", "TEXT DEFAULT ''")
+                ("hora_fim_servico", "TEXT DEFAULT ''"),
+                ("cx_ambiente", "INTEGER DEFAULT 0"),
+                ("cx_frio", "INTEGER DEFAULT 0"),
+                ("cx_congelado", "INTEGER DEFAULT 0"),
+                ("total_cx", "INTEGER DEFAULT 0")
             ]:
                 if col not in cols:
                     try:
@@ -1219,7 +1228,11 @@ def ensure_entregas_columns():
                 ("motorista_telemovel", "TEXT DEFAULT ''"),
                 ("codigo_veiculo", "TEXT DEFAULT ''"),
                 ("codigo_motorista", "TEXT DEFAULT ''"),
-                ("is_active", "BOOLEAN DEFAULT 1")
+                ("is_active", "BOOLEAN DEFAULT 1"),
+                ("cap_cx_ambiente", "INTEGER DEFAULT 0"),
+                ("cap_cx_frio", "INTEGER DEFAULT 0"),
+                ("cap_cx_congelado", "INTEGER DEFAULT 0"),
+                ("cap_cx_total", "INTEGER DEFAULT 0")
             ]:
                 if col not in cols_f:
                     try:

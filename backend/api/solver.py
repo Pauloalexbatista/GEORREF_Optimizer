@@ -1230,7 +1230,7 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
                 if col in df_r.columns:
                     df_r.drop(columns=[col], inplace=True)
             # Assegurar que as colunas de coordenadas e pesos são float para evitar 'Invalid value for dtype int64'
-            for col in ["Latitude", "Longitude", "Peso_KG", "Volume_m3", "KM_Anterior", "Dist_Acum"]:
+            for col in ["Latitude", "Longitude", "Peso_KG", "Volume_m3", "KM_Anterior", "Dist_Acum", "Cx_Ambiente", "Cx_Frio", "Cx_Congelado", "Total_Cx"]:
                 if col not in df_r.columns:
                     df_r[col] = 0.0
                 else:
@@ -1269,6 +1269,14 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
                         df_r.loc[idx, "Volume_m3"] = float(matched_db["volume_m3"])
                     if matched_db.get("armazem"):
                         df_r.loc[idx, "Armazem"] = matched_db["armazem"]
+                    if matched_db.get("cx_ambiente") is not None:
+                        df_r.loc[idx, "Cx_Ambiente"] = int(matched_db["cx_ambiente"])
+                    if matched_db.get("cx_frio") is not None:
+                        df_r.loc[idx, "Cx_Frio"] = int(matched_db["cx_frio"])
+                    if matched_db.get("cx_congelado") is not None:
+                        df_r.loc[idx, "Cx_Congelado"] = int(matched_db["cx_congelado"])
+                    if matched_db.get("total_cx") is not None:
+                        df_r.loc[idx, "Total_Cx"] = int(matched_db["total_cx"])
 
                 r_dict = df_r.loc[idx].to_dict()
                 d_id_key = r.get("id") or r.get("ID_Original")
@@ -1364,8 +1372,12 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
             "Observacoes": str(matched.get("Observacoes") or d.get("observacoes", "")),
             "Notas_Motorista": str(matched.get("Notas_Motorista") or d.get("observacoes", "")),
             "Vendedor": str(matched.get("Vendedor") or d.get("vendedor", "")),
-            "Peso_KG": clean_num(d.get("peso_kg"), 50.0),
-            "Volume_m3": clean_num(d.get("volume_m3"), 0.1),
+            "Peso_KG": clean_num(d.get("peso_kg"), 0.0),
+            "Volume_m3": clean_num(d.get("volume_m3"), 0.0),
+            "Cx_Ambiente": clean_int(matched.get("Cx_Ambiente") or d.get("cx_ambiente"), 0),
+            "Cx_Frio": clean_int(matched.get("Cx_Frio") or d.get("cx_frio"), 0),
+            "Cx_Congelado": clean_int(matched.get("Cx_Congelado") or d.get("cx_congelado"), 0),
+            "Total_Cx": clean_int(matched.get("Total_Cx") or d.get("total_cx"), 0),
             "Janela_Horaria": str(matched.get("Janela_Horaria") or f"{d.get('janela_inicio', '08:00')} - {d.get('janela_fim', '18:00')}")
         })
         
@@ -2144,6 +2156,10 @@ def get_route_audit(project_id: int, current_user: UserResponse = Depends(get_cu
                 fleet_cfg[v_name] = {
                     "capacidade_kg": float(dict_f.get("capacidade_kg") or 20000.0),
                     "capacidade_volume": float(dict_f.get("capacidade_volume") or 20000.0),
+                    "cap_cx_total": float(dict_f.get("cap_cx_total") or 0.0),
+                    "cap_cx_ambiente": float(dict_f.get("cap_cx_ambiente") or 0.0),
+                    "cap_cx_frio": float(dict_f.get("cap_cx_frio") or 0.0),
+                    "cap_cx_congelado": float(dict_f.get("cap_cx_congelado") or 0.0),
                     "custo_km": float(dict_f.get("custo_km") or 0.65),
                     "velocidade_media": float(dict_f.get("velocidade_media") or 50.0),
                     "horario_inicio": str(dict_f.get("horario_inicio") or "06:30:00"),
