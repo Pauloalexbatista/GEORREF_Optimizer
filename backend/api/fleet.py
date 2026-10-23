@@ -2550,6 +2550,13 @@ async def import_alimentar_files(
         deliveries_list = []
         detected_service_date = ""
 
+        # Determinar armazém padrão para os pedidos (baseado na frota importada ou existente)
+        default_pedidos_wh = wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal"
+        if fleet_rows_for_db:
+            active_f_whs = {f["armazem"] for f in fleet_rows_for_db if f.get("armazem")}
+            if len(active_f_whs) == 1:
+                default_pedidos_wh = list(active_f_whs)[0]
+
         for s_idx, line in enumerate(file_pedidos_lines):
             parts = line.split("\t")
             if len(parts) < 25:
@@ -2599,7 +2606,13 @@ async def import_alimentar_files(
                     pass
 
             qual = 1 if (lat != 0.0 and lon != 0.0) else 99
-            wh_name = wh_rows[0]["Nome_Armazem"]
+            wh_name = default_pedidos_wh
+            if s_rules:
+                norm_r = re.sub(r'[^a-zA-Z0-9]', '', s_rules.lower())
+                for k, s in store_map.items():
+                    if k and (k in norm_r or norm_r in k):
+                        wh_name = s["Nome_Armazem"]
+                        break
 
             d_entry = {
                 "Armazem": wh_name,
