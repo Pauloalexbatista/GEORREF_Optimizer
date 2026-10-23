@@ -1230,8 +1230,29 @@ export default function TacticalPage() {
         }
       });
 
-      // 3. Weight Capacity check
-      if (totalKg > maxKg) {
+      // Box (Alimentar) calculations
+      const totalAmb = stops.reduce((sum, s) => sum + (Number(s.Cx_Ambiente ?? s.cx_ambiente) || 0), 0);
+      const totalFrio = stops.reduce((sum, s) => sum + (Number(s.Cx_Frio ?? s.cx_frio) || 0), 0);
+      const totalCong = stops.reduce((sum, s) => sum + (Number(s.Cx_Congelado ?? s.cx_congelado) || 0), 0);
+      const totalCx = stops.reduce((sum, s) => sum + (Number(s.Total_Cx ?? s.total_cx) || ((Number(s.Cx_Ambiente ?? s.cx_ambiente) || 0) + (Number(s.Cx_Frio ?? s.cx_frio) || 0) + (Number(s.Cx_Congelado ?? s.cx_congelado) || 0))), 0);
+      const maxCx = Number(vConfig?.cap_cx_total) || 0;
+      const isAlimentarRoute = totalCx > 0 || maxCx > 0 || (totalKg === 0 && stops.length > 0);
+
+      // 3.A Caixas Capacity Check
+      if (isAlimentarRoute && maxCx > 0 && totalCx > maxCx) {
+        const vItem: ViolationItem = {
+          type: "capacity_cx" as any,
+          severity: "error",
+          route: rName,
+          title: `Excesso de Caixas (${rName})`,
+          message: `Total de ${totalCx} caixas excede a capacidade do carro de ${maxCx} caixas (+${totalCx - maxCx} cx).`,
+        };
+        rViolations.push(vItem);
+        allViolations.push(vItem);
+      }
+
+      // 3. Weight Capacity check (apenas se houver peso real)
+      if (!isAlimentarRoute && totalKg > maxKg) {
         const vItem: ViolationItem = {
           type: "capacity_kg",
           severity: "error",
@@ -1243,8 +1264,8 @@ export default function TacticalPage() {
         allViolations.push(vItem);
       }
 
-      // 4. Volume Capacity check
-      if (totalVol > maxVol) {
+      // 4. Volume Capacity check (apenas se houver volume real)
+      if (!isAlimentarRoute && totalVol > maxVol) {
         const vItem: ViolationItem = {
           type: "capacity_vol",
           severity: "error",
@@ -1518,10 +1539,13 @@ export default function TacticalPage() {
     let totalKg = 0.0;
     let totalLate = 0;
 
+    let totalCxAll = 0;
     assignedStops.forEach((s) => {
       totalKg += s.Peso_KG || 0;
+      totalCxAll += Number(s.Total_Cx ?? s.total_cx ?? ((Number(s.Cx_Ambiente ?? s.cx_ambiente) || 0) + (Number(s.Cx_Frio ?? s.cx_frio) || 0) + (Number(s.Cx_Congelado ?? s.cx_congelado) || 0))) || 0;
       if (isDeliveryLate(s.Chegada, s.Janela_Horaria)) totalLate++;
     });
+    const isAlimentarGlobal = totalCxAll > 0 || (totalKg === 0 && assignedStops.length > 0);
 
     relevantVehicles.forEach((v) => {
       const stops = groupedRoutes[v] || [];
@@ -1548,6 +1572,8 @@ export default function TacticalPage() {
       pendingCount: pendingStops.length,
       totalKm: totalKm.toFixed(1),
       totalKg: totalKg.toFixed(0),
+      totalCx: totalCxAll,
+      isAlimentar: isAlimentarGlobal,
       activeVehiclesCount: activeVehicles.length,
       totalVehiclesCount: relevantVehicles.length,
       onTimeRate,
@@ -1963,11 +1989,15 @@ export default function TacticalPage() {
 
             <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
 
-            {/* Carga Total */}
+            {/* Carga Total / Caixas */}
             <div className="flex items-center space-x-1.5">
-              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">Carga Total:</span>
-              <span className="text-zinc-100 font-bold">{Number(globalKpis.totalKg).toLocaleString("pt-PT")}</span>
-              <span className="text-zinc-400 text-[11px]">kg</span>
+              <span className="text-zinc-400 font-sans uppercase text-[10px] font-bold">
+                {globalKpis.isAlimentar ? "Total Caixas:" : "Carga Total:"}
+              </span>
+              <span className="text-zinc-100 font-bold">
+                {globalKpis.isAlimentar ? globalKpis.totalCx : Number(globalKpis.totalKg).toLocaleString("pt-PT")}
+              </span>
+              <span className="text-zinc-400 text-[11px]">{globalKpis.isAlimentar ? "Cx" : "kg"}</span>
             </div>
 
             <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
@@ -2175,7 +2205,7 @@ export default function TacticalPage() {
                       className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
-                        <span>Carga (Peso)</span>
+                        <span>{globalKpis.isAlimentar ? "Carga (Cx)" : "Carga (Peso)"}</span>
                         <span className="text-indigo-400">{sortField === "weight_pct" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
                       </div>
                     </th>
@@ -2184,7 +2214,7 @@ export default function TacticalPage() {
                       className="py-2.5 px-3 cursor-pointer hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors min-w-[140px] sticky top-0 bg-zinc-900 z-30"
                     >
                       <div className="flex items-center space-x-1">
-                        <span>Volume (m³)</span>
+                        <span>{globalKpis.isAlimentar ? "Compartimentos" : "Volume (m³)"}</span>
                         <span className="text-indigo-400">{sortField === "vol_pct" ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}</span>
                       </div>
                     </th>
@@ -2327,6 +2357,11 @@ export default function TacticalPage() {
                                 <span className={`font-black text-xs ${isPending ? "text-amber-400" : "text-zinc-100"}`}>
                                   {isPending ? "⚠️ Por Distribuir" : routeName}
                                 </span>
+                                {!isPending && hasCaixas && maxCx > 0 && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 font-mono font-bold border border-zinc-700/80 shadow-sm" title={`Capacidade Total da Viatura: ${maxCx} Caixas`}>
+                                    Cap: {maxCx} Cx
+                                  </span>
+                                )}
                               </div>
                             </td>
 
@@ -2628,10 +2663,21 @@ export default function TacticalPage() {
                                                 </div>
                                               </td>
                                               <td className="py-2 px-2 text-center font-mono text-zinc-350">
-                                                <div className="font-semibold text-zinc-200">
-                                                  {allStops.filter((s) => (s.Tipo_Operacao || "D") === "D").reduce((acc, s) => acc + (s.Peso_KG || 0), 0).toFixed(0)} kg
-                                                </div>
-                                                <div className="text-[9px] text-indigo-300 font-bold">Carga Inicial</div>
+                                                {hasCaixas ? (
+                                                  <div>
+                                                    <div className="font-semibold text-amber-300">
+                                                      📦 {totalCx} Cx
+                                                    </div>
+                                                    <div className="text-[9px] text-indigo-300 font-bold">Carga Inicial</div>
+                                                  </div>
+                                                ) : (
+                                                  <div>
+                                                    <div className="font-semibold text-zinc-200">
+                                                      {allStops.filter((s) => (s.Tipo_Operacao || "D") === "D").reduce((acc, s) => acc + (s.Peso_KG || 0), 0).toFixed(0)} kg
+                                                    </div>
+                                                    <div className="text-[9px] text-indigo-300 font-bold">Carga Inicial</div>
+                                                  </div>
+                                                )}
                                               </td>
                                               <td className="py-2 px-2 text-center font-mono text-zinc-450">
                                                 0.0 km
@@ -2898,12 +2944,21 @@ export default function TacticalPage() {
                                                 </div>
                                               </td>
                                               <td className="py-2 px-2 text-center font-mono text-zinc-350">
-                                                <div className="font-semibold text-zinc-200">
-                                                  {allStops.length > 0 && allStops[allStops.length - 1].Carga_Acum !== undefined
-                                                    ? Math.round(allStops[allStops.length - 1].Carga_Acum)
-                                                    : allStops.filter((s) => s.Tipo_Operacao === "P").reduce((acc, s) => acc + (s.Peso_KG || 0), 0)} kg
-                                                </div>
-                                                <div className="text-[9px] text-emerald-300 font-bold">Retorno / Sucata</div>
+                                                {hasCaixas ? (
+                                                  <div>
+                                                    <div className="font-semibold text-zinc-400">0 Cx</div>
+                                                    <div className="text-[9px] text-emerald-300 font-bold">Retorno / Vazio</div>
+                                                  </div>
+                                                ) : (
+                                                  <div>
+                                                    <div className="font-semibold text-zinc-200">
+                                                      {allStops.length > 0 && allStops[allStops.length - 1].Carga_Acum !== undefined
+                                                        ? Math.round(allStops[allStops.length - 1].Carga_Acum)
+                                                        : allStops.filter((s) => s.Tipo_Operacao === "P").reduce((acc, s) => acc + (s.Peso_KG || 0), 0)} kg
+                                                    </div>
+                                                    <div className="text-[9px] text-emerald-300 font-bold">Retorno / Sucata</div>
+                                                  </div>
+                                                )}
                                               </td>
                                               <td className="py-2 px-2 text-center font-mono text-zinc-450">
                                                 Acum: {totalRouteKm.toFixed(1)} km

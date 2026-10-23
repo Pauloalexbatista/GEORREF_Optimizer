@@ -240,6 +240,10 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
             fleet_dict[str(row["Veiculo"])] = {
                 "capacity": float(row.get("Capacidade_KG", 1000.0)),
                 "capacity_volume": float(row.get("Cap_Volume_m3", row.get("Capacidade_Vol", 5.0))),
+                "cap_cx_total": float(row.get("cap_cx_total", row.get("Cap_Cx_Total", 0.0)) or 0.0),
+                "cap_cx_ambiente": float(row.get("cap_cx_ambiente", row.get("Cap_Cx_Ambiente", 0.0)) or 0.0),
+                "cap_cx_frio": float(row.get("cap_cx_frio", row.get("Cap_Cx_Frio", 0.0)) or 0.0),
+                "cap_cx_congelado": float(row.get("cap_cx_congelado", row.get("Cap_Cx_Congelado", 0.0)) or 0.0),
                 "cost_per_km": float(row.get("Custo_KM", 0.65)),
                 "speed": float(row.get("Velocidade_Media", 50.0)),
                 "start_time": str(row.get("Hora_Inicio_Turno", row.get("Horario_Inicio", "08:00:00"))),
@@ -257,6 +261,10 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                 fleet_dict[str(v_k)] = {
                     "capacity": float(v_v.get("capacity", v_v.get("capacidade_kg", 1000.0))),
                     "capacity_volume": float(v_v.get("capacity_volume", v_v.get("capacidade_vol", 5.0))),
+                    "cap_cx_total": float(v_v.get("cap_cx_total", v_v.get("Cap_Cx_Total", 0.0)) or 0.0),
+                    "cap_cx_ambiente": float(v_v.get("cap_cx_ambiente", v_v.get("Cap_Cx_Ambiente", 0.0)) or 0.0),
+                    "cap_cx_frio": float(v_v.get("cap_cx_frio", v_v.get("Cap_Cx_Frio", 0.0)) or 0.0),
+                    "cap_cx_congelado": float(v_v.get("cap_cx_congelado", v_v.get("Cap_Cx_Congelado", 0.0)) or 0.0),
                     "cost_per_km": float(v_v.get("cost_per_km", v_v.get("custo_km", 0.65))),
                     "speed": float(v_v.get("speed", v_v.get("velocidade_media", 50.0))),
                     "start_time": str(v_v.get("start_time", v_v.get("horario_inicio", "08:00:00"))),
@@ -272,6 +280,10 @@ def extract_fleet_dict(fleet_config, warehouses_df=None):
                 fleet_dict[str(v_k)] = {
                     "capacity": float(getattr(v_v, "capacidade_kg", 1000.0)),
                     "capacity_volume": float(getattr(v_v, "capacidade_vol", 5.0)),
+                    "cap_cx_total": float(getattr(v_v, "cap_cx_total", 0.0) or 0.0),
+                    "cap_cx_ambiente": float(getattr(v_v, "cap_cx_ambiente", 0.0) or 0.0),
+                    "cap_cx_frio": float(getattr(v_v, "cap_cx_frio", 0.0) or 0.0),
+                    "cap_cx_congelado": float(getattr(v_v, "cap_cx_congelado", 0.0) or 0.0),
                     "cost_per_km": float(getattr(v_v, "custo_km", 0.65)),
                     "speed": float(getattr(v_v, "velocidade_media", 50.0)),
                     "start_time": str(getattr(v_v, "horario_inicio", "08:00:00")),
@@ -414,15 +426,26 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         serv_time = int(stop_dict.get("Tempo_Entrega", default_service_time) or default_service_time)
         dep_min = serv_start_min + serv_time
         
-        demand = float(stop_dict.get("Peso_KG", 50.0) if stop_dict.get("Peso_KG") is not None else 50.0)
-        vol_demand = float(stop_dict.get("Volume_m3", 0.1) if stop_dict.get("Volume_m3") is not None else 0.1)
-        cumul_load += demand
+        c_amb = float(stop_dict.get("Cx_Ambiente", stop_dict.get("cx_ambiente", 0.0)) or 0.0)
+        c_frio = float(stop_dict.get("Cx_Frio", stop_dict.get("cx_frio", 0.0)) or 0.0)
+        c_cong = float(stop_dict.get("Cx_Congelado", stop_dict.get("cx_congelado", 0.0)) or 0.0)
+        c_tot_cx = float(stop_dict.get("Total_Cx", stop_dict.get("total_cx", 0.0)) or (c_amb + c_frio + c_cong))
+        
+        # In Alimentar mode, weight and volume are 0
+        is_alim = (c_tot_cx > 0)
+        demand = 0.0 if is_alim else float(stop_dict.get("Peso_KG", 0.0) if stop_dict.get("Peso_KG") is not None else 0.0)
+        vol_demand = 0.0 if is_alim else float(stop_dict.get("Volume_m3", 0.0) if stop_dict.get("Volume_m3") is not None else 0.0)
+        cumul_load += (c_tot_cx if is_alim else demand)
         cumul_vol += vol_demand
         
         new_row = dict(stop_dict)
         new_row["Ordem"] = order
         new_row["Peso_KG"] = demand
         new_row["Volume_m3"] = vol_demand
+        new_row["Cx_Ambiente"] = int(c_amb)
+        new_row["Cx_Frio"] = int(c_frio)
+        new_row["Cx_Congelado"] = int(c_cong)
+        new_row["Total_Cx"] = int(c_tot_cx)
         new_row["Tipo_Operacao"] = normalize_op_type(stop_dict.get("Tipo_Operacao") or stop_dict.get("tipo_operacao"))
         new_row["Chegada"] = minutes_to_time_str(arr_min)
         new_row["Tempo_Espera"] = int(round(wait_min))
@@ -580,8 +603,12 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     "Morada": dr["morada"],
                     "Codigo_Postal": dr["codigo_postal"],
                     "Localidade": dr.get("_concelho") or dr.get("concelho", ""),
-                    "Peso_KG": float(dr.get("peso_kg") or 50.0),
-                    "Volume_m3": float(dr.get("volume_m3") or 0.1),
+                    "Peso_KG": float(dr.get("peso_kg") if dr.get("peso_kg") is not None else 0.0),
+                    "Volume_m3": float(dr.get("volume_m3") if dr.get("volume_m3") is not None else 0.0),
+                    "Cx_Ambiente": float(dr.get("cx_ambiente") if dr.get("cx_ambiente") is not None else 0.0),
+                    "Cx_Frio": float(dr.get("cx_frio") if dr.get("cx_frio") is not None else 0.0),
+                    "Cx_Congelado": float(dr.get("cx_congelado") if dr.get("cx_congelado") is not None else 0.0),
+                    "Total_Cx": float(dr.get("total_cx") if dr.get("total_cx") is not None else 0.0),
                     "Prioridade": dr.get("prioridade", 1),
                     "Slot1_Inicio": dr.get("janela_inicio", ""),
                     "Slot1_Fim": dr.get("janela_fim", ""),
@@ -615,6 +642,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                     db_fleet[v_name] = {
                         "capacity": float(dict_f.get("capacidade_kg") or 1000.0),
                         "capacity_volume": float(dict_f.get("capacidade_volume") or 5.0),
+                        "cap_cx_total": float(dict_f.get("cap_cx_total") or 0.0),
+                        "cap_cx_ambiente": float(dict_f.get("cap_cx_ambiente") or 0.0),
+                        "cap_cx_frio": float(dict_f.get("cap_cx_frio") or 0.0),
+                        "cap_cx_congelado": float(dict_f.get("cap_cx_congelado") or 0.0),
                         "cost_per_km": float(dict_f.get("custo_km") or 0.65),
                         "speed": float(dict_f.get("velocidade_media") or 50.0),
                         "start_time": str(dict_f.get("horario_inicio") or "08:00:00"),
@@ -674,8 +705,13 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
 
             locations.append((c_lat, c_lon))
             location_names.append(row.get("Codigo_Cliente", f"Cliente_{idx}"))
-            demands.append(float(row.get("Peso_KG", 0.0) or 0.0))
-            volume_demands.append(float(row.get("Volume_m3", row.get("Volume_M3", 0.0)) or 0.0))
+            tot_cx_row = float(row.get("Total_Cx", 0.0) or (float(row.get("Cx_Ambiente", 0.0) or 0.0) + float(row.get("Cx_Frio", 0.0) or 0.0) + float(row.get("Cx_Congelado", 0.0) or 0.0)))
+            if tot_cx_row > 0:
+                demands.append(tot_cx_row)
+                volume_demands.append(0.0)
+            else:
+                demands.append(float(row.get("Peso_KG", 0.0) or 0.0))
+                volume_demands.append(float(row.get("Volume_m3", row.get("Volume_M3", 0.0)) or 0.0))
             
         # Calculate distance matrix
         distance_matrix = calculate_haversine_matrix(locations)
@@ -693,10 +729,15 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         vehicle_costs_per_km = []
         multi_trip_pairs = []
         
+        is_any_cx_project = (deliveries_df["Total_Cx"].sum() > 0 if "Total_Cx" in deliveries_df.columns else False) or any((v.get("cap_cx_total") or 0) > 0 for v in fleet_dict.values())
         for vehicle_name, vehicle_data in fleet_dict.items():
             v1_idx = len(vehicle_names)
-            vehicle_capacities.append(vehicle_data["capacity"])
-            vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
+            if is_any_cx_project and (vehicle_data.get("cap_cx_total", 0) > 0 or vehicle_data["capacity"] <= 500):
+                vehicle_capacities.append(float(vehicle_data.get("cap_cx_total") or vehicle_data["capacity"] or 100.0))
+                vehicle_volume_capacities.append(999999.0)
+            else:
+                vehicle_capacities.append(vehicle_data["capacity"])
+                vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
             wh_name = str(vehicle_data.get("warehouse", "") or "").strip()
             # O Armazém de Loures é o centro operacional onde a frota está sediada
             loures_dep_idx = next((idx_val for k, idx_val in warehouse_indices.items() if "loures" in k.lower()), 0)
@@ -894,8 +935,12 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "Janela_Fim": str(win_e or ""),
                         "Latitude": float(client_row["Latitude"]),
                         "Longitude": float(client_row["Longitude"]),
-                        "Peso_KG": float(client_row.get("Peso_KG", 50.0)),
-                        "Volume_m3": float(client_row.get("Volume_m3", 0.1)),
+                        "Peso_KG": float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0),
+                        "Volume_m3": float(client_row.get("Volume_m3", 0.0) if not is_any_cx_project else 0.0),
+                        "Cx_Ambiente": int(client_row.get("Cx_Ambiente", 0) or 0),
+                        "Cx_Frio": int(client_row.get("Cx_Frio", 0) or 0),
+                        "Cx_Congelado": int(client_row.get("Cx_Congelado", 0) or 0),
+                        "Total_Cx": int(client_row.get("Total_Cx", 0) or ((client_row.get("Cx_Ambiente", 0) or 0) + (client_row.get("Cx_Frio", 0) or 0) + (client_row.get("Cx_Congelado", 0) or 0))),
                         "Telefone": tel_val,
                         "Observacoes": obs_val,
                         "Notas_Motorista": obs_val,
@@ -1015,8 +1060,14 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
                 "KM_Anterior": 0.0,
                 "Dist_Acum": 0.0,
-                "Carga_Acum": round(float(client_row.get("Peso_KG", 50.0)), 1),
-                "Carga_Vol_Acum": round(float(client_row.get("Volume_m3", 0.1)), 2),
+                "Peso_KG": float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0),
+                "Volume_m3": float(client_row.get("Volume_m3", 0.0) if not is_any_cx_project else 0.0),
+                "Cx_Ambiente": int(client_row.get("Cx_Ambiente", 0) or 0),
+                "Cx_Frio": int(client_row.get("Cx_Frio", 0) or 0),
+                "Cx_Congelado": int(client_row.get("Cx_Congelado", 0) or 0),
+                "Total_Cx": int(client_row.get("Total_Cx", 0) or ((client_row.get("Cx_Ambiente", 0) or 0) + (client_row.get("Cx_Frio", 0) or 0) + (client_row.get("Cx_Congelado", 0) or 0))),
+                "Carga_Acum": round(float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0), 1),
+                "Carga_Vol_Acum": round(float(client_row.get("Volume_m3", 0.0) if not is_any_cx_project else 0.0), 2),
                 "Telefone": tel_val,
                 "Observacoes": obs_val,
                 "Notas_Motorista": obs_val,
@@ -2249,8 +2300,13 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         for idx_row in subset_indices:
             row_s = df_canonical.loc[idx_row]
             locations.append((float(row_s["Latitude"]), float(row_s["Longitude"])))
-            demands.append(float(clean_num(row_s.get("Peso_KG"), default=50.0)))
-            volume_demands.append(float(clean_num(row_s.get("Volume_m3"), default=0.1)))
+            tot_cx_s = float(row_s.get("Total_Cx", 0.0) or (float(row_s.get("Cx_Ambiente", 0.0) or 0.0) + float(row_s.get("Cx_Frio", 0.0) or 0.0) + float(row_s.get("Cx_Congelado", 0.0) or 0.0)))
+            if tot_cx_s > 0:
+                demands.append(tot_cx_s)
+                volume_demands.append(0.0)
+            else:
+                demands.append(float(clean_num(row_s.get("Peso_KG"), default=0.0)))
+                volume_demands.append(float(clean_num(row_s.get("Volume_m3"), default=0.0)))
             service_times.append(int(clean_num(row_s.get("Tempo_Entrega", row_s.get("tempo_descarga_min")), default=10)))
 
         dist_matrix = calculate_haversine_matrix(locations)
