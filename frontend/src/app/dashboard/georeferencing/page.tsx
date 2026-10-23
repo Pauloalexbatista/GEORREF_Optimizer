@@ -464,6 +464,34 @@ export default function GeoreferencingPage() {
     }
   };
 
+  const handleAlimentarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedProject) return;
+
+    setLoading(true);
+    setStep("geocoding");
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+
+    try {
+      const importRes = await apiRequest(`/api/fleet/import-alimentar/${selectedProject.id}`, {
+        method: "POST",
+        body: formData,
+      });
+      alert(importRes.message || "Ficheiros da Distribuição Alimentar importados com sucesso!");
+      const data = await apiRequest(`/api/geocoding/${selectedProject.id}`);
+      setDeliveries(data);
+      setStep("results");
+    } catch (err: any) {
+      alert(err.message || "Erro ao importar ficheiros Alimentar. Verifique os ficheiros de texto tabulados.");
+      setStep("upload");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const [toolLoadingType, setToolLoadingType] = useState<"mobiliario" | "alimentar" | null>(null);
 
   const handleGeoreferenceTool = async (e: React.ChangeEvent<HTMLInputElement>, toolType: "mobiliario" | "alimentar") => {
@@ -544,7 +572,7 @@ export default function GeoreferencingPage() {
         window.URL.revokeObjectURL(downloadUrl);
       }
 
-      const tipoLabel = toolType === "mobiliario" ? "Mobiliário" : "Alimentar (Auchan)";
+      const tipoLabel = toolType === "mobiliario" ? "Mobiliário" : "Alimentar";
       const msg = `✅ ${tipoLabel} processado com sucesso!\n\n• Total de clientes: ${totalCount}\n• Novos georreferenciados: ${geocodedCount}\n• Já tinham coordenadas: ${alreadyCount}\n• Não localizados: ${notFoundCount}\n\nO ficheiro '${downloadName}' foi gravado com sucesso!`;
       setToolResultMsg(msg);
       alert(msg);
@@ -728,7 +756,7 @@ export default function GeoreferencingPage() {
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-medium">1-CLIQUE</span>
                 </div>
                 <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
-                  Georreferencie diretamente ficheiros de clientes (.txt) e descarregue-os prontos para o WinRoute.
+                  Georreferencie ficheiros de clientes (.txt) ou importe os 3 ficheiros no sistema para criar rotas.
                 </p>
               </div>
 
@@ -739,52 +767,70 @@ export default function GeoreferencingPage() {
               )}
 
               <div className="w-full pt-1 flex flex-col items-center gap-2">
-                {/* Botão Mobiliário */}
-                <label className="cursor-pointer w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white rounded-xl px-4 py-2.5 text-xs font-bold shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 block border border-emerald-400/30">
-                  <span>📦</span>
-                  <span>{toolLoadingType === "mobiliario" ? "A georreferenciar..." : "Georreferenciar Mobiliário (W/X)"}</span>
-                  <input
-                    type="file"
-                    accept=".txt,.csv,.tsv"
-                    onChange={(e) => handleGeoreferenceTool(e, "mobiliario")}
-                    disabled={!!toolLoadingType || loading}
-                    className="hidden"
-                  />
-                </label>
+                {/* Botões Rápidos WinRoute */}
+                <div className="grid grid-cols-2 gap-2 w-full">
+                  <label className="cursor-pointer bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl px-3 py-2.5 text-xs font-bold shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 block border border-emerald-400/30 text-center">
+                    <span>📦</span>
+                    <span className="truncate">{toolLoadingType === "mobiliario" ? "A georref..." : "Mobiliário (W/X)"}</span>
+                    <input
+                      type="file"
+                      accept=".txt,.csv,.tsv"
+                      onChange={(e) => handleGeoreferenceTool(e, "mobiliario")}
+                      disabled={!!toolLoadingType || loading}
+                      className="hidden"
+                    />
+                  </label>
 
-                {/* Botão Alimentar */}
-                <label className="cursor-pointer w-full bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white rounded-xl px-4 py-2.5 text-xs font-bold shadow-md shadow-amber-500/20 transition-all flex items-center justify-center gap-2 block border border-amber-400/30">
-                  <span>🛒</span>
-                  <span>{toolLoadingType === "alimentar" ? "A georreferenciar..." : "Georreferenciar Alimentar (AA/AB)"}</span>
-                  <input
-                    type="file"
-                    accept=".txt,.csv,.tsv"
-                    onChange={(e) => handleGeoreferenceTool(e, "alimentar")}
-                    disabled={!!toolLoadingType || loading}
-                    className="hidden"
-                  />
-                </label>
+                  <label className="cursor-pointer bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white rounded-xl px-3 py-2.5 text-xs font-bold shadow-md shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 block border border-amber-400/30 text-center">
+                    <span>🛒</span>
+                    <span className="truncate">{toolLoadingType === "alimentar" ? "A georref..." : "Alimentar (AA/AB)"}</span>
+                    <input
+                      type="file"
+                      accept=".txt,.csv,.tsv"
+                      onChange={(e) => handleGeoreferenceTool(e, "alimentar")}
+                      disabled={!!toolLoadingType || loading}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <span className="text-[10px] text-zinc-400">
+                  ⚡ 1-Clique: Seleciona o ficheiro de clientes ➔ descarrega com coordenadas
+                </span>
 
                 <div className="w-full flex items-center gap-2 my-0.5">
                   <div className="h-[1px] bg-zinc-800 flex-1"></div>
-                  <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">ou importar no sistema</span>
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">importar no sistema para rotas</span>
                   <div className="h-[1px] bg-zinc-800 flex-1"></div>
                 </div>
 
-                {/* Importação dos 3 ficheiros */}
-                <label className="cursor-pointer w-full bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/60 rounded-xl px-4 py-2 text-xs font-semibold shadow-md transition-all block">
-                  <span>{loading ? "A carregar..." : "+ Importar Ficheiros Mobiliário (.txt)"}</span>
-                  <input
-                    type="file"
-                    multiple
-                    accept=".txt,.csv,.tsv"
-                    onChange={handleMobiliarioUpload}
-                    disabled={loading || !!toolLoadingType}
-                    className="hidden"
-                  />
-                </label>
+                {/* Importação no Sistema */}
+                <div className="grid grid-cols-2 gap-2 w-full">
+                  <label className="cursor-pointer bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/60 rounded-xl px-2.5 py-2 text-[11px] font-semibold shadow-md transition-all block text-center truncate">
+                    <span>{loading ? "A carregar..." : "+ Frotas Mobiliário"}</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".txt,.csv,.tsv"
+                      onChange={handleMobiliarioUpload}
+                      disabled={loading || !!toolLoadingType}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <label className="cursor-pointer bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/60 rounded-xl px-2.5 py-2 text-[11px] font-semibold shadow-md transition-all block text-center truncate">
+                    <span>{loading ? "A carregar..." : "+ Frotas Alimentar"}</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".txt,.csv,.tsv"
+                      onChange={handleAlimentarUpload}
+                      disabled={loading || !!toolLoadingType}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
                 <span className="text-[10px] text-zinc-500">
-                  Stores, Fleet e Services para planeamento completo
+                  Dica: pode selecionar os 3 ficheiros em simultâneo (Lojas, Frota e Pedidos)
                 </span>
               </div>
             </div>

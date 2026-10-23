@@ -2292,6 +2292,402 @@ async def import_mobiliario_files(
         raise HTTPException(status_code=500, detail=f"Erro ao importar ficheiros Mobiliário: {str(e)}")
 
 
+import re
+from datetime import datetime
+
+from core.session_state import FleetVehicle
+from database import save_frota_projeto
+
+@router.post("/import-alimentar/{project_id}")
+async def import_alimentar_files(
+    project_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Importa ficheiros da Distribuição Alimentar (Lojas, Frota e Pedidos)
+    e popula diretamente as tabelas SQLite (entregas, frota) e o snapshot GeoRoutePlan.
+    """
+    proj = get_projeto(project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+
+    try:
+        google_api_key = os.getenv("GOOGLE_MAPS_API_KEY", "")
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        db_path = os.path.join(root_dir, DB_GEO_PATH)
+        geocoder = WaterfallGeocoder(db_path, google_api_key=google_api_key)
+
+        def _decode_file(raw_bytes: bytes) -> str:
+            for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:
+                try:
+                    return raw_bytes.decode(enc)
+                except Exception:
+                    continue
+            return raw_bytes.decode("utf-8", errors="ignore")
+
+        def _parse_time_min(val_str: Any) -> int:
+            if not val_str:
+                return 15
+            s = str(val_str).strip()
+            if ":" in s:
+                parts = s.split(":")
+                try:
+                    return int(parts[0]) * 60 + int(parts[1])
+                except Exception:
+                    return 15
+            try:
+                return int(float(s.replace(",", ".")))
+            except Exception:
+                return 15
+
+        def _parse_flt(val_str: Any, default: float = 0.0) -> float:
+            if val_str is None or val_str == "":
+                return default
+            s = str(val_str).strip().replace(",", ".")
+            try:
+                return float(s)
+            except Exception:
+                return default
+
+        # Ler e categorizar os ficheiros
+        file_lojas_lines = []
+        file_fleet_lines = []
+        file_pedidos_lines = []
+
+        for f in files:
+            content_bytes = await f.read()
+            text = _decode_file(content_bytes)
+            raw_lines = [l.strip("\r\n") for l in text.split("\n") if l.strip()]
+            if not raw_lines:
+                continue
+
+            first_cols = raw_lines[0].split("\t")
+            fn = f.filename.lower() if f.filename else ""
+            num_cols = len(first_cols)
+
+            if "loja" in fn or "store" in fn or "armaz" in fn or num_cols == 10 or (num_cols >= 8 and num_cols <= 15 and "nome_armazem" in raw_lines[0].lower()):
+                file_lojas_lines = raw_lines
+            elif "frota" in fn or "fleet" in fn or (num_cols >= 30 and num_cols <= 34):
+                file_fleet_lines = raw_lines
+            elif "pedido" in fn or "pedidos" in fn or "service" in fn or "servi" in fn or "entrega" in fn or (num_cols >= 35 and num_cols <= 42):
+                file_pedidos_lines = raw_lines
+
+        if not file_lojas_lines and not file_fleet_lines and not file_pedidos_lines:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foi possível identificar os ficheiros da Distribuição Alimentar (Lojas, Frota ou Pedidos). Verifique se enviou os ficheiros de texto tabulados correspondentes."
+            )
+
+        # 1. Processar Lojas (Armazéns)
+        wh_rows = []
+        store_map = {}
+        for idx, line in enumerate(file_lojas_lines):
+            if idx == 0 and "nome_armazem" in line.lower():
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            w_name = parts[0].strip()
+            w_addr = parts[1].strip() if len(parts) > 1 else ""
+            w_cp = parts[2].strip() if len(parts) > 2 else ""
+            w_loc = parts[3].strip() if len(parts) > 3 else ""
+            w_lat = _parse_flt(parts[4]) if len(parts) > 4 else 0.0
+            w_lon = _parse_flt(parts[5]) if len(parts) > 5 else 0.0
+            w_open = parts[6].strip() if len(parts) > 6 and parts[6].strip() else "06:00:00"
+            w_close = parts[7].strip() if len(parts) > 7 and parts[7].strip() else "22:00:00"
+            w_load = _parse_time_min(parts[8]) if len(parts) > 8 else 30
+            w_cont = parts[9].strip() if len(parts) > 9 else ""
+
+            if (w_lat == 0.0 or w_lon == 0.0) and (w_addr or w_cp):
+                try:
+                    res_tuple = geocoder.resolve_address(w_addr, w_cp, w_loc, fast_mode=True)
+                    res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    if res and res.get("lat") and res.get("lon"):
+                        w_lat = float(res["lat"])
+                        w_lon = float(res["lon"])
+                except Exception:
+                    pass
+
+            wh_item = {
+                "Nome_Armazem": w_name,
+                "Nome": w_name,
+                "Morada": w_addr,
+                "CP": w_cp,
+                "Codigo_Postal": w_cp,
+                "Localidade": w_loc,
+                "Latitude": w_lat,
+                "Longitude": w_lon,
+                "Hora_Abertura": w_open,
+                "Hora_Fecho": w_close,
+                "Tempo_Carga_Min": w_load,
+                "Contacto_Responsavel": w_cont
+            }
+            wh_rows.append(wh_item)
+            norm_key = re.sub(r'[^a-zA-Z0-9]', '', w_name.lower())
+            store_map[norm_key] = wh_item
+            store_map[w_name] = wh_item
+
+        if not wh_rows:
+            wh_rows.append({
+                "Nome_Armazem": "Loja Central",
+                "Nome": "Loja Central",
+                "Morada": "Centro de Distribuição Alimentar",
+                "CP": "2810-500",
+                "Codigo_Postal": "2810-500",
+                "Localidade": "Almada",
+                "Latitude": 38.6598,
+                "Longitude": -9.1747,
+                "Hora_Abertura": "06:00:00",
+                "Hora_Fecho": "22:00:00",
+                "Tempo_Carga_Min": 30,
+                "Contacto_Responsavel": ""
+            })
+
+        # 2. Processar Frota
+        fleet_dict = {}
+        veh_code_to_name = {}
+        drivers_list = []
+        fleet_rows_for_db = []
+
+        for line in file_fleet_lines:
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            v_id = parts[0].strip()
+            v_plate = parts[1].strip() if len(parts) > 1 else ""
+            v_name = f"Viatura {v_id} ({v_plate})" if v_plate else f"Viatura {v_id}"
+            d_id = parts[2].strip() if len(parts) > 2 else ""
+            d_name = parts[3].strip() if len(parts) > 3 else ""
+            v_store_key = parts[4].strip() if len(parts) > 4 else ""
+            v_rules = parts[5].strip() if len(parts) > 5 else ""
+            v_start = parts[15].strip() if len(parts) > 15 and parts[15].strip() else "08:00:00"
+            v_end = parts[16].strip() if len(parts) > 16 and parts[16].strip() else "20:00:00"
+            v_kg = _parse_flt(parts[10], 1000.0) if len(parts) > 10 else 1000.0
+            v_vol = 10.0
+
+            target_wh = wh_rows[0]["Nome_Armazem"]
+            if v_store_key:
+                norm_sk = re.sub(r'[^a-zA-Z0-9]', '', v_store_key.lower())
+                for k, s in store_map.items():
+                    if k in norm_sk or norm_sk in k:
+                        target_wh = s["Nome_Armazem"]
+                        break
+
+            v_obj = FleetVehicle(
+                capacidade_kg=v_kg,
+                capacidade_vol=v_vol,
+                custo_km=0.65,
+                velocidade_media=50.0,
+                horario_inicio=v_start[:5],
+                horario_fim=v_end[:5],
+                armazem=target_wh
+            )
+            v_obj.custo_hora = 12.50
+            v_obj.max_entregas = 30
+            v_obj.regras = v_rules
+            v_obj.motorista_nome = d_name
+            v_obj.codigo_veiculo = v_id
+            v_obj.codigo_motorista = d_id
+            v_obj.segunda_volta = "Não"
+            fleet_dict[v_name] = v_obj
+            veh_code_to_name[v_id] = v_name
+
+            fleet_rows_for_db.append({
+                "veiculo": v_name,
+                "capacidade_kg": v_kg,
+                "capacidade_volume": v_vol,
+                "custo_km": 0.65,
+                "velocidade_media": 50.0,
+                "horario_inicio": v_start[:5],
+                "horario_fim": v_end[:5],
+                "armazem": target_wh,
+                "regras": v_rules,
+                "max_entregas": 30,
+                "motorista_nome": d_name,
+                "motorista_telemovel": "910000000",
+                "codigo_veiculo": v_id,
+                "codigo_motorista": d_id,
+                "is_active": 1,
+                "segunda_volta": "Não"
+            })
+
+            if d_name:
+                drivers_list.append({
+                    "name": d_name,
+                    "pin": "1234",
+                    "phone": "910000000",
+                    "vehicle": v_name,
+                    "matricula": v_plate,
+                    "route": v_name,
+                    "is_active": 1
+                })
+
+        # 3. Processar Pedidos
+        deliveries_list = []
+        detected_service_date = ""
+
+        for s_idx, line in enumerate(file_pedidos_lines):
+            parts = line.split("\t")
+            if len(parts) < 25:
+                continue
+
+            raw_date = parts[1].strip() if len(parts) > 1 else ""
+            if raw_date and not detected_service_date:
+                if "/" in raw_date:
+                    d_p = raw_date.split("/")
+                    if len(d_p) == 3:
+                        detected_service_date = f"{d_p[2]}-{d_p[1]}-{d_p[0]}"
+                else:
+                    detected_service_date = raw_date
+
+            s_rules = parts[6].strip() if len(parts) > 6 else ""
+            doc_id = parts[32].strip() if len(parts) > 32 and parts[32].strip() else parts[0].strip()
+            cli_name = parts[21].strip() if len(parts) > 21 and parts[21].strip() else doc_id
+            addr = parts[22].strip() if len(parts) > 22 else ""
+            cp = parts[23].strip() if len(parts) > 23 else ""
+            loc = parts[24].strip() if len(parts) > 24 else ""
+
+            lon_str = parts[26].strip() if len(parts) > 26 else ""
+            lat_str = parts[27].strip() if len(parts) > 27 else ""
+
+            j1_start = parts[28].strip() if len(parts) > 28 and parts[28].strip() else "08:00"
+            j1_end = parts[29].strip() if len(parts) > 29 and parts[29].strip() else "20:00"
+            unload_min = _parse_time_min(parts[30]) if len(parts) > 30 else 15
+            weight = _parse_flt(parts[34], 50.0) if len(parts) > 34 else 50.0
+            volume = round(weight / 100.0, 2) if weight > 0 else 1.0
+
+            lat, lon = 0.0, 0.0
+            if lat_str and lon_str:
+                try:
+                    lat = float(lat_str.replace(",", "."))
+                    lon = float(lon_str.replace(",", "."))
+                except Exception:
+                    pass
+
+            if lat == 0.0 and lon == 0.0 and (addr or cp):
+                try:
+                    res_tuple = geocoder.resolve_address(addr, cp, loc, fast_mode=True)
+                    res = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
+                    if res and res.get("lat") and res.get("lon"):
+                        lat = float(res["lat"])
+                        lon = float(res["lon"])
+                except Exception:
+                    pass
+
+            qual = 1 if (lat != 0.0 and lon != 0.0) else 99
+            wh_name = wh_rows[0]["Nome_Armazem"]
+
+            d_entry = {
+                "Armazem": wh_name,
+                "Doc_ID": doc_id,
+                "Codigo_Cliente": doc_id,
+                "Cliente": cli_name,
+                "Nome_Cliente": cli_name,
+                "Morada": addr,
+                "CP": cp,
+                "Codigo_Postal": cp,
+                "Localidade": loc,
+                "Latitude": lat,
+                "Longitude": lon,
+                "Telefone_Cliente": "",
+                "Telefone": "",
+                "Peso_KG": weight,
+                "Peso": weight,
+                "Volume_M3": volume,
+                "Volume_m3": volume,
+                "Janela_Inicio": j1_start,
+                "Janela_Fim": j1_end,
+                "Janela_Horaria": f"{j1_start} - {j1_end}",
+                "Tempo_Descarga_Min": unload_min,
+                "Tipo_Operacao": "ENTREGA",
+                "Regras": s_rules,
+                "Notas_Motorista": "",
+                "Observacoes": "",
+                "Prioridade": "Normal",
+                "Vendedor": "",
+                "Rota": "Por Distribuir",
+                "Ordem": s_idx + 1,
+                "Ordem_Paragem": s_idx + 1
+            }
+            deliveries_list.append(d_entry)
+
+        # 4. Guardar Entregas no SQLite
+        if deliveries_list:
+            ensure_entregas_columns()
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM entregas WHERE projeto_id = ?", (project_id,))
+                for d in deliveries_list:
+                    lat_d = float(d.get("Latitude", 0.0))
+                    lon_d = float(d.get("Longitude", 0.0))
+                    qual_d = 1 if (lat_d != 0 and lon_d != 0) else 99
+                    src_d = "FICHEIRO" if qual_d == 1 else "PENDENTE"
+                    cursor.execute("""
+                        INSERT INTO entregas (
+                            projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
+                            peso_kg, volume_m3, prioridade, janela_inicio, janela_fim, tempo_descarga_min,
+                            latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem,
+                            telefone, observacoes, vendedor, rota, ordem_paragem, regras
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        project_id, d["Doc_ID"], d["Cliente"], d["Morada"],
+                        d["CP"], d["Localidade"], float(d.get("Peso_KG", 50.0)),
+                        float(d.get("Volume_M3", 0.1)), 2, d.get("Janela_Inicio", "08:00"),
+                        d.get("Janela_Fim", "18:00"), int(d.get("Tempo_Descarga_Min", 15)),
+                        lat_d, lon_d, qual_d, src_d, d["Morada"], d["Armazem"],
+                        "", "", "", d["Rota"], d["Ordem"], d["Regras"]
+                    ))
+                conn.commit()
+
+        # 5. Guardar Frota no SQLite
+        if fleet_rows_for_db:
+            save_frota_projeto(project_id, fleet_rows_for_db)
+
+        # 6. Salvar Snapshot completo
+        df_wh = pd.DataFrame(wh_rows) if wh_rows else pd.DataFrame()
+
+        state_dict = {
+            "warehouses_geocoded": df_wh,
+            "fleet_config": fleet_dict,
+            "rules_matrix": [],
+            "clients_geocoded": pd.DataFrame(deliveries_list) if deliveries_list else pd.DataFrame(),
+            "routes_solution": None,
+            "routes_df": None,
+            "drivers": drivers_list,
+            "motoristas": drivers_list,
+            "service_date": detected_service_date or datetime.now().strftime("%Y-%m-%d"),
+            "phase_1_complete": bool(deliveries_list),
+            "phase_2_complete": bool(fleet_dict),
+            "phase_3_complete": False
+        }
+
+        payload = serialize_state(state_dict)
+        snapshot_name = f"Importação Alimentar ({datetime.now().strftime('%H:%M:%S')})"
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
+                (project_id, current_user.id, 2, snapshot_name, payload)
+            )
+            conn.commit()
+
+        return {
+            "status": "success",
+            "message": f"Ficheiros da Distribuição Alimentar importados com sucesso! ({len(wh_rows)} lojas/armazéns, {len(fleet_dict)} veículos, {len(deliveries_list)} pedidos georreferenciados).",
+            "num_warehouses": len(wh_rows),
+            "num_vehicles": len(fleet_dict),
+            "num_deliveries": len(deliveries_list)
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao importar ficheiros Alimentar: {str(e)}")
+
+
+
 class RuleSimulatePayload(BaseModel):
     vehicle_name: Optional[str] = "Viatura"
     vehicle_tags: Optional[str] = ""
