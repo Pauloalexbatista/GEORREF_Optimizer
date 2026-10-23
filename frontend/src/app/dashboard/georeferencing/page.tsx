@@ -805,8 +805,17 @@ export default function GeoreferencingPage() {
 
                 {/* Importação no Sistema */}
                 <div className="grid grid-cols-2 gap-2 w-full">
-                  <label className="cursor-pointer bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/60 rounded-xl px-2.5 py-2 text-[11px] font-semibold shadow-md transition-all block text-center truncate">
-                    <span>{loading ? "A carregar..." : "+ Frotas Mobiliário"}</span>
+                  <label
+                    title="Importar os 3 ficheiros do Mobiliário: fleet, services e stores"
+                    className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/70 hover:border-indigo-500/60 rounded-xl px-2 py-2 text-center shadow-md transition-all flex flex-col items-center justify-center group"
+                  >
+                    <span className="text-[11px] font-bold text-zinc-100 flex items-center justify-center gap-1">
+                      <span>📦</span>
+                      <span>{loading ? "A carregar..." : "+ Mobiliário"}</span>
+                    </span>
+                    <span className="text-[9.5px] text-zinc-400 group-hover:text-indigo-300 font-mono tracking-tight mt-0.5">
+                      fleet, services, stores
+                    </span>
                     <input
                       type="file"
                       multiple
@@ -817,8 +826,17 @@ export default function GeoreferencingPage() {
                     />
                   </label>
 
-                  <label className="cursor-pointer bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/60 rounded-xl px-2.5 py-2 text-[11px] font-semibold shadow-md transition-all block text-center truncate">
-                    <span>{loading ? "A carregar..." : "+ Frotas Alimentar"}</span>
+                  <label
+                    title="Importar os 3 ficheiros da Distribuição Alimentar: Frota, Serviços e Lojas"
+                    className="cursor-pointer bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/70 hover:border-emerald-500/60 rounded-xl px-2 py-2 text-center shadow-md transition-all flex flex-col items-center justify-center group"
+                  >
+                    <span className="text-[11px] font-bold text-zinc-100 flex items-center justify-center gap-1">
+                      <span>🛒</span>
+                      <span>{loading ? "A carregar..." : "+ Alimentar"}</span>
+                    </span>
+                    <span className="text-[9.5px] text-zinc-400 group-hover:text-emerald-300 font-mono tracking-tight mt-0.5">
+                      Frota, Serviços, Lojas
+                    </span>
                     <input
                       type="file"
                       multiple
@@ -830,7 +848,7 @@ export default function GeoreferencingPage() {
                   </label>
                 </div>
                 <span className="text-[10px] text-zinc-500">
-                  Dica: pode selecionar os 3 ficheiros em simultâneo (Lojas, Frota e Pedidos)
+                  Dica: pode selecionar os 3 ficheiros em simultâneo (Mobiliário: fleet, services, stores | Alimentar: Frota, Serviços, Lojas)
                 </span>
               </div>
             </div>
