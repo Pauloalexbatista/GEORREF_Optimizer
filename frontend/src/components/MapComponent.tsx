@@ -1224,23 +1224,20 @@ export default function MapComponent({
   };
 
 
-  // Extract unique warehouses (Apenas os armazéns que têm carga por defeito)
+  // Extract unique warehouses
   const warehouseOptions = useMemo(() => {
-    if (statusFilter === "with_cargo" && warehousesWithCargo.size > 0) {
-      return Array.from(warehousesWithCargo);
-    }
     const set = new Set<string>();
     warehouses.forEach(w => {
-      if (w.name) set.add(w.name);
+      if (w.name && w.name.trim()) set.add(w.name.trim());
     });
     clients.forEach(c => {
-      if (c.Armazem && c.Armazem !== "N/A") set.add(c.Armazem);
+      if (c.Armazem && c.Armazem.trim() && c.Armazem.trim() !== "N/A") set.add(c.Armazem.trim());
     });
     fleet.forEach(f => {
-      if (f.armazem && f.armazem !== "N/A") set.add(f.armazem);
+      if (f.armazem && f.armazem.trim() && f.armazem.trim() !== "N/A") set.add(f.armazem.trim());
     });
-    return Array.from(set);
-  }, [warehouses, clients, fleet, statusFilter, warehousesWithCargo]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt", { sensitivity: "base" }));
+  }, [warehouses, clients, fleet]);
 
   // List of vehicles scoped to the currently selected warehouse, dynamically including all routes present in clients
   const warehouseVehicles = useMemo(() => {

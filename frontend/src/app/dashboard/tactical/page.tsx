@@ -117,6 +117,13 @@ function formatTimeWindow(winStr: string): string {
   return cleaned.slice(0, 13) || "Qualquer";
 }
 
+function matchWarehouse(whA?: string, whB?: string): boolean {
+  if (!whA || !whB) return false;
+  const a = whA.toLowerCase().trim();
+  const b = whB.toLowerCase().trim();
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 function isPendingRoute(routeName: string) {
   if (!routeName) return true;
   const s = routeName.toUpperCase();
@@ -1295,32 +1302,32 @@ export default function TacticalPage() {
   }, [routes, vehicleMap, warehouseMap, rulesMatrix]);
 
   const hasPending = useMemo(() => {
-    return (groupedRoutes["Por Distribuir"] || []).length > 0;
-  }, [groupedRoutes]);
+    const rawPending = groupedRoutes["Por Distribuir"] || [];
+    if (!selectedWarehouseFilter || selectedWarehouseFilter === "all") {
+      return rawPending.length > 0;
+    }
+    return rawPending.some((s) => matchWarehouse(s.Armazem, selectedWarehouseFilter));
+  }, [groupedRoutes, selectedWarehouseFilter]);
 
-  // Available unique warehouses (Apenas os armazéns que têm carga/rotas atribuídas por defeito)
+  // Available unique warehouses (Todos os armazéns registados, na frota ou nas encomendas)
   const uniqueWarehouseNames = useMemo(() => {
     const names = new Set<string>();
+    warehouses.forEach((w) => {
+      if (w.name && w.name.trim()) names.add(w.name.trim());
+    });
+    fleetList.forEach((v) => {
+      if (v.armazem && v.armazem.trim()) names.add(v.armazem.trim());
+    });
     routes.forEach((r) => {
-      if (r.Armazem && !isPendingRoute(r.Rota)) {
+      if (r.Armazem && r.Armazem.trim() && r.Armazem.trim() !== "N/A") {
         names.add(r.Armazem.trim());
       }
     });
-    Object.entries(groupedRoutes).forEach(([vName, stops]) => {
-      if (stops.length > 0 && !isPendingRoute(vName)) {
-        const vCfg = vehicleMap[vName];
-        if (vCfg?.armazem) names.add(vCfg.armazem.trim());
-      }
+    Object.values(vehicleMap).forEach((vCfg) => {
+      if (vCfg?.armazem && vCfg.armazem.trim()) names.add(vCfg.armazem.trim());
     });
-    // Fallback se ainda não existirem rotas atribuídas
-    if (names.size === 0) {
-      warehouses.forEach((w) => names.add(w.name));
-      fleetList.forEach((v) => {
-        if (v.armazem) names.add(v.armazem);
-      });
-    }
-    return Array.from(names);
-  }, [routes, groupedRoutes, vehicleMap, warehouses, fleetList]);
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "pt", { sensitivity: "base" }));
+  }, [routes, vehicleMap, warehouses, fleetList]);
 
   // Hierarchical sort & filter of route keys
   const displayRouteKeys = useMemo(() => {
@@ -1440,26 +1447,63 @@ export default function TacticalPage() {
       return sortDirection === "asc" ? comp : -comp;
     });
 
+    // Check if there are pending stops matching current warehouse filter
+    const rawPending = groupedRoutes["Por Distribuir"] || [];
+    const matchingPendingStops = (selectedWarehouseFilter && selectedWarehouseFilter !== "all")
+      ? rawPending.filter((s) => matchWarehouse(s.Armazem, selectedWarehouseFilter))
+      : rawPending;
+    const hasMatchingPending = matchingPendingStops.length > 0;
+
     // Handle "Por Distribuir" inclusion based on status filter
     if (selectedStatusFilter === "empty") {
       return list;
     }
     if (selectedStatusFilter === "pending") {
-      return hasPending ? ["Por Distribuir"] : [];
+      return hasMatchingPending ? ["Por Distribuir"] : [];
     }
 
-    return [...(hasPending ? ["Por Distribuir"] : []), ...list];
-  }, [vehicles, groupedRoutes, hasPending, vehicleMap, selectedWarehouseFilter, selectedStatusFilter, searchQuery]);
+    return [...(hasMatchingPending ? ["Por Distribuir"] : []), ...list];
+  }, [vehicles, groupedRoutes, vehicleMap, selectedWarehouseFilter, selectedStatusFilter, searchQuery, sortField, sortDirection]);
 
-  // Global KPIs
+  // Global KPIs (Filtered by Warehouse if selected)
   const globalKpis = useMemo(() => {
-    const pendingStops = groupedRoutes["Por Distribuir"] || [];
-    const assignedStops = routes.filter((r) => !isPendingRoute(r.Rota));
-    const activeVehicles = vehicles.filter((v) => (groupedRoutes[v] || []).length > 0);
+    const isFiltered = !!(selectedWarehouseFilter && selectedWarehouseFilter !== "all");
+    const targetWh = isFiltered ? selectedWarehouseFilter.toLowerCase().trim() : "";
+
+    const matchesWh = (wh?: string) => {
+      if (!isFiltered) return true;
+      if (!wh) return false;
+      const w = wh.toLowerCase().trim();
+      return w === targetWh || targetWh.includes(w) || w.includes(targetWh);
+    };
+
+    const pendingStops = (groupedRoutes["Por Distribuir"] || []).filter((s) =>
+      !isFiltered || matchesWh(s.Armazem)
+    );
+
+    const relevantVehicles = vehicles.filter((v) => {
+      if (!isFiltered) return true;
+      const vCfg = vehicleMap[v];
+      const stops = groupedRoutes[v] || [];
+      const whFromStop = stops.length > 0 ? stops[0].Armazem : "";
+      const whFromCfg = vCfg?.armazem || "";
+      if (matchesWh(whFromStop) || matchesWh(whFromCfg)) return true;
+      if (stops.some((s) => matchesWh(s.Armazem))) return true;
+      const prefix = v.includes("_") ? v.split("_")[0].toLowerCase() : v.toLowerCase();
+      if (targetWh.includes(prefix) || prefix.includes(targetWh)) return true;
+      return false;
+    });
+
+    const assignedStops = routes.filter((r) => {
+      if (isPendingRoute(r.Rota)) return false;
+      if (!isFiltered) return true;
+      return matchesWh(r.Armazem) || relevantVehicles.includes(r.Rota);
+    });
+
+    const activeVehicles = relevantVehicles.filter((v) => (groupedRoutes[v] || []).length > 0);
     
     let totalKm = 0.0;
     let totalKg = 0.0;
-    let totalVol = 0.0;
     let totalLate = 0;
 
     assignedStops.forEach((s) => {
@@ -1467,7 +1511,7 @@ export default function TacticalPage() {
       if (isDeliveryLate(s.Chegada, s.Janela_Horaria)) totalLate++;
     });
 
-    vehicles.forEach((v) => {
+    relevantVehicles.forEach((v) => {
       const stops = groupedRoutes[v] || [];
       if (stops.length > 0) {
         const last = stops[stops.length - 1];
@@ -1487,17 +1531,17 @@ export default function TacticalPage() {
       : 100;
 
     return {
-      totalDeliveries: routes.length,
+      totalDeliveries: assignedStops.length + pendingStops.length,
       assignedCount: assignedStops.length,
       pendingCount: pendingStops.length,
       totalKm: totalKm.toFixed(1),
       totalKg: totalKg.toFixed(0),
       activeVehiclesCount: activeVehicles.length,
-      totalVehiclesCount: vehicles.length,
+      totalVehiclesCount: relevantVehicles.length,
       onTimeRate,
       totalLate,
     };
-  }, [routes, groupedRoutes, vehicles, vehicleMap, warehouseMap, warehouses]);
+  }, [routes, groupedRoutes, vehicles, vehicleMap, warehouseMap, warehouses, selectedWarehouseFilter]);
 
   // Diagnóstico Executivo The Big Picture (Balanço Temporal AM/PM/Noite e Carga Física)
   const bigPictureAnalytics = useMemo(() => {
@@ -1979,7 +2023,7 @@ export default function TacticalPage() {
                     selectedStatusFilter === "all" ? "bg-zinc-800 text-zinc-100 font-semibold" : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
-                  Todos ({vehicles.length})
+                  Todos ({globalKpis.totalVehiclesCount})
                 </button>
                 <button
                   onClick={() => { setSelectedStatusFilter("active"); broadcastFilterSync(searchQuery, selectedWarehouseFilter, "active"); }}
@@ -2140,18 +2184,27 @@ export default function TacticalPage() {
                   {displayRouteKeys.map((routeName) => {
                     try {
                       const isPending = isPendingRoute(routeName);
-                      const allStops = groupedRoutes[routeName] || [];
+                      const rawStops = groupedRoutes[routeName] || [];
+
+                      // If warehouse filter is active and this is "Por Distribuir", strictly show only stops for this warehouse!
+                      const allStops = (isPending && selectedWarehouseFilter && selectedWarehouseFilter !== "all")
+                        ? rawStops.filter((s) => matchWarehouse(s.Armazem, selectedWarehouseFilter))
+                        : rawStops;
 
                       const filteredStops = searchQuery.trim() === ""
                         ? allStops
                         : allStops.filter((s) => {
                             const q = searchQuery.toLowerCase();
                             return (
-                              s.Cliente.toLowerCase().includes(q) ||
+                              (s.Cliente && s.Cliente.toLowerCase().includes(q)) ||
                               (s.Nome_Cliente && s.Nome_Cliente.toLowerCase().includes(q)) ||
-                              s.Morada.toLowerCase().includes(q) ||
-                              s.Localidade.toLowerCase().includes(q) ||
-                              s.CP.toLowerCase().includes(q)
+                              (s.Codigo_Cliente && s.Codigo_Cliente.toLowerCase().includes(q)) ||
+                              (s.Doc_ID && s.Doc_ID.toLowerCase().includes(q)) ||
+                              (s.Morada && s.Morada.toLowerCase().includes(q)) ||
+                              (s.Localidade && s.Localidade.toLowerCase().includes(q)) ||
+                              (s.CP && s.CP.toLowerCase().includes(q)) ||
+                              (s.Vendedor && s.Vendedor.toLowerCase().includes(q)) ||
+                              (s.vendedor && s.vendedor.toLowerCase().includes(q))
                             );
                           });
 
@@ -2160,8 +2213,13 @@ export default function TacticalPage() {
                       const color = getRouteColor(routeName, vehicles);
 
                       const vConfig = vehicleMap[routeName];
-                      const whName = vConfig?.armazem || (allStops.length > 0 ? allStops[0].Armazem : warehouses[0]?.name) || "Armazém Principal";
-                      const whData = warehouseMap[whName] || warehouses[0] || {
+                      const whName = isPending
+                        ? (selectedWarehouseFilter !== "all"
+                            ? selectedWarehouseFilter
+                            : (allStops.length > 0 && allStops[0].Armazem ? allStops[0].Armazem : "Vários Armazéns"))
+                        : (vConfig?.armazem || (allStops.length > 0 ? allStops[0].Armazem : warehouses[0]?.name) || "Armazém Principal");
+
+                      const whData = warehouseMap[whName] || warehouses.find((w) => matchWarehouse(w.name, whName)) || warehouses[0] || {
                         name: whName,
                         address: "Base Central",
                         cp: "0000-000",
