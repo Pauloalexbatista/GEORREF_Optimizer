@@ -123,6 +123,38 @@ export default function FleetPage() {
   const [searchRules, setSearchRules] = useState("");
   const [searchDrivers, setSearchDrivers] = useState("");
   const [searchReasons, setSearchReasons] = useState("");
+  const [importingFleet, setImportingFleet] = useState(false);
+
+  const handleImportFleetOnly = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedProject) return;
+
+    setImportingFleet(true);
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+
+    try {
+      const res = await apiRequest(`/api/fleet/import-fleet-file/${selectedProject.id}`, {
+        method: "POST",
+        body: formData,
+      });
+      alert(res.message || "Frota importada com sucesso!");
+      const data = await apiRequest(`/api/fleet/${selectedProject.id}`);
+      if (data && data.fleet) {
+        setFleet(data.fleet);
+      }
+      if (data && data.drivers) {
+        setDrivers(data.drivers);
+      }
+    } catch (err: any) {
+      alert(err.message || "Erro ao importar ficheiro de frota.");
+    } finally {
+      setImportingFleet(false);
+      e.target.value = "";
+    }
+  };
 
   // Geocoding Modal State
   const [geoModalOpen, setGeoModalOpen] = useState(false);
@@ -851,6 +883,18 @@ export default function FleetPage() {
                   onChange={(e) => setSearchFleet(e.target.value)}
                   className="px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 w-44"
                 />
+                <label className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-sm">
+                  <span>🚚</span>
+                  <span>{importingFleet ? "A importar..." : "+ Importar Ficheiro Frota (.txt)"}</span>
+                  <input
+                    type="file"
+                    accept=".txt,.csv,.tsv"
+                    onChange={handleImportFleetOnly}
+                    disabled={importingFleet || loading}
+                    className="hidden"
+                  />
+                </label>
+
                 <button
                   onClick={addVehicle}
                   className="px-3 py-1.5 bg-zinc-800 hover:bg-indigo-600 text-zinc-200 hover:text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"

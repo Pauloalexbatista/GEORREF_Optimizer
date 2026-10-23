@@ -2350,6 +2350,13 @@ async def import_alimentar_files(
             except Exception:
                 return default
 
+        # Obter estado anterior do projeto para preservar tabelas que não foram enviadas
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+            snap_row = cursor.fetchone()
+        existing_state = deserialize_state(snap_row["payload_json"]) if snap_row and snap_row["payload_json"] else {}
+
         # Ler e categorizar os ficheiros
         file_lojas_lines = []
         file_fleet_lines = []
@@ -2429,20 +2436,36 @@ async def import_alimentar_files(
             store_map[w_name] = wh_item
 
         if not wh_rows:
-            wh_rows.append({
-                "Nome_Armazem": "Loja Central",
-                "Nome": "Loja Central",
-                "Morada": "Centro de Distribuição Alimentar",
-                "CP": "2810-500",
-                "Codigo_Postal": "2810-500",
-                "Localidade": "Almada",
-                "Latitude": 38.6598,
-                "Longitude": -9.1747,
-                "Hora_Abertura": "06:00:00",
-                "Hora_Fecho": "22:00:00",
-                "Tempo_Carga_Min": 30,
-                "Contacto_Responsavel": ""
-            })
+            raw_prev_wh = _pick_first_valid(
+                existing_state.get("warehouses_geocoded"),
+                existing_state.get("warehouses_used"),
+                existing_state.get("warehouses")
+            )
+            if raw_prev_wh is not None:
+                df_prev_wh = raw_prev_wh if isinstance(raw_prev_wh, pd.DataFrame) else pd.DataFrame(raw_prev_wh)
+                if not df_prev_wh.empty:
+                    wh_rows = df_prev_wh.to_dict(orient="records")
+                    for w in wh_rows:
+                        w_name = str(w.get("Nome_Armazem", w.get("name", ""))).strip()
+                        if w_name:
+                            norm_k = re.sub(r'[^a-zA-Z0-9]', '', w_name.lower())
+                            store_map[norm_k] = w
+                            store_map[w_name.lower()] = w
+            if not wh_rows:
+                wh_rows.append({
+                    "Nome_Armazem": "Loja Central",
+                    "Nome": "Loja Central",
+                    "Morada": "Centro de Distribuição Alimentar",
+                    "CP": "2810-500",
+                    "Codigo_Postal": "2810-500",
+                    "Localidade": "Almada",
+                    "Latitude": 38.6598,
+                    "Longitude": -9.1747,
+                    "Hora_Abertura": "06:00:00",
+                    "Hora_Fecho": "22:00:00",
+                    "Tempo_Carga_Min": 30,
+                    "Contacto_Responsavel": ""
+                })
 
         # 2. Processar Frota
         fleet_dict = {}
@@ -2686,6 +2709,268 @@ async def import_alimentar_files(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao importar ficheiros Alimentar: {str(e)}")
 
+
+
+
+@router.post("/import-fleet-file/{project_id}")
+async def import_fleet_file_only(
+    project_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Importa exclusivamente ficheiro(s) de Frota (.txt) para o projeto atual,
+    associando viaturas e motoristas aos armazéns existentes sem apagar lojas nem clientes.
+    Suporta formatos Alimentar (33 cols), Mobiliário (41 cols) e outros tabulados.
+    """
+    proj = get_projeto(project_id)
+    if not proj or (proj["empresa_id"] != current_user.empresa_id and not getattr(current_user, "is_superadmin", False)):
+        raise HTTPException(status_code=403, detail="Não tem permissão para aceder a este projeto.")
+
+    try:
+        def _decode_file(raw_bytes: bytes) -> str:
+            for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:
+                try:
+                    return raw_bytes.decode(enc)
+                except Exception:
+                    continue
+            return raw_bytes.decode("utf-8", errors="ignore")
+
+        def _parse_flt(val_str: Any, default: float = 0.0) -> float:
+            if val_str is None or val_str == "":
+                return default
+            s = str(val_str).strip().replace(",", ".")
+            try:
+                return float(s)
+            except Exception:
+                return default
+
+        # 1. Obter snapshot atual para preservar armazéns e clientes
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT payload_json FROM snapshots WHERE projeto_id = ? ORDER BY id DESC LIMIT 1", (project_id,))
+            snap_row = cursor.fetchone()
+
+        existing_state = deserialize_state(snap_row["payload_json"]) if snap_row and snap_row["payload_json"] else {}
+
+        raw_wh = _pick_first_valid(
+            existing_state.get("warehouses_geocoded"),
+            existing_state.get("warehouses_used"),
+            existing_state.get("warehouses"),
+            existing_state.get("df_warehouses")
+        )
+        wh_rows = []
+        store_map = {}
+        if raw_wh is not None:
+            df_wh = raw_wh if isinstance(raw_wh, pd.DataFrame) else pd.DataFrame(raw_wh)
+            if not df_wh.empty:
+                for _, r in df_wh.iterrows():
+                    w_name = str(r.get("Nome_Armazem", r.get("name", ""))).strip()
+                    if w_name:
+                        wh_item = {"Nome_Armazem": w_name}
+                        wh_rows.append(wh_item)
+                        norm_k = re.sub(r'[^a-zA-Z0-9]', '', w_name.lower())
+                        store_map[norm_k] = wh_item
+                        store_map[w_name.lower()] = wh_item
+
+        default_wh_name = wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal"
+
+        # 2. Ler ficheiros de frota
+        fleet_dict = {}
+        veh_code_to_name = {}
+        drivers_list = []
+        fleet_rows_for_db = []
+
+        for f in files:
+            content_bytes = await f.read()
+            text_file = _decode_file(content_bytes)
+            raw_lines = [l.strip("\r\n") for l in text_file.split("\n") if l.strip()]
+            if not raw_lines:
+                continue
+
+            for line in raw_lines:
+                parts = line.split("\t")
+                if len(parts) < 2:
+                    continue
+
+                num_cols = len(parts)
+
+                # Formato Alimentar (~33 colunas)
+                if num_cols < 38:
+                    v_id = parts[0].strip().replace('\ufeff', '')
+                    v_plate = parts[1].strip() if len(parts) > 1 else ""
+                    v_name = f"Viatura {v_id} ({v_plate})" if v_plate else f"Viatura {v_id}"
+                    d_id = parts[2].strip() if len(parts) > 2 else ""
+                    d_name = parts[3].strip() if len(parts) > 3 else ""
+                    v_store_key = parts[4].strip() if len(parts) > 4 else ""
+                    v_rules = parts[5].strip() if len(parts) > 5 else ""
+                    v_start = parts[15].strip() if len(parts) > 15 and parts[15].strip() else "08:00:00"
+                    v_end = parts[16].strip() if len(parts) > 16 and parts[16].strip() else "20:00:00"
+                    v_kg = _parse_flt(parts[10], 1000.0) if len(parts) > 10 else 1000.0
+                    v_vol = 10.0
+
+                    target_wh = default_wh_name
+                    if v_store_key:
+                        norm_sk = re.sub(r'[^a-zA-Z0-9]', '', v_store_key.lower())
+                        for k, s in store_map.items():
+                            if k in norm_sk or norm_sk in k:
+                                target_wh = s["Nome_Armazem"]
+                                break
+
+                    v_obj = FleetVehicle(
+                        capacidade_kg=v_kg,
+                        capacidade_vol=v_vol,
+                        custo_km=0.65,
+                        velocidade_media=50.0,
+                        horario_inicio=v_start[:5],
+                        horario_fim=v_end[:5],
+                        armazem=target_wh
+                    )
+                    v_obj.custo_hora = 12.50
+                    v_obj.max_entregas = 30
+                    v_obj.regras = v_rules
+                    v_obj.motorista_nome = d_name
+                    v_obj.codigo_veiculo = v_id
+                    v_obj.codigo_motorista = d_id
+                    v_obj.segunda_volta = "Não"
+                    fleet_dict[v_name] = v_obj
+                    veh_code_to_name[v_id] = v_name
+
+                    fleet_rows_for_db.append({
+                        "veiculo": v_name,
+                        "capacidade_kg": v_kg,
+                        "capacidade_volume": v_vol,
+                        "custo_km": 0.65,
+                        "velocidade_media": 50.0,
+                        "horario_inicio": v_start[:5],
+                        "horario_fim": v_end[:5],
+                        "armazem": target_wh,
+                        "regras": v_rules,
+                        "max_entregas": 30,
+                        "motorista_nome": d_name,
+                        "motorista_telemovel": "910000000",
+                        "codigo_veiculo": v_id,
+                        "codigo_motorista": d_id,
+                        "is_active": 1,
+                        "segunda_volta": "Não"
+                    })
+
+                    if d_name:
+                        drivers_list.append({
+                            "name": d_name,
+                            "pin": "1234",
+                            "phone": "910000000",
+                            "vehicle": v_name,
+                            "matricula": v_plate,
+                            "route": v_name,
+                            "is_active": 1
+                        })
+
+                # Formato Mobiliário (~41 colunas)
+                else:
+                    v_id = parts[0].strip().replace('\ufeff', '')
+                    v_name = parts[1].strip() or f"Viatura {v_id}"
+                    d_id = parts[2].strip() if len(parts) > 2 else ""
+                    d_name = parts[3].strip() if len(parts) > 3 else ""
+                    v_store_id = parts[4].strip() if len(parts) > 4 else ""
+                    v_rules = parts[6].strip() if len(parts) > 6 else ""
+                    v_kg = _parse_flt(parts[11], 1000.0) if len(parts) > 11 else 1000.0
+                    raw_vol = _parse_flt(parts[13], 10.0) if len(parts) > 13 else 10.0
+                    v_vol = round(raw_vol / 1000.0, 2) if raw_vol > 50 else raw_vol
+                    v_max = int(_parse_flt(parts[15], 30)) if len(parts) > 15 else 30
+                    v_start = parts[19].strip() if len(parts) > 19 and parts[19].strip() else "08:00"
+                    v_end = parts[20].strip() if len(parts) > 20 and parts[20].strip() else "20:00"
+
+                    target_wh = default_wh_name
+                    if v_store_id:
+                        norm_sk = re.sub(r'[^a-zA-Z0-9]', '', v_store_id.lower())
+                        for k, s in store_map.items():
+                            if k in norm_sk or norm_sk in k:
+                                target_wh = s["Nome_Armazem"]
+                                break
+
+                    v_obj = FleetVehicle(
+                        capacidade_kg=v_kg,
+                        capacidade_vol=v_vol,
+                        custo_km=0.65,
+                        velocidade_media=50.0,
+                        horario_inicio=v_start[:5],
+                        horario_fim=v_end[:5],
+                        armazem=target_wh
+                    )
+                    v_obj.custo_hora = 12.50
+                    v_obj.max_entregas = v_max
+                    v_obj.regras = v_rules
+                    v_obj.motorista_nome = d_name
+                    v_obj.codigo_veiculo = v_id
+                    v_obj.codigo_motorista = d_id
+                    v_obj.segunda_volta = "Não"
+                    fleet_dict[v_name] = v_obj
+
+                    fleet_rows_for_db.append({
+                        "veiculo": v_name,
+                        "capacidade_kg": v_kg,
+                        "capacidade_volume": v_vol,
+                        "custo_km": 0.65,
+                        "velocidade_media": 50.0,
+                        "horario_inicio": v_start[:5],
+                        "horario_fim": v_end[:5],
+                        "armazem": target_wh,
+                        "regras": v_rules,
+                        "max_entregas": v_max,
+                        "motorista_nome": d_name,
+                        "motorista_telemovel": "910000000",
+                        "codigo_veiculo": v_id,
+                        "codigo_motorista": d_id,
+                        "is_active": 1,
+                        "segunda_volta": "Não"
+                    })
+
+                    if d_name:
+                        drivers_list.append({
+                            "name": d_name,
+                            "pin": "1234",
+                            "phone": "910000000",
+                            "vehicle": v_name,
+                            "matricula": "",
+                            "route": v_name,
+                            "is_active": 1
+                        })
+
+        if not fleet_rows_for_db:
+            raise HTTPException(status_code=400, detail="Não foi possível identificar registos válidos no ficheiro de frota.")
+
+        # 3. Guardar na tabela frota
+        save_frota_projeto(project_id, fleet_rows_for_db)
+
+        # 4. Atualizar o snapshot preservando o que já existia
+        updated_state = dict(existing_state)
+        updated_state["fleet_config"] = fleet_dict
+        updated_state["drivers"] = drivers_list
+        updated_state["motoristas"] = drivers_list
+        updated_state["phase_2_complete"] = True
+
+        payload = serialize_state(updated_state)
+        snap_title = f"Importação de Frota ({datetime.now().strftime('%H:%M:%S')})"
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO snapshots (projeto_id, utilizador_id, fase_atual, nome_snapshot, payload_json) VALUES (?, ?, ?, ?, ?)",
+                (project_id, current_user.id, 2, snap_title, payload)
+            )
+            conn.commit()
+
+        return {
+            "status": "success",
+            "message": f"Frota importada com sucesso! ({len(fleet_rows_for_db)} viaturas registadas).",
+            "num_vehicles": len(fleet_rows_for_db)
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao importar ficheiro de frota: {str(e)}")
 
 
 class RuleSimulatePayload(BaseModel):
