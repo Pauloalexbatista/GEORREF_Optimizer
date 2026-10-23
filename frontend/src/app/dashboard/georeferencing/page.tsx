@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 const UnifiedGeocodingModal = dynamic(() => import("@/components/UnifiedGeocodingModal"), { ssr: false });
 import DashboardLayout from "@/components/DashboardLayout";
 import { useProjects } from "@/context/ProjectContext";
-import { apiRequest, api } from "@/utils/api";
+import { apiRequest, api, getApiBaseUrl } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
 
 interface Delivery {
@@ -42,6 +42,8 @@ export default function GeoreferencingPage() {
   const { selectedProject } = useProjects();
   const [step, setStep] = useState<"upload" | "geocoding" | "results">("upload");
   const [loading, setLoading] = useState(false);
+  const [toolLoading, setToolLoading] = useState(false);
+  const [toolResultMsg, setToolResultMsg] = useState<string | null>(null);
   const [fileId, setFileId] = useState<string | null>(null);
   const [filename, setFilename] = useState("");
   const [columns, setColumns] = useState<string[]>([]);
@@ -462,6 +464,62 @@ export default function GeoreferencingPage() {
     }
   };
 
+  const handleGeoreferenceQuickTool = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    setToolLoading(true);
+    setToolResultMsg(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const token = typeof window !== "undefined" ? localStorage.getItem("georoute_token") : null;
+      const baseUrl = getApiBaseUrl();
+      const url = `${baseUrl}/api/geocoding/tools/georeference-services`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let errTxt = "Erro ao processar ficheiro.";
+        try {
+          const j = await response.json();
+          if (j.detail) errTxt = j.detail;
+        } catch (_) {}
+        throw new Error(errTxt);
+      }
+
+      const totalCount = response.headers.get("x-total-count") || "0";
+      const geocodedCount = response.headers.get("x-geocoded-count") || "0";
+      const alreadyCount = response.headers.get("x-already-count") || "0";
+      const notFoundCount = response.headers.get("x-not-found-count") || "0";
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      const msg = `✅ Concluído com sucesso!\n\n• Total de clientes: ${totalCount}\n• Novos georreferenciados: ${geocodedCount}\n• Já tinham coordenadas: ${alreadyCount}\n• Não localizados: ${notFoundCount}\n\nO ficheiro '${file.name}' foi atualizado e descarregado para o seu computador.`;
+      setToolResultMsg(msg);
+      alert(msg);
+    } catch (err: any) {
+      alert(err.message || "Erro ao georreferenciar ficheiro Mobiliário.");
+    } finally {
+      setToolLoading(false);
+      e.target.value = "";
+    }
+  };
+
   const handleStartGeocoding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fileId || !selectedProject) return;
@@ -623,34 +681,64 @@ export default function GeoreferencingPage() {
               </div>
             </div>
 
-            {/* Opção 2: Ficheiros Mobiliário (ERP Empresa) */}
-            <div className="border border-zinc-800 rounded-2xl p-8 text-center bg-zinc-900/40 hover:bg-zinc-900/60 transition-all flex flex-col items-center justify-between space-y-4 shadow-lg border-t-blue-500/40">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+            {/* Opção 2: Ficheiros Mobiliário (ERP Empresa / WinRoute) */}
+            <div className="border border-zinc-800 rounded-2xl p-8 text-center bg-zinc-900/40 hover:bg-zinc-900/60 transition-all flex flex-col items-center justify-between space-y-4 shadow-lg border-t-emerald-500/40">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                 <span className="text-2xl">📦</span>
               </div>
               <div>
                 <div className="flex items-center justify-center gap-2 mb-1">
-                  <h3 className="text-sm font-bold text-white tracking-tight">Importação Ficheiros Mobiliário</h3>
-                  <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-medium">ERP TNB</span>
+                  <h3 className="text-sm font-bold text-white tracking-tight">Ficheiros Mobiliário & WinRoute</h3>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-medium">ERP TNB</span>
                 </div>
                 <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
-                  Importa diretamente os 3 ficheiros da empresa (Stores, Fleet e Services .txt) para as tabelas existentes e georreferenciação.
+                  Georreferencie o ficheiro Services para o WinRoute ou importe os ficheiros para o GeoRoutePlan.
                 </p>
               </div>
-              <div className="w-full pt-2 flex flex-col items-center gap-2">
-                <label className="cursor-pointer w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl px-5 py-2.5 text-xs font-semibold shadow-md shadow-blue-500/10 transition-all block">
-                  <span>{loading ? "A carregar..." : "+ Selecionar Ficheiros Mobiliário (.txt)"}</span>
+
+              {toolResultMsg && (
+                <div className="w-full p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-[11px] text-emerald-300 text-left">
+                  {toolResultMsg}
+                </div>
+              )}
+
+              <div className="w-full pt-1 flex flex-col items-center gap-2.5">
+                {/* Botão Direto 1-Clique para WinRoute */}
+                <label className="cursor-pointer w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white rounded-xl px-4 py-3 text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 block border border-emerald-400/30">
+                  <span className="text-base">⚡</span>
+                  <span>{toolLoading ? "A Georreferenciar Clientes..." : "Georreferenciar Mobiliário (WinRoute)"}</span>
+                  <input
+                    type="file"
+                    accept=".txt,.csv,.tsv"
+                    onChange={handleGeoreferenceQuickTool}
+                    disabled={toolLoading || loading}
+                    className="hidden"
+                  />
+                </label>
+                <span className="text-[10px] text-emerald-400 font-medium">
+                  Seleciona só o Services (.txt) ➔ Preenche W/X e descarrega direto
+                </span>
+
+                <div className="w-full flex items-center gap-2 my-0.5">
+                  <div className="h-[1px] bg-zinc-800 flex-1"></div>
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">ou importar no sistema</span>
+                  <div className="h-[1px] bg-zinc-800 flex-1"></div>
+                </div>
+
+                {/* Importação dos 3 ficheiros */}
+                <label className="cursor-pointer w-full bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/60 rounded-xl px-4 py-2 text-xs font-semibold shadow-md transition-all block">
+                  <span>{loading ? "A carregar..." : "+ Importar os 3 Ficheiros (.txt)"}</span>
                   <input
                     type="file"
                     multiple
                     accept=".txt,.csv,.tsv"
                     onChange={handleMobiliarioUpload}
-                    disabled={loading}
+                    disabled={loading || toolLoading}
                     className="hidden"
                   />
                 </label>
                 <span className="text-[10px] text-zinc-500">
-                  Dica: pode selecionar os 3 ficheiros em simultâneo (Stores, Fleet, Services)
+                  Stores, Fleet e Services para planeamento completo
                 </span>
               </div>
             </div>

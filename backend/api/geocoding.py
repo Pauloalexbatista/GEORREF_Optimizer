@@ -1826,3 +1826,132 @@ def delete_delivery(delivery_id: int, current_user: UserResponse = Depends(get_c
             return {"status": "success", "message": "Entrega eliminada com sucesso."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tools/georeference-services")
+async def tool_georeference_services(
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Ferramenta rápida autónoma:
+    Recebe diretamente o ficheiro de clientes/serviços (ex: WinRoute Services.txt),
+    georreferencia todos os clientes utilizando a base de dados local SQLite / OSM Low-Cost,
+    preenche a Coluna W (Latitude, positiva com vírgula) e Coluna X (Longitude, negativa com vírgula)
+    e devolve o ficheiro atualizado mantendo 100% da integridade de todas as restantes colunas.
+    """
+    content_bytes = await file.read()
+    if not content_bytes:
+        raise HTTPException(status_code=400, detail="Ficheiro vazio.")
+
+    # Detetar codificação (latin1, cp1252, utf-8-sig, utf-8)
+    decoded_text = None
+    detected_encoding = "latin1"
+    for enc in ["utf-8-sig", "utf-8", "cp1252", "latin1"]:
+        try:
+            decoded_text = content_bytes.decode(enc)
+            detected_encoding = enc
+            break
+        except Exception:
+            continue
+
+    if not decoded_text:
+        decoded_text = content_bytes.decode("latin1", errors="ignore")
+        detected_encoding = "latin1"
+
+    eol = "\r\n" if "\r\n" in decoded_text else "\n"
+    lines = decoded_text.splitlines()
+
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    db_path = os.path.join(root_dir, DB_GEO_PATH)
+    geocoder = WaterfallGeocoder(db_path, google_api_key=os.getenv("GOOGLE_MAPS_API_KEY", ""))
+
+    total_clients = 0
+    already_geocoded = 0
+    newly_geocoded = 0
+    not_found = 0
+
+    out_lines = []
+
+    for line in lines:
+        if not line.strip():
+            out_lines.append(line)
+            continue
+
+        parts = line.split("\t")
+        if len(parts) < 21:
+            out_lines.append(line)
+            continue
+
+        total_clients += 1
+
+        # Verificar se já tem coordenadas válidas na coluna W (22) e X (23)
+        curr_lat = parts[22].strip() if len(parts) > 22 else ""
+        curr_lon = parts[23].strip() if len(parts) > 23 else ""
+
+        has_coords = False
+        if curr_lat and curr_lon:
+            try:
+                clat = float(curr_lat.replace(',', '.'))
+                clon = float(curr_lon.replace(',', '.'))
+                if clat != 0 and clon != 0:
+                    has_coords = True
+            except Exception:
+                has_coords = False
+
+        if has_coords:
+            already_geocoded += 1
+            out_lines.append(line)
+            continue
+
+        # Extrair dados de endereço: Coluna S (18), T (19), U (20)
+        addr = parts[18].strip() if len(parts) > 18 else ""
+        cp = parts[19].strip() if len(parts) > 19 else ""
+        loc = parts[20].strip() if len(parts) > 20 else ""
+
+        res = None
+        try:
+            r_tuple = geocoder.resolve_address(addr, cp, loc, fast_mode=True)
+            res = r_tuple[0] if isinstance(r_tuple, tuple) else r_tuple
+        except Exception:
+            res = None
+
+        lat = res.get('lat') if res else None
+        lon = res.get('lon') if res else None
+
+        if lat and lon and float(lat) != 0 and float(lon) != 0:
+            newly_geocoded += 1
+            lat_str = f"{float(lat):.5f}".replace('.', ',')
+            lon_str = f"{float(lon):.5f}".replace('.', ',')
+
+            # Garantir colunas suficientes para W (22) e X (23)
+            while len(parts) <= 23:
+                parts.append("")
+
+            parts[22] = lat_str
+            parts[23] = lon_str
+            out_lines.append("\t".join(parts))
+        else:
+            not_found += 1
+            out_lines.append(line)
+
+    out_content = eol.join(out_lines) + eol
+    encode_as = detected_encoding if detected_encoding != "utf-8-sig" else "utf-8"
+    out_bytes = out_content.encode(encode_as, errors="replace")
+
+    safe_fn = file.filename or "Services_Georreferenciado.txt"
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_fn}"',
+        "Access-Control-Expose-Headers": "Content-Disposition, X-Total-Count, X-Geocoded-Count, X-Already-Count, X-NotFound-Count",
+        "X-Total-Count": str(total_clients),
+        "X-Geocoded-Count": str(newly_geocoded),
+        "X-Already-Count": str(already_geocoded),
+        "X-NotFound-Count": str(not_found),
+    }
+
+    return StreamingResponse(
+        io.BytesIO(out_bytes),
+        media_type="text/plain; charset=" + encode_as,
+        headers=headers
+    )
