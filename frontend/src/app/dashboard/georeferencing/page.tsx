@@ -505,17 +505,47 @@ export default function GeoreferencingPage() {
       const notFoundCount = response.headers.get("x-not-found-count") || "0";
 
       const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      const downloadName = file.name.startsWith("Geo_") ? file.name : `Geo_${file.name}`;
+
+      // Tentar usar File System Access API para permitir escolher a pasta de origem diretamente
+      let savedDirectly = false;
+      if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: downloadName,
+            types: [{
+              description: "Ficheiro de Texto Tabulado (.txt)",
+              accept: { "text/plain": [".txt"] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          savedDirectly = true;
+        } catch (pickerErr: any) {
+          if (pickerErr.name === "AbortError") {
+            // Utilizador cancelou a seleção
+            setToolLoadingType(null);
+            e.target.value = "";
+            return;
+          }
+          // Caso contrário, segue para o download tradicional
+        }
+      }
+
+      if (!savedDirectly) {
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = downloadName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      }
 
       const tipoLabel = toolType === "mobiliario" ? "Mobiliário" : "Alimentar (Auchan)";
-      const msg = `✅ ${tipoLabel} processado com sucesso!\n\n• Total de clientes: ${totalCount}\n• Novos georreferenciados: ${geocodedCount}\n• Já tinham coordenadas: ${alreadyCount}\n• Não localizados: ${notFoundCount}\n\nO ficheiro '${file.name}' foi descarregado com sucesso!`;
+      const msg = `✅ ${tipoLabel} processado com sucesso!\n\n• Total de clientes: ${totalCount}\n• Novos georreferenciados: ${geocodedCount}\n• Já tinham coordenadas: ${alreadyCount}\n• Não localizados: ${notFoundCount}\n\nO ficheiro '${downloadName}' foi gravado com sucesso!`;
       setToolResultMsg(msg);
       alert(msg);
     } catch (err: any) {

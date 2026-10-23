@@ -1939,7 +1939,8 @@ async def tool_georeference_services(
     encode_as = detected_encoding if detected_encoding != "utf-8-sig" else "utf-8"
     out_bytes = out_content.encode(encode_as, errors="replace")
 
-    safe_fn = file.filename or "Services_Georreferenciado.txt"
+    orig_fn = file.filename or "Services.txt"
+    safe_fn = orig_fn if orig_fn.startswith("Geo_") else f"Geo_{orig_fn}"
 
     headers = {
         "Content-Disposition": f'attachment; filename="{safe_fn}"',
@@ -2075,7 +2076,8 @@ async def tool_georeference_alimentar(
     encode_as = detected_encoding if detected_encoding != "utf-8-sig" else "utf-8"
     out_bytes = out_content.encode(encode_as, errors="replace")
 
-    safe_fn = file.filename or "Auchan_Pedidos_Georreferenciado.txt"
+    orig_fn = file.filename or "Pedidos.txt"
+    safe_fn = orig_fn if orig_fn.startswith("Geo_") else f"Geo_{orig_fn}"
 
     headers = {
         "Content-Disposition": f'attachment; filename="{safe_fn}"',
