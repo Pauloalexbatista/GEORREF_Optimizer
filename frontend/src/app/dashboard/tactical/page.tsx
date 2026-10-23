@@ -192,7 +192,7 @@ function getDeliveryWindowCompliance(
       status: "on_time",
       label: "Livre",
       tooltip: "Sem restrição de janela horária",
-      badgeClass: "text-zinc-300 bg-zinc-900/60 border border-zinc-800",
+      badgeClass: "text-zinc-200 bg-zinc-900 border border-zinc-700 font-bold",
       diffMinutes: 0,
     };
   }
@@ -202,7 +202,7 @@ function getDeliveryWindowCompliance(
       status: "late",
       label: "Atrasado (+1d)",
       tooltip: `Chegada no dia seguinte (${chegadaStr}), fora da janela acordada (${windowStr})`,
-      badgeClass: "text-rose-400 bg-rose-950/70 border border-rose-800 shadow-sm",
+      badgeClass: "text-rose-300 bg-zinc-950 border border-rose-500 font-black shadow-sm",
       diffMinutes: 1440,
     };
   }
@@ -213,7 +213,7 @@ function getDeliveryWindowCompliance(
       status: "on_time",
       label: "OK",
       tooltip: `Horário dentro do previsto`,
-      badgeClass: "text-zinc-300 bg-zinc-900/60 border border-zinc-800",
+      badgeClass: "text-zinc-200 bg-zinc-900 border border-zinc-700 font-bold",
       diffMinutes: 0,
     };
   }
@@ -237,7 +237,7 @@ function getDeliveryWindowCompliance(
       status: "early",
       label: `Adiantado (${parts[0].trim()})`,
       tooltip: `Chegada ${diffStr} antes da abertura do cliente (Abre às ${parts[0].trim()})`,
-      badgeClass: "text-amber-400 bg-amber-950/70 border border-amber-800 shadow-sm",
+      badgeClass: "text-amber-300 bg-zinc-950 border border-amber-500 font-black tracking-wide shadow-sm",
       diffMinutes: -earlyMin,
     };
   }
@@ -251,7 +251,7 @@ function getDeliveryWindowCompliance(
       status: "late",
       label: `Atrasado (${parts[1].trim()})`,
       tooltip: `Chegada ${diffStr} após o fecho do cliente (Fechou às ${parts[1].trim()})`,
-      badgeClass: "text-rose-400 bg-rose-950/70 border border-rose-800 shadow-sm",
+      badgeClass: "text-rose-300 bg-zinc-950 border border-rose-500 font-black tracking-wide shadow-sm",
       diffMinutes: lateMin,
     };
   }
@@ -260,7 +260,7 @@ function getDeliveryWindowCompliance(
     status: "on_time",
     label: "Pontual",
     tooltip: `Chegada dentro da janela horária acordada (${windowStr})`,
-    badgeClass: "text-emerald-400 bg-emerald-950/40 border border-emerald-800/60",
+    badgeClass: "text-emerald-300 bg-zinc-950 border border-emerald-500 font-black tracking-wide shadow-sm",
     diffMinutes: 0,
   };
 }

@@ -291,9 +291,10 @@ class AdvancedRouteOptimizer:
         # 2. Fixed Vehicle Cost: Se balance_load for True, não penalizamos o uso de mais viaturas
         # As 2ªs Voltas têm um ligeiro acréscimo de custo fixo para priorizar sempre o enchimento da 1ª Volta
         v2_indices = {v2 for _, v2, _ in (multi_trip_pairs or [])}
-        BASE_FIXED_COST = 0 if balance_load else 50000
+        # Frotas: penalização de 500 km por viatura ativada para garantir minimização máxima de viaturas
+        BASE_FIXED_COST = 0 if balance_load else 500000
         for v in range(num_vehicles):
-            fc = BASE_FIXED_COST + (25000 if v in v2_indices else 0)
+            fc = BASE_FIXED_COST + (50000 if v in v2_indices else 0)
             routing.SetFixedCostOfVehicle(fc, v)
 
         # 3 & 4. Dynamic Weight (KG) & Volume (m3) Capacity Dimensions
