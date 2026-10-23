@@ -1267,6 +1267,8 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
                         df_r.loc[idx, "Peso_KG"] = float(matched_db["peso_kg"])
                     if matched_db.get("volume_m3") is not None:
                         df_r.loc[idx, "Volume_m3"] = float(matched_db["volume_m3"])
+                    if matched_db.get("armazem"):
+                        df_r.loc[idx, "Armazem"] = matched_db["armazem"]
 
                 r_dict = df_r.loc[idx].to_dict()
                 d_id_key = r.get("id") or r.get("ID_Original")
@@ -1354,7 +1356,10 @@ def _build_routes_from_state_or_db(project_id: int, state_dict: dict) -> pd.Data
             "Latitude": clean_num(d.get("latitude")),
             "Longitude": clean_num(d.get("longitude")),
             "Rota": assigned_rota,
-            "Armazem": str(matched.get("Armazem") or d.get("armazem", "Armazém Principal")),
+            "Armazem": str(
+                matched.get("Armazem") if (matched.get("Armazem") and str(matched.get("Armazem")).strip().upper() not in ["", "N/A", "NONE", "NAN"])
+                else (d.get("armazem") or "Armazém Principal")
+            ),
             "Ordem": clean_int(matched.get("Ordem") or d.get("ordem_paragem") or d.get("ordem"), idx + 1),
             "Observacoes": str(matched.get("Observacoes") or d.get("observacoes", "")),
             "Notas_Motorista": str(matched.get("Notas_Motorista") or d.get("observacoes", "")),

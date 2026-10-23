@@ -2298,6 +2298,42 @@ from datetime import datetime
 from core.session_state import FleetVehicle
 from database import save_frota_projeto
 
+def find_matching_warehouse_name(candidates: List[str], wh_rows: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    Associa com precisão códigos de armazém / lojas (ex: 'AUC_GUIMARAES', '[S_AUC_GUIMARAES]', 
+    'GUIMARAES', 'AM_005_AuchanGuimarães_frota.txt') à lista de armazéns/lojas configurados 
+    (ex: 'Auchan Guimarães', 'Auchan Almada', etc.).
+    """
+    import unicodedata
+    def _strip(s: str) -> str:
+        return ''.join(c for c in unicodedata.normalize('NFD', str(s)) if unicodedata.category(c) != 'Mn').lower().strip()
+
+    valid_candidates = [_strip(cand) for cand in candidates if cand and str(cand).strip()]
+    if not valid_candidates or not wh_rows:
+        return None
+
+    for wh in wh_rows:
+        w_name = str(wh.get("Nome_Armazem", wh.get("name", ""))).strip()
+        w_loc = str(wh.get("Localidade", wh.get("localidade", ""))).strip()
+        w_norm = _strip(w_name)
+        l_norm = _strip(w_loc)
+        
+        tokens = [tok for tok in re.split(r'[^a-z0-9]+', w_norm) if len(tok) >= 4 and tok not in ('auchan', 'loja', 'armazem', 'continente', 'pingo', 'doce', 'centro')]
+        if l_norm and len(l_norm) >= 4 and l_norm not in tokens:
+            tokens.append(l_norm)
+
+        for cand in valid_candidates:
+            if w_norm and (w_norm in cand or cand in w_norm):
+                return w_name
+            cand_exp = re.sub(r'\bauc[_-]?', 'auchan', cand)
+            if w_norm and (w_norm in cand_exp or cand_exp in w_norm):
+                return w_name
+            for tok in tokens:
+                if tok in cand:
+                    return w_name
+
+    return None
+
 @router.post("/import-alimentar/{project_id}")
 async def import_alimentar_files(
     project_id: int,
@@ -2361,6 +2397,8 @@ async def import_alimentar_files(
         file_lojas_lines = []
         file_fleet_lines = []
         file_pedidos_lines = []
+        pedidos_filename = ""
+        fleet_filename = ""
 
         for f in files:
             content_bytes = await f.read()
@@ -2370,15 +2408,18 @@ async def import_alimentar_files(
                 continue
 
             first_cols = raw_lines[0].split("\t")
-            fn = f.filename.lower() if f.filename else ""
+            fn = f.filename if f.filename else ""
+            fn_low = fn.lower()
             num_cols = len(first_cols)
 
-            if "loja" in fn or "store" in fn or "armaz" in fn or num_cols == 10 or (num_cols >= 8 and num_cols <= 15 and "nome_armazem" in raw_lines[0].lower()):
+            if "loja" in fn_low or "store" in fn_low or "armaz" in fn_low or num_cols == 10 or (num_cols >= 8 and num_cols <= 15 and "nome_armazem" in raw_lines[0].lower()):
                 file_lojas_lines = raw_lines
-            elif "frota" in fn or "fleet" in fn or (num_cols >= 30 and num_cols <= 34):
+            elif "frota" in fn_low or "fleet" in fn_low or (num_cols >= 30 and num_cols <= 34):
                 file_fleet_lines = raw_lines
-            elif "pedido" in fn or "pedidos" in fn or "service" in fn or "servi" in fn or "entrega" in fn or (num_cols >= 35 and num_cols <= 42):
+                fleet_filename = fn
+            elif "pedido" in fn_low or "pedidos" in fn_low or "service" in fn_low or "servi" in fn_low or "entrega" in fn_low or (num_cols >= 35 and num_cols <= 42):
                 file_pedidos_lines = raw_lines
+                pedidos_filename = fn
 
         if not file_lojas_lines and not file_fleet_lines and not file_pedidos_lines:
             raise HTTPException(
@@ -2489,13 +2530,10 @@ async def import_alimentar_files(
             v_kg = _parse_flt(parts[10], 1000.0) if len(parts) > 10 else 1000.0
             v_vol = 10.0
 
-            target_wh = wh_rows[0]["Nome_Armazem"]
-            if v_store_key:
-                norm_sk = re.sub(r'[^a-zA-Z0-9]', '', v_store_key.lower())
-                for k, s in store_map.items():
-                    if k in norm_sk or norm_sk in k:
-                        target_wh = s["Nome_Armazem"]
-                        break
+            target_wh = (
+                find_matching_warehouse_name([v_store_key, v_rules, fleet_filename], wh_rows) or
+                (wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal")
+            )
 
             v_obj = FleetVehicle(
                 capacidade_kg=v_kg,
@@ -2550,8 +2588,11 @@ async def import_alimentar_files(
         deliveries_list = []
         detected_service_date = ""
 
-        # Determinar armazém padrão para os pedidos (baseado na frota importada ou existente)
-        default_pedidos_wh = wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal"
+        # Determinar armazém padrão para os pedidos (baseado no nome do ficheiro, frota importada ou existente)
+        default_pedidos_wh = (
+            find_matching_warehouse_name([pedidos_filename, fleet_filename], wh_rows) or
+            (wh_rows[0]["Nome_Armazem"] if wh_rows else "Armazém Principal")
+        )
         if fleet_rows_for_db:
             active_f_whs = {f["armazem"] for f in fleet_rows_for_db if f.get("armazem")}
             if len(active_f_whs) == 1:
@@ -2606,13 +2647,8 @@ async def import_alimentar_files(
                     pass
 
             qual = 1 if (lat != 0.0 and lon != 0.0) else 99
-            wh_name = default_pedidos_wh
-            if s_rules:
-                norm_r = re.sub(r'[^a-zA-Z0-9]', '', s_rules.lower())
-                for k, s in store_map.items():
-                    if k and (k in norm_r or norm_r in k):
-                        wh_name = s["Nome_Armazem"]
-                        break
+            matched_wh = find_matching_warehouse_name([s_rules, loc, pedidos_filename], wh_rows)
+            wh_name = matched_wh if matched_wh else default_pedidos_wh
 
             d_entry = {
                 "Armazem": wh_name,
@@ -2822,13 +2858,10 @@ async def import_fleet_file_only(
                     v_kg = _parse_flt(parts[10], 1000.0) if len(parts) > 10 else 1000.0
                     v_vol = 10.0
 
-                    target_wh = default_wh_name
-                    if v_store_key:
-                        norm_sk = re.sub(r'[^a-zA-Z0-9]', '', v_store_key.lower())
-                        for k, s in store_map.items():
-                            if k in norm_sk or norm_sk in k:
-                                target_wh = s["Nome_Armazem"]
-                                break
+                    target_wh = (
+                        find_matching_warehouse_name([v_store_key, v_rules, f.filename if f.filename else ""], wh_rows) or
+                        default_wh_name
+                    )
 
                     v_obj = FleetVehicle(
                         capacidade_kg=v_kg,
