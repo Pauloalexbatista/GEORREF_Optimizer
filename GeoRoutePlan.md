@@ -628,6 +628,15 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - *2. Diagnóstico & Inteligência*: Análise (antigo The Big Picture renomeado e intuitivo, com badge de viabilidade), Auditoria & Conformidade (Conforme 0 Erros / Alertas) e Copiloto IA (negociador de janelas e trocas entre viaturas).
       - *3. Vistas & Utilitários*: MAPA destacado em janela independente, Exportar Excel (arquivo canónico oficial de 9 abas) e Atualizar dados.
       - *Eliminação de Redundâncias*: Remoção do botão *Carga 3D* (alocado corretamente ao Ponto 8), do chat genérico de IA duplicado e do botão solto *2-Opt* (que já existe no cabeçalho de cada rota individual para ajustes manuais).
+22. **Módulo de Análise e Diagnóstico Reorientado por Armazém / Loja (✅ Concluído no Código)**:
+    * **Eliminação da Abstração de Zonas Territoriais**: Substituído o agrupamento arbitrário por localidade/zona geográfica por uma análise focada na realidade da operação: **Armazém / Loja**.
+    * **Seletor Global de Loja no Diagnóstico (BigPictureModal.tsx)**:
+      - Dropdown no topo do modal que permite analisar Todos os Armazéns no seu conjunto ou selecionar um armazém específico (ex: Auchan Guimarães, Auchan Maia, etc.).
+      - Ao selecionar um armazém, todos os balanços temporais (Manhã AM, Tarde PM, Noite, Flexível), balanço físico (peso, volume e caixas) e cálculo de capacidade de frota recalculam-se exclusivamente para as encomendas e viaturas dessa loja.
+    * **Novo Separador '🏬 Por Armazém / Loja'**:
+      - Cartões de resumo executivo com total de lojas mapeadas, lojas críticas, lojas em atenção e lojas equilibradas.
+      - Grelha de diagnóstico individual por loja: exibe nome do armazém, total de encomendas, viaturas alocadas, caixas e peso (% de ocupação), barra de proporção temporal (AM/PM/Noite), alerta de défice no pico e botão direto 🔍 Analisar Este Armazém para focar imediatamente na operação dessa loja.
+    * **Sincronização com o Ecrã Tático**: O modal de Análise herda automaticamente o armazém selecionado no ecrã tático (selectedWarehouseFilter), garantindo coerência visual e operacional direta.
 
 ---
 
