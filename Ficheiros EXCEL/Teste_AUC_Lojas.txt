@@ -1,0 +1,11 @@
+Nome_Armazem	Morada	CP	Localidade	Latitude	Longitude	Hora_Abertura	Hora_Fecho	Tempo_Carga_Min	Contacto_Responsavel
+Auchan Aveiro	R. Dom Manuel Barbuda e Vasconcelos	3810-498	Aveiro	40,627	-8,6433	06:00:00	22:00:00	30	912345678
+Auchan Coimbra	Alma Shopping, R. Dom João III, Fonte da Cheira	3030-329	Coimbra	40,2042	-8,4088	06:00:00	22:00:00	30	912345678
+Auchan Faro	Rua Engenheiro Nuno Abcassis	8005-145	Faro	37,0296	-7,944	06:00:00	22:00:00	30	912345678
+Auchan Ffoz	Rua dos Condados	3080-216	Figueira da Foz	40,1667	-8,8611	06:00:00	22:00:00	30	912345678
+Auchan Guimarães	Espaço Guimarães, Estrada Nacional 206	4835-400	Guimaraes	41,449	-8,3429	06:00:00	22:00:00	30	912345678
+Auchan Maia	Estrada Nacional 14	4475-045	Maia	41,2491	-8,6221	06:00:00	22:00:00	30	912345678
+Auchan Portimão	R. de São Pedro 72	8500-524	Portimão	37,147	-8,5425	06:00:00	22:00:00	30	912345678
+Auchan Setubal	Av. Coração de Maria	2910-031	Setúbal	38,5375	-8,8751	06:00:00	22:00:00	30	912345678
+Auchan Almada	Estr. Vale de Mourelos	2810-500	Almada	38,6598	-9,1747	06:00:00	22:00:00	30	912345678
+Auchan Amadora	UBBO Centro Comercial, Av. José Garcês 2	2650-505	Amadora	38,7782	-9,219	06:00:00	22:00:00	30	912345678
