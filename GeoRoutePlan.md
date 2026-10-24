@@ -598,6 +598,27 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       6. *App de Motoristas (PWA)*: Acesso por PIN, navegação GPS (Google Maps/Waze), baixa de guias, modo offline e conformidade RGPD (desligamento de GPS em pausas).
       7. *Relatórios & Ciclo de Vida*: Manifestos, exportação do Excel canónico timbrado sem expor URLs técnicos, alerta aos 7 dias e auto-arquivo de salvaguarda aos 10 dias com purga da base SQLite.
     * **Funcionalidades de Usabilidade**: Pesquisa instantânea por palavras-chave, filtros rápidos por tema e secções expansíveis em acordeão.
+17. **Ferramentas 1-Clique de Georreferenciação para Formatos WinRoute / Operacionais (✅ Concluído no Código)**:
+    * **Mobiliário (Services.txt)**: Conversor e georreferenciador direto com enriquecimento de coordenadas via base SQLite (geocoding.db), gerando ficheiro prefixado com Geo_ (ex: Geo_Services.txt) pronto a descarregar ou guardar.
+    * **Distribuição Alimentar (Auchan e outros - pedidos.txt)**: Suporte nativo ao formato de pedidos alimentares (ex: 20260623_AM_AuchanGuimarães_pedidos.txt), extraindo moradas, janelas horárias, número de caixas (Cx_Ambiente, Cx_Frio, Cx_Congelado) e georreferenciação 1-clique gerando Geo_<nome_ficheiro>.txt.
+    * **Identificação Visual dos Ficheiros de Entrada**: No ecrã de Georreferenciação (/dashboard/georeferencing), foram criadas duas secções operacionais com indicação explícita dos botões e nomes de ficheiros suportados:
+      - *Distribuição de Mobiliário / Eletrodomésticos*: fleet.txt, services.txt, stores.txt.
+      - *Distribuição Alimentar*: frota.txt, pedidos.txt (serviços), lojas.txt.
+18. **Importação e Gestão Cumulativa de Frotas & Lojas da Distribuição Alimentar (✅ Concluído no Código)**:
+    * **Importação Direta de Frotas**: Botão dedicado no ecrã de Gestão de Frota (/dashboard/fleet) permitindo carregar ficheiros de frota com inserção cumulativa e não-destrutiva de carrinhas, matrículas, capacidades em caixas/peso e horários de turno.
+    * **Mapeamento e Normalização Inteligente de Lojas**: Implementado motor de correspondência que faz o *de-para* entre os códigos de loja nos ficheiros e os nomes canónicos dos Armazéns na base de dados (ex: AUC_GUIMARAES → Auchan Guimarães, AUC_ALMADA → Auchan Almada), garantindo que tanto a frota importada como os serviços ficam automaticamente associados ao armazém correto.
+19. **Isolamento Operacional e Filtragem Multiarmazém no Planeamento Tático (✅ Concluído no Código)**:
+    * **Comportamento Estanque por Armazém (/dashboard/tactical)**: Ao selecionar um armazém específico (ex: *Auchan Guimarães*):
+      - *Entregas Pendentes*: Lista exclusivamente as encomendas do armazém selecionado.
+      - *Rotas e Frota*: Apresenta unicamente as rotas e viaturas ativas alocadas a esse armazém.
+      - *KPIs do Topo*: Ocupação (%), total de paragens, caixas e peso recalculados exclusivamente para a operação selecionada.
+      - *Mapa e Polylines*: Foco visual restrito aos clientes e trajetos das viaturas do armazém ativo.
+20. **Motor de Suporte a Caixas na Distribuição Alimentar e Minimização de Frotas no OR-Tools (✅ Concluído no Código)**:
+    * **Suporte Multi-Compartimento de Caixas**: Integração a 100% de Cx_Ambiente, Cx_Frio e Cx_Congelado nas tabelas SQLite, no backend FastAPI e no ecrã tático.
+    * **Eliminação do Peso Fictício (50 kg)**: Removida a atribuição residual de 50 kg por entrega quando o negócio opera por caixas alimentares, refletindo valores reais em caixas e peso.
+    * **Visualização da Capacidade em Caixas**: Exibição da taxa de ocupação da viatura em caixas (ex: 22/60 Cx (37%)) ao lado das badges de peso nos cartões de rota.
+    * **Minimização da Frota Ativa no OR-Tools**: Introduzido custo fixo por viatura ativada (SetFixedCostForAllVehicles), forçando o solver a consolidar a carga e minimizar ativamente o número de carrinhas necessárias na estrada.
+    * **Badge de Horário de Chegada**: Redesenhado no cartão da rota com alto contraste (azul-marinho / ciano escuro legível) para leitura rápida do operador.
 
 ---
 
