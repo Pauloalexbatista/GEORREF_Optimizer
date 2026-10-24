@@ -619,6 +619,15 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
     * **Visualização da Capacidade em Caixas**: Exibição da taxa de ocupação da viatura em caixas (ex: 22/60 Cx (37%)) ao lado das badges de peso nos cartões de rota.
     * **Minimização da Frota Ativa no OR-Tools**: Introduzido custo fixo por viatura ativada (SetFixedCostForAllVehicles), forçando o solver a consolidar a carga e minimizar ativamente o número de carrinhas necessárias na estrada.
     * **Badge de Horário de Chegada**: Redesenhado no cartão da rota com alto contraste (azul-marinho / ciano escuro legível) para leitura rápida do operador.
+21. **Reestruturação e Limpeza da Barra de Planeamento Tático e Cabeçalho Superior (✅ Concluído no Código)**:
+    * **Limpeza do Cabeçalho Superior (DashboardLayout.tsx)**:
+      - Eliminados todos os elementos redundantes e ruído visual do topo: título solto de projeto em rascunho, botão duplicado de *Backup Excel*, atalhos prematuros para *App Motoristas* e *Instruções* (já presentes permanentemente no menu lateral), e selo de *Licença*.
+      - O cabeçalho mantém-se focado estritamente em utilitários globais: seletor de idioma, alternador de tema e perfil.
+    * **Barra Tática Organizada em 3 Blocos Lógicos (/dashboard/tactical)**:
+      - *1. Ação Principal*: Botão de destaque Planear Rotas que abre um **Modal de Lançamento Tático**, permitindo ao gestor de tráfego rever e confirmar o âmbito (armazém ativo, paragens pendentes e viaturas disponíveis), estratégias de agrupamento (Zonas vs. Min KM), distribuição de carga (Carga Máxima vs. Equilibrada), profundidade OR-Tools (30s, 90s, 4m) e janelas horárias estritas antes de iniciar o cálculo.
+      - *2. Diagnóstico & Inteligência*: Análise (antigo The Big Picture renomeado e intuitivo, com badge de viabilidade), Auditoria & Conformidade (Conforme 0 Erros / Alertas) e Copiloto IA (negociador de janelas e trocas entre viaturas).
+      - *3. Vistas & Utilitários*: MAPA destacado em janela independente, Exportar Excel (arquivo canónico oficial de 9 abas) e Atualizar dados.
+      - *Eliminação de Redundâncias*: Remoção do botão *Carga 3D* (alocado corretamente ao Ponto 8), do chat genérico de IA duplicado e do botão solto *2-Opt* (que já existe no cabeçalho de cada rota individual para ajustes manuais).
 
 ---
 
