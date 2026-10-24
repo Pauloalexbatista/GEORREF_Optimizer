@@ -589,6 +589,7 @@ export default function TacticalPage() {
 
   // Strategy Config Drawer & Enterprise LNS Depth
   const [showConfig, setShowConfig] = useState(false);
+  const [planningModalOpen, setPlanningModalOpen] = useState(false);
   const [strategy, setStrategy] = useState("clusters");
   const [loadMode, setLoadMode] = useState("full");
   const [solvingDepth, setSolvingDepth] = useState<"fast" | "balanced" | "deep">("balanced");
@@ -1619,18 +1620,18 @@ export default function TacticalPage() {
               </span>
             </div>
 
-            {/* Ações da Toolbar */}
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              {/* Botão Primário: Otimizar Rotas */}
+            {/* Ações da Toolbar Organizada (3 Blocos Claros) */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {/* 1. AÇÃO PRINCIPAL: Planear Rotas */}
               <button
-                onClick={handleSolveRoutes}
+                onClick={() => setPlanningModalOpen(true)}
                 disabled={solving || vehicles.length === 0}
-                className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-md px-3 py-1.5 transition-all flex items-center space-x-1.5 disabled:opacity-50 shadow-sm"
-                title="Executar otimização global OR-Tools VRPTW"
+                className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-md px-3.5 py-1.5 transition-all flex items-center space-x-1.5 disabled:opacity-50 shadow-sm"
+                title="Configurar preferências e iniciar planeamento VRPTW"
               >
                 {solving ? (
                   <>
-                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>A Calcular ({solvingSeconds}s)...</span>
                   </>
                 ) : (
@@ -1638,12 +1639,12 @@ export default function TacticalPage() {
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    <span>Otimizar Rotas</span>
+                    <span>Planear Rotas</span>
                   </>
                 )}
               </button>
 
-              {/* Botão Executivo: The Big Picture (Diagnóstico de Capacidade AM/PM/Noite/Carga) */}
+              {/* 2. DIAGNÓSTICO & INTELIGÊNCIA */}
               {routes.length > 0 && (
                 <button
                   type="button"
@@ -1655,7 +1656,7 @@ export default function TacticalPage() {
                       ? "bg-amber-950/70 hover:bg-amber-900/80 border-amber-700 text-amber-200"
                       : "bg-zinc-950 hover:bg-zinc-850 border-zinc-700 text-emerald-400"
                   }`}
-                  title="Diagnóstico Executivo de Capacidade & Viabilidade (Balanço Temporal e Físico)"
+                  title="Análise e Diagnóstico de Capacidade da Frota"
                 >
                   <span className={`w-2 h-2 rounded-full ${
                     bigPictureAnalytics.overallStatus === "critical"
@@ -1664,7 +1665,7 @@ export default function TacticalPage() {
                       ? "bg-amber-400"
                       : "bg-emerald-400"
                   }`} />
-                  <span className="font-semibold">The Big Picture</span>
+                  <span className="font-semibold">Análise</span>
                   {bigPictureAnalytics.criticalPeriod && bigPictureAnalytics.criticalPeriod.deficitVehicles > 0 && (
                     <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-mono font-bold">
                       {bigPictureAnalytics.criticalPeriod.label.split(" ")[0]}: -{bigPictureAnalytics.criticalPeriod.deficitVehicles}v
@@ -1678,81 +1679,7 @@ export default function TacticalPage() {
                 </button>
               )}
 
-              {/* Botão Copiloto IA & Negociador Tático (100% Opt-In pelo utilizador) */}
-              {routes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setCopilotModalOpen(true)}
-                  className="cursor-pointer px-2.5 py-1.5 rounded-md font-semibold transition-all flex items-center space-x-1.5 border text-xs shadow-sm bg-indigo-950/80 hover:bg-indigo-900 border-indigo-500/40 text-indigo-200"
-                  title="Copiloto IA & Negociador Tático: Resgate de Janelas, Trocas entre Rotas Vizinhas, Notas Ocultas e Modos de Planeamento (Tu decides o que aplicar)"
-                >
-                  <span>✨</span>
-                  <span>Copiloto IA</span>
-                </button>
-              )}
-
-              {/* Botão Simulador de Carregamento 3D da Viatura */}
-              {cargo3DRoutes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedCargoRouteIdx(0);
-                    setCargoLoadingModalOpen(true);
-                  }}
-                  className="cursor-pointer px-2.5 py-1.5 rounded-md font-semibold transition-all flex items-center space-x-1.5 border text-xs shadow-sm bg-blue-950/80 hover:bg-blue-900 border-blue-500/40 text-blue-200"
-                  title="Simulador de Carregamento 3D da Viatura (Arrumação LIFO, Distribuição de Peso e Caixas Interativas)"
-                >
-                  <span>📦</span>
-                  <span>Carga 3D</span>
-                </button>
-              )}
-
-              {/* Botão Parâmetros */}
-              <button
-                onClick={() => setShowConfig(!showConfig)}
-                className={`cursor-pointer px-2.5 py-1.5 rounded-md border font-medium transition-colors flex items-center space-x-1.5 ${
-                  showConfig
-                    ? "bg-zinc-800 border-zinc-600 text-zinc-100"
-                    : "bg-zinc-950 hover:bg-zinc-850 border-zinc-800 text-zinc-300"
-                }`}
-                title="Ajustar estratégia de agrupamento por zonas e distribuição da frota"
-              >
-                <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span>Parâmetros</span>
-                <span className="text-[10px] text-zinc-400 font-mono">
-                  ({strategy === "clusters" ? "Zonas" : "Min KM"})
-                </span>
-              </button>
-
-              {/* Botão 2-Opt */}
-              <button
-                onClick={handleOptimizeAllSequences}
-                disabled={reorderingAll || solving || routes.length === 0}
-                className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-md px-2.5 py-1.5 font-medium transition-colors flex items-center space-x-1 disabled:opacity-50"
-                title="Polimento sequencial 2-Opt do trajeto mais curto de cada viatura"
-              >
-                <span>{reorderingAll ? "A ordenar..." : "⇅ 2-Opt"}</span>
-              </button>
-
-              {/* Re-otimizar Seleção */}
-              {selectedRouteNames.length >= 2 && (
-                <button
-                  type="button"
-                  onClick={() => setReoptimizeModalOpen(true)}
-                  disabled={actionLoading === "reoptimizing_subset" || solving}
-                  className="cursor-pointer bg-zinc-800 hover:bg-zinc-750 text-indigo-300 border border-indigo-500/50 rounded-md px-2.5 py-1.5 font-semibold transition-colors flex items-center space-x-1"
-                  title="Re-planear em conjunto apenas as viaturas selecionadas"
-                >
-                  <span>🎯 Re-otimizar ({selectedRouteNames.length})</span>
-                </button>
-              )}
-
-              <div className="h-4 w-px bg-zinc-800 mx-0.5 hidden sm:block" />
-
-              {/* Status Auditoria */}
+              {/* Auditoria & Conformidade */}
               {routes.length > 0 && (
                 <button
                   type="button"
@@ -1769,7 +1696,35 @@ export default function TacticalPage() {
                 </button>
               )}
 
-              {/* Botão MAPA */}
+              {/* Copiloto IA (Negociador Tático) */}
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCopilotModalOpen(true)}
+                  className="cursor-pointer px-2.5 py-1.5 rounded-md font-semibold transition-all flex items-center space-x-1.5 border text-xs shadow-sm bg-indigo-950/80 hover:bg-indigo-900 border-indigo-500/40 text-indigo-200"
+                  title="Copiloto IA & Negociador Tático: Resgate de Janelas e Trocas entre Rotas Vizinhas"
+                >
+                  <span>💡</span>
+                  <span>Copiloto IA</span>
+                </button>
+              )}
+
+              {/* Re-otimizar Seleção (Contextual quando >= 2 rotas selecionadas) */}
+              {selectedRouteNames.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => setReoptimizeModalOpen(true)}
+                  disabled={actionLoading === "reoptimizing_subset" || solving}
+                  className="cursor-pointer bg-zinc-800 hover:bg-zinc-750 text-indigo-300 border border-indigo-500/50 rounded-md px-2.5 py-1.5 font-semibold transition-colors flex items-center space-x-1"
+                  title="Re-planear em conjunto apenas as viaturas selecionadas"
+                >
+                  <span>⚡ Re-otimizar ({selectedRouteNames.length})</span>
+                </button>
+              )}
+
+              <div className="h-4 w-px bg-zinc-800 mx-0.5 hidden sm:block" />
+
+              {/* 3. VISTAS & UTILITÁRIOS */}
               <button
                 onClick={handleOpenDetachedMap}
                 className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-md px-2.5 py-1.5 font-medium transition-colors flex items-center space-x-1"
@@ -1781,7 +1736,6 @@ export default function TacticalPage() {
                 <span>MAPA</span>
               </button>
 
-              {/* Exportar Excel */}
               {routes.length > 0 && (
                 <button
                   type="button"
@@ -1796,159 +1750,216 @@ export default function TacticalPage() {
                 </button>
               )}
 
-              {/* Recarregar */}
               <button
                 onClick={() => loadTacticalData()}
                 disabled={loading}
                 className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-md px-2 py-1.5 transition-colors disabled:opacity-50"
-                title="Recarregar dados"
+                title="Atualizar dados"
               >
                 <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-400" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </button>
-
-              {/* Co-Piloto */}
-              {routes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setAgentModalOpen(true)}
-                  className="cursor-pointer bg-zinc-950 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-md px-2 py-1.5 transition-colors"
-                  title="Assistente Co-Piloto"
-                >
-                  <span className="text-xs">🤖</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
 
-        {/* PAINEL DE PARÂMETROS SÓBRIO & COMPACTO */}
-        {showConfig && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 shadow-xl text-xs space-y-2.5 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5">
-              <span className="font-semibold text-zinc-100 text-xs flex items-center gap-1.5">
-                <span>⚙️</span> Parâmetros de Otimização das Rotas
-              </span>
-              <button
-                onClick={() => setShowConfig(false)}
-                className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-0.5 rounded hover:bg-zinc-800 transition-colors"
-              >
-                ✕ Fechar
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-              {/* Estratégia de Trajeto */}
-              <div className="space-y-1 bg-zinc-950/60 p-2 rounded-md border border-zinc-800/80">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-                  1. Estratégia de Agrupamento
-                </span>
-                <div className="flex flex-col gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setStrategy("clusters")}
-                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                      strategy === "clusters" ? "opt-param-active" : "opt-param-inactive"
-                    }`}
-                  >
-                    <div className="text-xs opt-title">Rotas Agrupadas por Zonas</div>
-                    <div className="text-[10px] opt-desc">Agrupa em torno dos clientes distantes (centro de gravidade). Enche as viaturas na mesma zona geográfica.</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStrategy("min_km")}
-                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                      strategy === "min_km" ? "opt-param-active" : "opt-param-inactive"
-                    }`}
-                  >
-                    <div className="text-xs opt-title">Mínimos KM (Menor Distância)</div>
-                    <div className="text-[10px] opt-desc">Minimiza estritamente os quilómetros percorridos e consumo total.</div>
-                  </button>
+        {/* MODAL DE LANÇAMENTO TÁTICO & PARÂMETROS */}
+        {planningModalOpen && (
+          <div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/50">
+                <div className="flex items-center space-x-2.5">
+                  <span className="p-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl text-base">
+                    🚀
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      Configuração & Lançamento do Planeamento
+                    </h3>
+                    <p className="text-[11px] text-zinc-400">
+                      Defina as preferências de rota antes de iniciar o cálculo VRPTW
+                    </p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setPlanningModalOpen(false)}
+                  className="text-zinc-400 hover:text-zinc-200 text-sm p-1.5 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
 
-              {/* Distribuição da Frota */}
-              <div className="space-y-1 bg-zinc-950/60 p-2 rounded-md border border-zinc-800/80">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-                  2. Distribuição da Frota
-                </span>
-                <div className="flex flex-col gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setLoadMode("full")}
-                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                      loadMode === "full" ? "opt-param-active" : "opt-param-inactive"
-                    }`}
-                  >
-                    <div className="text-xs opt-title">Minimizar Viaturas (Carga Máxima)</div>
-                    <div className="text-[10px] opt-desc">Enche os carros ao máximo da capacidade, sem viaturas subutilizadas na rua.</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLoadMode("balanced")}
-                    className={`text-left px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                      loadMode === "balanced" ? "opt-param-active" : "opt-param-inactive"
-                    }`}
-                  >
-                    <div className="text-xs opt-title">Equilibrar Frota (Distribuição Homogénea)</div>
-                    <div className="text-[10px] opt-desc">Distribui paragens e carga homogeneamente entre as viaturas disponíveis.</div>
-                  </button>
+              {/* Body */}
+              <div className="p-6 space-y-4 text-xs">
+                {/* Resumo de Escopo Operacional */}
+                <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 block">
+                      Âmbito do Planeamento
+                    </span>
+                    <span className="text-sm font-bold text-zinc-100 flex items-center gap-1.5 mt-0.5">
+                      <span>🏬</span>
+                      {selectedWarehouseFilter === "all" ? "Todos os Armazéns" : selectedWarehouseFilter}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] bg-zinc-850 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-lg">
+                      {globalKpis.pendingCount > 0 ? `${globalKpis.pendingCount} pendentes` : `${globalKpis.totalDeliveries} paragens`}
+                    </span>
+                    <span className="font-mono text-[11px] bg-zinc-850 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
+                      {globalKpis.totalVehiclesCount} viaturas disponíveis
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Tempo & Profundidade */}
-              <div className="space-y-1 bg-zinc-950/60 p-2 rounded-md border border-zinc-800/80">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-                  3. Tempo & Profundidade
-                </span>
-                <div className="flex flex-col gap-1.5">
-                  <div className="grid grid-cols-3 gap-1">
+                {/* Opções em Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {/* 1. Estratégia de Trajeto */}
+                  <div className="space-y-1.5 bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/80">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                      1. Estratégia de Agrupamento
+                    </span>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setStrategy("clusters")}
+                        className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                          strategy === "clusters" ? "opt-param-active" : "opt-param-inactive"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold opt-title">Zonas Geográficas (Clusters)</div>
+                        <div className="text-[10px] opt-desc mt-0.5">Agrupa clientes próximos na mesma carrinha. Ideal para reduzir dispersão.</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStrategy("min_km")}
+                        className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                          strategy === "min_km" ? "opt-param-active" : "opt-param-inactive"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold opt-title">Mínimos KM (Menor Distância)</div>
+                        <div className="text-[10px] opt-desc mt-0.5">Minimiza rigorosamente a quilometragem total e consumo de combustível.</div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Distribuição da Frota */}
+                  <div className="space-y-1.5 bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/80">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                      2. Distribuição da Frota
+                    </span>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setLoadMode("full")}
+                        className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                          loadMode === "full" ? "opt-param-active" : "opt-param-inactive"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold opt-title">Minimizar Viaturas (Carga Máxima)</div>
+                        <div className="text-[10px] opt-desc mt-0.5">Enche os carros ao máximo da capacidade, sem viaturas subutilizadas na rua.</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLoadMode("balanced")}
+                        className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                          loadMode === "balanced" ? "opt-param-active" : "opt-param-inactive"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold opt-title">Equilibrar Frota (Distribuição Homogénea)</div>
+                        <div className="text-[10px] opt-desc mt-0.5">Distribui paragens e carga de forma equilibrada entre todas as carrinhas.</div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Tempo & Profundidade do Solver */}
+                <div className="space-y-2 bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/80">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      3. Profundidade de Cálculo
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      OR-Tools VRPTW
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setSolvingDepth("fast")}
-                      className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                      className={`px-2.5 py-2 rounded-lg border text-center transition-all cursor-pointer ${
                         solvingDepth === "fast" ? "opt-param-active" : "opt-param-inactive"
                       }`}
                     >
-                      <div className="text-xs opt-title">Rápido</div>
-                      <div className="text-[9px] opt-desc">~30 seg</div>
+                      <div className="text-xs font-semibold opt-title">⚡ Rápido</div>
+                      <div className="text-[10px] opt-desc mt-0.5">~30 seg</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSolvingDepth("balanced")}
-                      className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                      className={`px-2.5 py-2 rounded-lg border text-center transition-all cursor-pointer ${
                         solvingDepth === "balanced" ? "opt-param-active" : "opt-param-inactive"
                       }`}
                     >
-                      <div className="text-xs opt-title">Equilibrado</div>
-                      <div className="text-[9px] opt-desc">1 a 2 min</div>
+                      <div className="text-xs font-semibold opt-title">🎯 Equilibrado</div>
+                      <div className="text-[10px] opt-desc mt-0.5">1 a 2 min</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSolvingDepth("deep")}
-                      className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                      className={`px-2.5 py-2 rounded-lg border text-center transition-all cursor-pointer ${
                         solvingDepth === "deep" ? "opt-param-active" : "opt-param-inactive"
                       }`}
                     >
-                      <div className="text-xs opt-title">Profundo</div>
-                      <div className="text-[9px] opt-desc">3 a 5 min</div>
+                      <div className="text-xs font-semibold opt-title">🧠 Profundo</div>
+                      <div className="text-[10px] opt-desc mt-0.5">3 a 5 min</div>
                     </button>
                   </div>
 
-                  <div className="pt-1 flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="respectWindowsCheck"
-                      checked={respectWindows}
-                      onChange={(e) => setRespectWindows(e.target.checked)}
-                      className="rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-0 cursor-pointer"
-                    />
-                    <label htmlFor="respectWindowsCheck" className="text-[11px] text-zinc-200 cursor-pointer select-none font-medium">
-                      Respeitar janelas horárias estritas
+                  <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+                    <label htmlFor="respectWindowsCheckModal" className="flex items-center space-x-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        id="respectWindowsCheckModal"
+                        checked={respectWindows}
+                        onChange={(e) => setRespectWindows(e.target.checked)}
+                        className="rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-0 cursor-pointer"
+                      />
+                      <span className="text-xs text-zinc-200 font-medium">
+                        Respeitar janelas horárias estritas de cliente
+                      </span>
                     </label>
+                    <span className="text-[11px] text-zinc-400">
+                      Tolerância zero a atrasos
+                    </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 bg-zinc-950/60 border-t border-zinc-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setPlanningModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlanningModalOpen(false);
+                    handleSolveRoutes();
+                  }}
+                  disabled={solving || vehicles.length === 0}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all flex items-center space-x-2 cursor-pointer disabled:opacity-50"
+                >
+                  <span>🚀</span>
+                  <span>Iniciar Planeamento</span>
+                </button>
               </div>
             </div>
           </div>
