@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
-import { parseWindowStartEnd, normalizeLocality } from "@/utils/geoNormalize";
+import { parseWindowStartEnd } from "@/utils/geoNormalize";
 
 export interface BigPictureDelivery {
   id?: number | string;
@@ -14,8 +14,13 @@ export interface BigPictureDelivery {
   Peso_KG?: number;
   Volume_m3?: number;
   Rota?: string;
+  Armazem?: string;
   Morada?: string;
   Localidade?: string;
+  Cx_Ambiente?: number;
+  Cx_Frio?: number;
+  Cx_Congelado?: number;
+  Total_Cx?: number;
 }
 
 export interface BigPictureVehicle {
@@ -23,6 +28,7 @@ export interface BigPictureVehicle {
   armazem?: string;
   capacidade_kg?: number;
   capacidade_vol?: number;
+  capacidade_caixas?: number;
   horario_inicio?: string;
   horario_fim?: string;
   max_entregas?: number;
@@ -48,6 +54,7 @@ export interface BigPictureAnalysis {
   totalVehicles: number;
   totalKg: number;
   totalVol: number;
+  totalBoxes: number;
   fleetMaxKg: number;
   fleetMaxVol: number;
   weightOccupancyPct: number;
@@ -59,8 +66,15 @@ export interface BigPictureAnalysis {
   summaryMessage: string;
 }
 
+export function matchWarehouse(whA?: string, whB?: string): boolean {
+  if (!whA || !whB) return false;
+  const a = whA.toLowerCase().trim();
+  const b = whB.toLowerCase().trim();
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 /**
- * Motor de diagnóstico executivo de capacidade temporal e física (The Big Picture).
+ * Motor de diagnóstico executivo de capacidade temporal e física.
  * Analisa a simetria entre a procura de cada período (Manhã, Tarde, Noite, Flexível)
  * contra a capacidade horária e física da frota disponível.
  */
@@ -73,9 +87,12 @@ export function computeBigPictureAnalytics(
 
   let totalKg = 0;
   let totalVol = 0;
+  let totalBoxes = 0;
   deliveries.forEach((d) => {
     totalKg += Number(d.Peso_KG) || 0;
     totalVol += Number(d.Volume_m3) || 0;
+    const b = Number(d.Total_Cx) || (Number(d.Cx_Ambiente || 0) + Number(d.Cx_Frio || 0) + Number(d.Cx_Congelado || 0)) || 0;
+    totalBoxes += b;
   });
 
   let fleetMaxKg = 0;
@@ -103,42 +120,30 @@ export function computeBigPictureAnalytics(
       return;
     }
 
-    const startH = parsed.start / 60;
-    const endH = parsed.end / 60;
-    const durationH = endH - startH;
+    const { start: startMin, end: endMin } = parsed;
 
-    // Se a janela for ampla (>= 7 horas), consideramos flexível para o dia todo
-    if (durationH >= 7) {
-      flexibleDeliveries.push(d);
-      return;
-    }
-
-    // Pós-Laboral / Noite: Início às 18:00 ou mais tarde
-    if (startH >= 18.0) {
+    if (endMin <= 780) {
+      amDeliveries.push(d);
+    } else if (startMin >= 780 && endMin <= 1140) {
+      pmDeliveries.push(d);
+    } else if (startMin >= 1080) {
       nightDeliveries.push(d);
-    }
-    // Tarde (PM): Início a partir das 12:30 ou término exclusivo à tarde (início >= 12h e fim <= 19h)
-    else if (startH >= 12.5) {
-      pmDeliveries.push(d);
-    }
-    // Manhã (AM): Término até às 13:30 (ex: 08:00-12:00, 09:00-13:00)
-    else if (endH <= 13.5) {
-      amDeliveries.push(d);
-    }
-    // Janelas que cruzam o almoço com foco vespertino
-    else if (startH >= 11.0 && endH >= 16.0) {
-      pmDeliveries.push(d);
-    }
-    // Caso padrão matinal
-    else {
-      amDeliveries.push(d);
+    } else if (startMin <= 600 && endMin >= 1080) {
+      flexibleDeliveries.push(d);
+    } else if (startMin < 780 && endMin > 780) {
+      const amSpan = 780 - startMin;
+      const pmSpan = endMin - 780;
+      if (amSpan >= pmSpan) {
+        amDeliveries.push(d);
+      } else {
+        pmDeliveries.push(d);
+      }
+    } else {
+      flexibleDeliveries.push(d);
     }
   });
 
-  // Capacidade estimada por viatura em cada período (considerando paragem média de 25 min incluindo trânsito)
-  // Turno Matinal: ~4.5h -> ~9 paragens por viatura
-  // Turno Vespertino: ~4.5h -> ~9 paragens por viatura
-  // Turno Noturno: ~2.5h -> ~5 paragens por viatura
+  // Capacidade estimada de paragens por período por viatura (média operacional de 20-30 min por entrega)
   const avgStopsPerVehicleAM = 9;
   const avgStopsPerVehiclePM = 9;
   const avgStopsPerVehicleNight = 5;
@@ -151,27 +156,27 @@ export function computeBigPictureAnalytics(
     id: "am" | "pm" | "night" | "flexible",
     label: string,
     timeRange: string,
-    list: BigPictureDelivery[],
-    cap: number,
-    perVehStops: number
+    items: BigPictureDelivery[],
+    fleetCap: number,
+    stopsPerVehicle: number
   ): TimePeriodStat => {
-    const count = list.length;
+    const count = items.length;
     const pct = totalDeliveries > 0 ? Math.round((count / totalDeliveries) * 100) : 0;
-    const kg = list.reduce((sum, item) => sum + (Number(item.Peso_KG) || 0), 0);
-    const vol = list.reduce((sum, item) => sum + (Number(item.Volume_m3) || 0), 0);
+    let periodKg = 0;
+    let periodVol = 0;
+    items.forEach((it) => {
+      periodKg += Number(it.Peso_KG) || 0;
+      periodVol += Number(it.Volume_m3) || 0;
+    });
 
-    const deficitStops = Math.max(0, count - cap);
-    const deficitVehicles = deficitStops > 0 ? Math.ceil(deficitStops / perVehStops) : 0;
+    const deficitStops = Math.max(0, count - fleetCap);
+    const deficitVehicles = deficitStops > 0 ? Math.ceil(deficitStops / stopsPerVehicle) : 0;
 
     let status: "surplus" | "balanced" | "warning" | "critical" = "balanced";
-    if (id === "flexible") {
-      status = "balanced";
-    } else {
-      const ratio = cap > 0 ? count / cap : 0;
-      if (ratio > 1.25) status = "critical";
-      else if (ratio > 1.0) status = "warning";
-      else if (ratio < 0.6) status = "surplus";
-      else status = "balanced";
+    if (deficitStops > 0) {
+      status = deficitStops > stopsPerVehicle ? "critical" : "warning";
+    } else if (fleetCap > 0 && count < fleetCap * 0.4) {
+      status = "surplus";
     }
 
     return {
@@ -180,13 +185,13 @@ export function computeBigPictureAnalytics(
       timeRange,
       count,
       pct,
-      totalKg: Math.round(kg),
-      totalVol: Number(vol.toFixed(1)),
-      fleetCapacityStops: cap,
+      totalKg: periodKg,
+      totalVol: periodVol,
+      fleetCapacityStops: fleetCap,
       deficitStops,
       deficitVehicles,
       status,
-      deliveries: list,
+      deliveries: items,
     };
   };
 
@@ -201,8 +206,6 @@ export function computeBigPictureAnalytics(
   const timeConstrained = [periodAM, periodPM, periodNight];
   const criticalPeriod = timeConstrained.reduce((max, p) => (p.deficitStops > (max?.deficitStops || 0) ? p : max), null as TimePeriodStat | null);
 
-  // Cálculo da frota recomendada
-  // A frota deve cobrir tanto o pico temporal mais crítico como o peso físico
   const vehByWeight = fleetMaxKg > 0 ? Math.ceil(totalKg / (fleetMaxKg / numVehicles)) : numVehicles;
   const vehByCriticalPeriod = criticalPeriod && criticalPeriod.deficitVehicles > 0 ? numVehicles + criticalPeriod.deficitVehicles : numVehicles;
   const recommendedVehicles = Math.max(numVehicles, vehByWeight, vehByCriticalPeriod);
@@ -226,6 +229,7 @@ export function computeBigPictureAnalytics(
     totalVehicles: numVehicles,
     totalKg,
     totalVol,
+    totalBoxes,
     fleetMaxKg,
     fleetMaxVol,
     weightOccupancyPct,
@@ -238,84 +242,114 @@ export function computeBigPictureAnalytics(
   };
 }
 
-export interface ZoneBigPictureStat {
+export interface WarehouseBigPictureStat {
   id: string;
   name: string;
-  dominantLocality: string;
   vehicles: string[];
   deliveries: BigPictureDelivery[];
+  totalDeliveries: number;
+  totalKg: number;
+  totalVol: number;
+  totalBoxes: number;
   analytics: BigPictureAnalysis;
 }
 
 /**
- * Agrupa as entregas e viaturas por Zonas Territoriais e executa a análise
- * Big Picture individualizada para cada zona ("The Big Picture em Estrutura").
+ * Agrupa as entregas e viaturas por Armazém / Loja e executa o diagnóstico
+ * individualizado para cada armazém ("Análise por Armazém / Loja").
  */
-export function computeZonalBigPictureAnalytics(
+export function computeWarehouseBigPictureAnalytics(
   deliveries: BigPictureDelivery[],
   vehicles: BigPictureVehicle[]
-): ZoneBigPictureStat[] {
-  const zoneGroups = new Map<string, BigPictureDelivery[]>();
+): WarehouseBigPictureStat[] {
+  const whGroups = new Map<string, BigPictureDelivery[]>();
 
+  // 1. Agrupar entregas por Armazém
   deliveries.forEach((d) => {
-    const loc = normalizeLocality(d.Localidade, (d as any).CP || (d as any).Codigo_Postal);
-    if (!zoneGroups.has(loc)) {
-      zoneGroups.set(loc, []);
+    const rawWh = (d.Armazem || (d as any).armazem || "Sem Armazém").trim();
+    if (!whGroups.has(rawWh)) {
+      whGroups.set(rawWh, []);
     }
-    zoneGroups.get(loc)!.push(d);
+    whGroups.get(rawWh)!.push(d);
   });
 
-  const zones: ZoneBigPictureStat[] = [];
+  // 2. Assegurar que armazéns da frota também constam
+  vehicles.forEach((v) => {
+    const vWh = (v.armazem || "").trim();
+    if (vWh) {
+      let found = false;
+      for (const existingWh of whGroups.keys()) {
+        if (matchWarehouse(existingWh, vWh)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        whGroups.set(vWh, []);
+      }
+    }
+  });
 
-  zoneGroups.forEach((zoneDeliveries, locKey) => {
-    const zoneId = `zone_${locKey.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
-    const displayName = locKey === "GERAL" 
-      ? "Geral / Mista" 
-      : `Zona ${locKey.charAt(0) + locKey.slice(1).toLowerCase()}`;
+  const list: WarehouseBigPictureStat[] = [];
 
-    // Viaturas que têm paragens nesta zona
-    const zoneVehicleNames = Array.from(new Set(
-      zoneDeliveries
-        .map(d => d.Rota)
-        .filter(r => r && r !== "Por Distribuir" && !r.includes("Pendente"))
-    )) as string[];
+  whGroups.forEach((whDeliveries, whName) => {
+    const whId = `wh_${whName.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
 
-    // Veículos correspondentes da frota
-    const zoneVehicles = vehicles.filter(v => zoneVehicleNames.includes(v.veiculo));
+    // Viaturas alocadas a este Armazém/Loja
+    const whVehicles = vehicles.filter((v) => {
+      if (matchWarehouse(v.armazem, whName)) return true;
+      if (whDeliveries.some((d) => d.Rota === v.veiculo)) return true;
+      const vPrefix = v.veiculo.includes("_") ? v.veiculo.split("_")[0].toLowerCase() : v.veiculo.toLowerCase();
+      const whNorm = whName.toLowerCase();
+      if (whNorm.includes(vPrefix) || (vPrefix.length >= 3 && whNorm.slice(0, 5).includes(vPrefix.slice(0, 3)))) return true;
+      return false;
+    });
 
-    // Se nenhuma viatura estiver atribuída nesta zona, estimar com base na capacidade padrão
-    const effectiveVehicles = zoneVehicles.length > 0
-      ? zoneVehicles
-      : (vehicles.length > 0 ? vehicles.slice(0, 1) : [{ veiculo: "Estimada", capacidade_kg: 1200, capacidade_vol: 10 }]);
+    const effectiveVehicles = whVehicles.length > 0
+      ? whVehicles
+      : (vehicles.length > 0 ? vehicles : [{ veiculo: "Estimada", capacidade_kg: 1200, capacidade_vol: 10 }]);
 
-    const analytics = computeBigPictureAnalytics(zoneDeliveries, effectiveVehicles);
+    const analytics = computeBigPictureAnalytics(whDeliveries, effectiveVehicles);
 
-    zones.push({
-      id: zoneId,
-      name: displayName,
-      dominantLocality: locKey,
-      vehicles: zoneVehicleNames,
-      deliveries: zoneDeliveries,
+    let totalBoxes = 0;
+    whDeliveries.forEach((d) => {
+      const b = Number(d.Total_Cx) || (Number(d.Cx_Ambiente || 0) + Number(d.Cx_Frio || 0) + Number(d.Cx_Congelado || 0)) || 0;
+      totalBoxes += b;
+    });
+
+    list.push({
+      id: whId,
+      name: whName,
+      vehicles: whVehicles.map((v) => v.veiculo),
+      deliveries: whDeliveries,
+      totalDeliveries: whDeliveries.length,
+      totalKg: analytics.totalKg,
+      totalVol: analytics.totalVol,
+      totalBoxes,
       analytics,
     });
   });
 
-  // Ordenar por criticidade e depois por volume de entregas
-  return zones.sort((a, b) => {
+  return list.sort((a, b) => {
     const score = (st: string) => (st === "critical" ? 3 : st === "warning" ? 2 : 1);
     const scoreDiff = score(b.analytics.overallStatus) - score(a.analytics.overallStatus);
     if (scoreDiff !== 0) return scoreDiff;
-    return b.deliveries.length - a.deliveries.length;
+    return b.totalDeliveries - a.totalDeliveries;
   });
 }
+
+// Retro-compatibilidade se algum componente ainda chamar computeZonalBigPictureAnalytics
+export const computeZonalBigPictureAnalytics = computeWarehouseBigPictureAnalytics as any;
 
 export interface BigPictureModalProps {
   isOpen: boolean;
   onClose: () => void;
   deliveries: BigPictureDelivery[];
   vehicles: BigPictureVehicle[];
-  initialZoneId?: string;
-  onSelectZoneOnMap?: (zoneId: string) => void;
+  initialWarehouseId?: string;
+  initialZoneId?: string; // backwards compatibility
+  onSelectWarehouse?: (warehouseName: string) => void;
+  onSelectZoneOnMap?: (zoneId: string) => void; // backwards compatibility
 }
 
 export default function BigPictureModal({
@@ -323,37 +357,43 @@ export default function BigPictureModal({
   onClose,
   deliveries,
   vehicles,
-  initialZoneId = "all",
+  initialWarehouseId,
+  initialZoneId,
+  onSelectWarehouse,
   onSelectZoneOnMap,
 }: BigPictureModalProps) {
-  const [selectedZoneId, setSelectedZoneId] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<"summary" | "zones" | "am" | "pm" | "night" | "flexible">("summary");
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"summary" | "warehouses" | "am" | "pm" | "night" | "flexible">("summary");
 
-  useEffect(() => {
-    if (initialZoneId) {
-      setSelectedZoneId(initialZoneId);
-    }
-  }, [initialZoneId, isOpen]);
-
-  const zonalStats = useMemo(() => {
-    return computeZonalBigPictureAnalytics(deliveries, vehicles);
+  const warehouseStats = useMemo(() => {
+    return computeWarehouseBigPictureAnalytics(deliveries, vehicles);
   }, [deliveries, vehicles]);
 
-  const activeZoneStat = useMemo(() => {
-    if (selectedZoneId === "all") return null;
-    return zonalStats.find(z => z.id === selectedZoneId) || null;
-  }, [zonalStats, selectedZoneId]);
+  useEffect(() => {
+    const initTarget = initialWarehouseId || initialZoneId;
+    if (initTarget && initTarget !== "all") {
+      const match = warehouseStats.find(w => matchWarehouse(w.name, initTarget) || w.id === initTarget);
+      if (match) {
+        setSelectedWarehouseId(match.id);
+      }
+    }
+  }, [initialWarehouseId, initialZoneId, isOpen, warehouseStats]);
+
+  const activeWarehouseStat = useMemo(() => {
+    if (selectedWarehouseId === "all") return null;
+    return warehouseStats.find(w => w.id === selectedWarehouseId) || null;
+  }, [warehouseStats, selectedWarehouseId]);
 
   const activeDeliveries = useMemo(() => {
-    if (!activeZoneStat) return deliveries;
-    return activeZoneStat.deliveries;
-  }, [deliveries, activeZoneStat]);
+    if (!activeWarehouseStat) return deliveries;
+    return activeWarehouseStat.deliveries;
+  }, [deliveries, activeWarehouseStat]);
 
   const activeVehicles = useMemo(() => {
-    if (!activeZoneStat) return vehicles;
-    const zVehs = vehicles.filter(v => activeZoneStat.vehicles.includes(v.veiculo));
-    return zVehs.length > 0 ? zVehs : vehicles.slice(0, 1);
-  }, [vehicles, activeZoneStat]);
+    if (!activeWarehouseStat) return vehicles;
+    const wVehs = vehicles.filter(v => activeWarehouseStat.vehicles.includes(v.veiculo));
+    return wVehs.length > 0 ? wVehs : vehicles;
+  }, [vehicles, activeWarehouseStat]);
 
   const analytics = useMemo(() => {
     return computeBigPictureAnalytics(activeDeliveries, activeVehicles);
@@ -383,7 +423,7 @@ export default function BigPictureModal({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-base font-bold tracking-tight text-white">
-                  The Big Picture — Diagnóstico Executivo de Capacidade & Viabilidade
+                  Análise — Diagnóstico de Capacidade & Viabilidade
                 </h2>
                 <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
                   overallStatus === "critical"
@@ -396,29 +436,29 @@ export default function BigPictureModal({
                 </span>
               </div>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Avaliação de afunilamento temporal por períodos (Manhã, Tarde, Noite) e balanço de carga física
+                Avaliação de afunilamento temporal por períodos (Manhã, Tarde, Noite) e balanço de carga por Armazém / Loja
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* Seletor Rápido de Território / Zona */}
+            {/* Seletor Rápido de Armazém / Loja */}
             <div className="flex items-center space-x-1.5 bg-zinc-900 border border-zinc-700/80 rounded-lg px-2.5 py-1 text-xs">
-              <span className="text-[11px] text-zinc-400 font-bold shrink-0">Território:</span>
+              <span className="text-[11px] text-zinc-400 font-bold shrink-0">Armazém / Loja:</span>
               <select
-                value={selectedZoneId}
+                value={selectedWarehouseId}
                 onChange={(e) => {
-                  setSelectedZoneId(e.target.value);
-                  if (activeTab === "zones") setActiveTab("summary");
+                  setSelectedWarehouseId(e.target.value);
+                  if (activeTab === "warehouses") setActiveTab("summary");
                 }}
-                className="bg-transparent text-white font-bold outline-none cursor-pointer max-w-[190px] truncate"
+                className="bg-transparent text-white font-bold outline-none cursor-pointer max-w-[210px] truncate"
               >
                 <option value="all" className="bg-zinc-900 text-white">
-                  🌐 Todas as Zonas ({deliveries.length} entregas)
+                  🏬 Todos os Armazéns ({deliveries.length} entregas • {vehicles.length}v)
                 </option>
-                {zonalStats.map((z) => (
-                  <option key={z.id} value={z.id} className="bg-zinc-900 text-white">
-                    📍 {z.name} ({z.deliveries.length}p · {z.vehicles.length}v)
+                {warehouseStats.map((w) => (
+                  <option key={w.id} value={w.id} className="bg-zinc-900 text-white">
+                    🏬 {w.name} ({w.totalDeliveries}p • {w.vehicles.length}v)
                   </option>
                 ))}
               </select>
@@ -445,7 +485,7 @@ export default function BigPictureModal({
             : "bg-emerald-950/40 border-emerald-900/60 text-emerald-200"
         }`}>
           <span className="text-base mt-[-2px]">
-            {overallStatus === "critical" ? "⚠️" : overallStatus === "warning" ? "⚡" : "✅"}
+            {overallStatus === "critical" ? "🚨" : overallStatus === "warning" ? "⚠️" : "✅"}
           </span>
           <div className="flex-1">
             <span className="font-semibold">{analytics.summaryMessage}</span>
@@ -481,16 +521,16 @@ export default function BigPictureModal({
             <span>📊 Visão Geral & Métricas</span>
           </button>
           <button
-            onClick={() => setActiveTab("zones")}
+            onClick={() => setActiveTab("warehouses")}
             className={`cursor-pointer py-2.5 px-3 border-b-2 font-semibold transition-colors flex items-center space-x-1.5 shrink-0 ${
-              activeTab === "zones"
+              activeTab === "warehouses"
                 ? "border-indigo-500 text-indigo-400 bg-zinc-800/40"
                 : "border-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            <span>🗺️ Estrutura por Zonas</span>
+            <span>🏬 Por Armazém / Loja</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-              {zonalStats.length} Zonas
+              {warehouseStats.length} Lojas
             </span>
           </button>
           <button
@@ -520,7 +560,7 @@ export default function BigPictureModal({
                 : "border-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            <span>🌇 Tarde (PM)</span>
+            <span>🌆 Tarde (PM)</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
               periods.pm.status === "critical"
                 ? "bg-rose-500/20 text-rose-300"
@@ -540,7 +580,7 @@ export default function BigPictureModal({
             }`}
           >
             <span>🌙 Pós-Laboral</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-300">
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-zinc-800 text-zinc-300">
               {periods.night.count}
             </span>
           </button>
@@ -553,123 +593,110 @@ export default function BigPictureModal({
             }`}
           >
             <span>🔄 Flexíveis</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-300">
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-zinc-800 text-zinc-300">
               {periods.flexible.count}
             </span>
           </button>
         </div>
 
-        {/* CONTEÚDO PRINCIPAL (COM SCROLL) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* BANNER DE FOCO TERRITORIAL ATIVO */}
-          {selectedZoneId !== "all" && activeZoneStat && (
-            <div className="bg-indigo-950/40 border border-indigo-800/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-200">
-              <div className="flex items-center space-x-2">
-                <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
-                  📍 Foco Ativo: {activeZoneStat.name}
-                </span>
-                <span className="text-zinc-300 font-medium">
-                  {activeDeliveries.length} entregas · {activeVehicles.length} {activeVehicles.length === 1 ? "viatura" : "viaturas"} ({activeVehicles.map(v => v.veiculo).join(", ")})
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                {onSelectZoneOnMap && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectZoneOnMap(selectedZoneId);
-                      onClose();
-                    }}
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition cursor-pointer text-xs flex items-center space-x-1 shadow-xs"
-                  >
-                    <span>🗺️ Focar no Mapa</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedZoneId("all")}
-                  className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition cursor-pointer text-xs font-semibold"
-                >
-                  Ver Global ✕
-                </button>
-              </div>
-            </div>
-          )}
-
+        {/* CORPO DO MODAL */}
+        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+          {/* TAB: VISÃO GERAL */}
           {activeTab === "summary" && (
             <div className="space-y-4">
-              {/* CARTÕES DE PERÍODO TEMPORAL (OS 4 PILARES) */}
+              {/* Contexto do Armazém Selecionado */}
+              {activeWarehouseStat && (
+                <div className="bg-indigo-950/30 border border-indigo-800/60 rounded-xl p-3 flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base">🏬</span>
+                    <div>
+                      <span className="font-bold text-white text-sm">
+                        {activeWarehouseStat.name}
+                      </span>
+                      <span className="text-zinc-400 text-[11px] block">
+                        A analisar isoladamente as {activeWarehouseStat.deliveries.length} entregas e {activeWarehouseStat.vehicles.length} viaturas desta loja
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWarehouseId("all")}
+                    className="text-indigo-300 hover:text-white px-2.5 py-1 rounded bg-indigo-900/50 hover:bg-indigo-800 transition-colors font-medium cursor-pointer"
+                  >
+                    Ver Todos os Armazéns
+                  </button>
+                </div>
+              )}
+
+              {/* 1. BALANÇO TEMPORAL */}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
                   1. Balanço Temporal da Procura vs. Capacidade da Frota
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                   {[periods.am, periods.pm, periods.night, periods.flexible].map((p) => {
-                    const isCrit = p.status === "critical";
-                    const isWarn = p.status === "warning";
+                    const isCritical = p.status === "critical";
+                    const isWarning = p.status === "warning";
                     const isSurplus = p.status === "surplus";
 
                     return (
                       <div
                         key={p.id}
                         onClick={() => setActiveTab(p.id)}
-                        className={`cursor-pointer rounded-lg p-3 border transition-all hover:border-zinc-500 ${
-                          isCrit
-                            ? "bg-rose-950/20 border-rose-800/70"
-                            : isWarn
-                            ? "bg-amber-950/20 border-amber-800/70"
-                            : "bg-zinc-900/60 border-zinc-800"
+                        className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                          isCritical
+                            ? "bg-rose-950/30 border-rose-800 hover:bg-rose-900/40"
+                            : isWarning
+                            ? "bg-amber-950/30 border-amber-800 hover:bg-amber-900/40"
+                            : isSurplus
+                            ? "bg-sky-950/30 border-sky-800 hover:bg-sky-900/40"
+                            : "bg-zinc-900/60 border-zinc-800 hover:bg-zinc-850"
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-zinc-200">{p.label}</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            isCrit
+                          <span className="font-semibold text-xs text-white">{p.label}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                            isCritical
                               ? "bg-rose-500/20 text-rose-300"
-                              : isWarn
+                              : isWarning
                               ? "bg-amber-500/20 text-amber-300"
                               : isSurplus
-                              ? "bg-indigo-500/20 text-indigo-300"
+                              ? "bg-sky-500/20 text-sky-300"
                               : "bg-emerald-500/20 text-emerald-300"
                           }`}>
-                            {isCrit ? "Défice!" : isWarn ? "Limite" : isSurplus ? "Folga" : "Equilibrado"}
+                            {isCritical ? "Défice" : isWarning ? "Limite" : isSurplus ? "Folga" : "Equilibrado"}
                           </span>
                         </div>
                         <span className="text-[10px] text-zinc-400 block mt-0.5">{p.timeRange}</span>
 
-                        <div className="mt-2.5 flex items-baseline justify-between">
-                          <div>
-                            <span className="text-xl font-extrabold text-white">{p.count}</span>
-                            <span className="text-xs text-zinc-400 ml-1">entregas</span>
-                          </div>
-                          <span className="text-xs font-mono text-zinc-400 font-bold">{p.pct}%</span>
+                        <div className="mt-3 flex items-baseline justify-between">
+                          <span className="text-xl font-bold text-white">
+                            {p.count} <span className="text-xs font-normal text-zinc-400">entregas</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold text-zinc-400">{p.pct}%</span>
                         </div>
 
-                        {/* Barra de Procura vs Capacidade */}
                         {p.id !== "flexible" && (
-                          <div className="mt-2 text-[11px] space-y-1">
-                            <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
-                              <span>Capacidade: ~{p.fleetCapacityStops}</span>
-                              <span className={p.deficitStops > 0 ? "text-rose-400 font-bold" : "text-emerald-400"}>
-                                {p.deficitStops > 0 ? `-${p.deficitStops} vts` : "OK"}
-                              </span>
-                            </div>
-                            <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  isCrit ? "bg-rose-500" : isWarn ? "bg-amber-500" : "bg-indigo-500"
-                                }`}
-                                style={{
-                                  width: `${Math.min(100, p.fleetCapacityStops > 0 ? (p.count / p.fleetCapacityStops) * 100 : 0)}%`,
-                                }}
-                              />
-                            </div>
+                          <div className="mt-2 text-[10px] text-zinc-400 flex items-center justify-between">
+                            <span>Capacidade: ~{p.fleetCapacityStops}</span>
+                            <span className={isCritical ? "text-rose-400 font-bold" : isWarning ? "text-amber-400 font-bold" : "text-emerald-400"}>
+                              {isCritical ? `-${p.deficitStops} vagas` : isWarning ? `-${p.deficitStops} vagas` : "OK"}
+                            </span>
                           </div>
                         )}
 
-                        <div className="mt-2 pt-2 border-t border-zinc-800/80 flex justify-between text-[10px] text-zinc-400">
+                        <div className="w-full bg-zinc-800 rounded-full h-1 mt-2 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              isCritical ? "bg-rose-500" : isWarning ? "bg-amber-400" : "bg-indigo-500"
+                            }`}
+                            style={{ width: `${Math.min(100, p.fleetCapacityStops > 0 ? (p.count / p.fleetCapacityStops) * 100 : 0)}%` }}
+                          />
+                        </div>
+
+                        <div className="mt-2 pt-2 border-t border-zinc-800/80 flex items-center justify-between text-[10px] text-zinc-400">
                           <span>{p.totalKg.toLocaleString("pt-PT")} kg</span>
-                          <span>{p.totalVol} m³</span>
+                          <span>{p.totalVol.toFixed(1)} m³</span>
                         </div>
                       </div>
                     );
@@ -677,12 +704,12 @@ export default function BigPictureModal({
                 </div>
               </div>
 
-              {/* BALANÇO FÍSICO GLOBAL (PESO E VOLUME) */}
+              {/* 2. BALANÇO FÍSICO */}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                  2. Balanço Físico da Carga (Frota Disponível: {analytics.totalVehicles} viaturas)
+                  2. Balanço Físico da Carga (Frota Disponível: {analytics.totalVehicles} Viaturas)
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Ocupação em Peso */}
                   <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
                     <div className="flex items-center justify-between text-xs">
@@ -720,10 +747,12 @@ export default function BigPictureModal({
                     )}
                   </div>
 
-                  {/* Ocupação em Volume */}
+                  {/* Ocupação em Volume / Caixas */}
                   <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-zinc-300">📦 Volume Cúbico Total</span>
+                      <span className="font-semibold text-zinc-300">
+                        {analytics.totalBoxes > 0 ? "📦 Caixas & Volume Cúbico" : "📦 Volume Cúbico Total"}
+                      </span>
                       <span className={`font-mono font-bold ${
                         analytics.volOccupancyPct > 100 ? "text-rose-400" : "text-emerald-400"
                       }`}>
@@ -732,7 +761,10 @@ export default function BigPictureModal({
                     </div>
                     <div className="mt-2 flex items-baseline justify-between text-xs">
                       <span className="text-lg font-bold text-white">
-                        {analytics.totalVol.toFixed(1)} <span className="text-xs font-normal text-zinc-400">m³ a entregar</span>
+                        {analytics.totalBoxes > 0 ? `${analytics.totalBoxes} Cx` : `${analytics.totalVol.toFixed(1)} m³`}{" "}
+                        <span className="text-xs font-normal text-zinc-400">
+                          {analytics.totalBoxes > 0 ? `(${analytics.totalVol.toFixed(1)} m³)` : "a entregar"}
+                        </span>
                       </span>
                       <span className="text-xs text-zinc-400">
                         Capacidade Frota: {analytics.fleetMaxVol.toFixed(1)} m³
@@ -750,16 +782,11 @@ export default function BigPictureModal({
                         style={{ width: `${Math.min(100, analytics.volOccupancyPct)}%` }}
                       />
                     </div>
-                    {analytics.volOccupancyPct > 100 && (
-                      <p className="text-[11px] text-rose-400 mt-2">
-                        ⚠️ O volume cúbico ultrapassa o limite da frota. Algumas encomendas poderão requerer viaturas de maior porte.
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
 
-              {/* 3. RECOMENDAÇÃO TÁTICA ANTES DE OTIMIZAR */}
+              {/* 3. RECOMENDAÇÃO TÁTICA */}
               <div className="bg-indigo-950/20 border border-indigo-900/40 rounded-lg p-3 text-xs text-zinc-300">
                 <span className="font-bold text-indigo-300 block mb-1">
                   💡 Como o Gestor de Tráfego pode atuar antes do Solver:
@@ -776,88 +803,85 @@ export default function BigPictureModal({
             </div>
           )}
 
-          {/* TAB: ESTRUTURA POR ZONAS TERRITORIAIS */}
-          {activeTab === "zones" && (
+          {/* TAB: ESTRUTURA POR ARMAZÉM / LOJA */}
+          {activeTab === "warehouses" && (
             <div className="space-y-4">
-              {/* Header de Resumo Zonal */}
+              {/* Header de Resumo por Armazém */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3">
-                  <span className="text-[10px] uppercase font-bold text-zinc-400 block">Zonas Mapeadas</span>
-                  <span className="text-xl font-extrabold text-white">{zonalStats.length}</span>
-                  <span className="text-[10px] text-zinc-500 block">aglomerados territoriais</span>
+                  <span className="text-[10px] uppercase font-bold text-zinc-400 block">Lojas Mapeadas</span>
+                  <span className="text-xl font-extrabold text-white">{warehouseStats.length}</span>
+                  <span className="text-[10px] text-zinc-500 block">centros de distribuição</span>
                 </div>
                 <div className="bg-rose-950/20 border border-rose-900/40 rounded-xl p-3">
-                  <span className="text-[10px] uppercase font-bold text-rose-400 block">Zonas Críticas</span>
+                  <span className="text-[10px] uppercase font-bold text-rose-400 block">Lojas Críticas</span>
                   <span className="text-xl font-extrabold text-rose-300">
-                    {zonalStats.filter(z => z.analytics.overallStatus === "critical").length}
+                    {warehouseStats.filter(w => w.analytics.overallStatus === "critical").length}
                   </span>
                   <span className="text-[10px] text-rose-400/80 block">com défice de frota no pico</span>
                 </div>
                 <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-3">
-                  <span className="text-[10px] uppercase font-bold text-amber-400 block">Zonas em Atenção</span>
+                  <span className="text-[10px] uppercase font-bold text-amber-400 block">Lojas em Atenção</span>
                   <span className="text-xl font-extrabold text-amber-300">
-                    {zonalStats.filter(z => z.analytics.overallStatus === "warning").length}
+                    {warehouseStats.filter(w => w.analytics.overallStatus === "warning").length}
                   </span>
                   <span className="text-[10px] text-amber-400/80 block">limite de carga / janelas</span>
                 </div>
                 <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-xl p-3">
-                  <span className="text-[10px] uppercase font-bold text-emerald-400 block">Zonas Equilibradas</span>
+                  <span className="text-[10px] uppercase font-bold text-emerald-400 block">Lojas Equilibradas</span>
                   <span className="text-xl font-extrabold text-emerald-300">
-                    {zonalStats.filter(z => z.analytics.overallStatus === "balanced").length}
+                    {warehouseStats.filter(w => w.analytics.overallStatus === "balanced").length}
                   </span>
                   <span className="text-[10px] text-emerald-400/80 block">100% viáveis com a frota</span>
                 </div>
               </div>
 
-              {/* Lista Estruturada de Zonas */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-xs text-zinc-400 font-bold uppercase tracking-wider px-1">
-                  <span>Diagnóstico Estruturado por Zona Territorial</span>
-                  <span>{zonalStats.length} Zonas Ativas</span>
+              {/* Lista de Cards de Armazéns / Lojas */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-zinc-400 font-bold uppercase tracking-wider">
+                  <span>Diagnóstico Individual por Armazém / Loja</span>
+                  <span>{warehouseStats.length} Lojas</span>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2.5">
-                  {zonalStats.map((z) => {
-                    const isCrit = z.analytics.overallStatus === "critical";
-                    const isWarn = z.analytics.overallStatus === "warning";
-                    const isSelected = selectedZoneId === z.id;
-                    const totalStops = z.deliveries.length;
-                    const amCount = z.analytics.periods.am.count;
-                    const pmCount = z.analytics.periods.pm.count;
-                    const nightCount = z.analytics.periods.night.count;
-                    const flexCount = z.analytics.periods.flexible.count;
+                <div className="grid grid-cols-1 gap-3">
+                  {warehouseStats.map((wh) => {
+                    const st = wh.analytics.overallStatus;
+                    const amCount = wh.analytics.periods.am.count;
+                    const pmCount = wh.analytics.periods.pm.count;
+                    const nightCount = wh.analytics.periods.night.count;
+                    const flexCount = wh.analytics.periods.flexible.count;
+                    const totalStops = Math.max(1, wh.deliveries.length);
 
                     return (
                       <div
-                        key={z.id}
-                        className={`rounded-xl border p-3.5 transition-all text-xs ${
-                          isSelected
-                            ? "bg-indigo-950/40 border-indigo-500 shadow-md shadow-indigo-500/10"
-                            : isCrit
-                            ? "bg-zinc-900/90 border-rose-900/60 hover:border-rose-700"
-                            : isWarn
-                            ? "bg-zinc-900/90 border-amber-900/60 hover:border-amber-700"
-                            : "bg-zinc-900/90 border-zinc-800 hover:border-zinc-700"
+                        key={wh.id}
+                        className={`bg-zinc-900/70 border rounded-xl p-4 transition-all ${
+                          st === "critical"
+                            ? "border-rose-800/80 hover:border-rose-700 bg-rose-950/10"
+                            : st === "warning"
+                            ? "border-amber-800/80 hover:border-amber-700 bg-amber-950/10"
+                            : "border-zinc-800 hover:border-zinc-700"
                         }`}
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-base">📍</span>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-2.5">
+                          <div className="flex items-center space-x-2.5">
+                            <span className="text-lg">🏬</span>
                             <div>
                               <div className="flex items-center space-x-2">
-                                <span className="font-extrabold text-white text-sm tracking-tight">{z.name}</span>
+                                <h4 className="font-bold text-sm text-white">{wh.name}</h4>
                                 <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                                  isCrit
+                                  st === "critical"
                                     ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                                    : isWarn
+                                    : st === "warning"
                                     ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
                                     : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                                 }`}>
-                                  {isCrit ? "🔴 Sobrecarga no Pico" : isWarn ? "🟡 Atenção" : "🟢 Viável & Equilibrada"}
+                                  {st === "critical" ? "Sobrecarga / Risco" : st === "warning" ? "Atenção" : "Viável & Equilibrado"}
                                 </span>
                               </div>
-                              <span className="text-[11px] text-zinc-400">
-                                Concelho Dominante: <strong className="text-zinc-200">{z.dominantLocality}</strong> · Frota: <strong className="text-indigo-300">{z.vehicles.join(", ") || "Sem rota fixa"}</strong> ({z.vehicles.length} {z.vehicles.length === 1 ? "viatura" : "viaturas"})
+                              <span className="text-[11px] text-zinc-400 block mt-0.5">
+                                {wh.deliveries.length} paragens • {wh.vehicles.length} viaturas alocadas
+                                {wh.totalBoxes > 0 ? ` • ${wh.totalBoxes} caixas` : ""}
                               </span>
                             </div>
                           </div>
@@ -866,89 +890,78 @@ export default function BigPictureModal({
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedZoneId(z.id);
+                                setSelectedWarehouseId(wh.id);
                                 setActiveTab("summary");
                               }}
-                              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 transition cursor-pointer flex items-center space-x-1"
-                              title="Ver diagnóstico completo para esta zona"
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer flex items-center space-x-1.5 shadow-sm"
                             >
-                              <span>🔍</span>
-                              <span>Analisar Detalhe</span>
+                              <span>🔍 Analisar Este Armazém</span>
                             </button>
-
-                            {onSelectZoneOnMap && (
+                            {onSelectWarehouse && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onSelectZoneOnMap(z.id);
+                                  onSelectWarehouse(wh.name);
                                   onClose();
                                 }}
-                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition cursor-pointer flex items-center space-x-1"
-                                title="Focar esta zona no mapa"
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                                title="Filtrar ecra tatico para esta loja"
                               >
-                                <span>🗺️</span>
-                                <span>Focar no Mapa</span>
+                                Filtrar Ecrã
                               </button>
                             )}
                           </div>
                         </div>
 
-                        {/* Indicadores Chave da Zona */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2.5 text-[11px]">
-                          <div className="bg-zinc-950/60 rounded-lg p-2 border border-zinc-800/80">
-                            <span className="text-zinc-500 block">Total Entregas</span>
-                            <span className="text-white font-bold font-mono text-sm">{totalStops}</span>
-                            <span className="text-zinc-500 block text-[10px]">clientes nesta zona</span>
+                        {/* Indicadores do Armazém */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-[11px]">
+                          <div className="bg-zinc-950/60 rounded-lg p-2.5 border border-zinc-800/80">
+                            <span className="text-[10px] text-zinc-400 block uppercase font-bold">Entregas</span>
+                            <span className="text-sm font-bold text-white mt-0.5 block">{wh.deliveries.length}</span>
+                            <span className="text-[10px] text-zinc-500">encomendas</span>
                           </div>
 
-                          <div className="bg-zinc-950/60 rounded-lg p-2 border border-zinc-800/80">
-                            <span className="text-zinc-500 block">Carga & Capacidade</span>
-                            <span className={`font-bold font-mono text-sm ${z.analytics.weightOccupancyPct > 100 ? "text-rose-400" : "text-white"}`}>
-                              {z.analytics.totalKg.toLocaleString("pt-PT")} kg
+                          <div className="bg-zinc-950/60 rounded-lg p-2.5 border border-zinc-800/80">
+                            <span className="text-[10px] text-zinc-400 block uppercase font-bold">Carga & Frota</span>
+                            <span className="text-sm font-bold text-white mt-0.5 block">
+                              {wh.totalKg.toLocaleString("pt-PT")} kg
                             </span>
-                            <span className="text-zinc-400 block text-[10px] font-mono">
-                              {z.analytics.weightOccupancyPct}% da frota ({z.analytics.totalVol.toFixed(1)} m³)
+                            <span className={`text-[10px] font-mono font-bold ${
+                              wh.analytics.weightOccupancyPct > 100 ? "text-rose-400" : "text-emerald-400"
+                            }`}>
+                              {wh.analytics.weightOccupancyPct}% da capacidade
                             </span>
                           </div>
 
-                          <div className="bg-zinc-950/60 rounded-lg p-2 border border-zinc-800/80 sm:col-span-2">
+                          <div className="bg-zinc-950/60 rounded-lg p-2.5 border border-zinc-800/80 sm:col-span-2">
                             <div className="flex items-center justify-between text-zinc-400 mb-1">
-                              <span>Mix Temporal (Janelas)</span>
-                              <span className="font-mono text-zinc-300">
-                                🌅 {amCount} · 🌇 {pmCount} · 🌙 {nightCount} · 🔄 {flexCount}
+                              <span className="text-[10px] uppercase font-bold">Proporção Horária (AM / PM / Noite)</span>
+                              <span className="font-mono text-[10px]">
+                                AM: {amCount} | PM: {pmCount}
                               </span>
                             </div>
-                            {/* Barra Empilhada Proporcional */}
                             <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden flex">
-                              {totalStops > 0 && (
-                                <>
-                                  <div style={{ width: `${(amCount / totalStops) * 100}%` }} className="bg-sky-500 h-full" title={`Manhã: ${amCount}`} />
-                                  <div style={{ width: `${(pmCount / totalStops) * 100}%` }} className="bg-amber-500 h-full" title={`Tarde: ${pmCount}`} />
-                                  <div style={{ width: `${(nightCount / totalStops) * 100}%` }} className="bg-purple-500 h-full" title={`Pós-Laboral: ${nightCount}`} />
-                                  <div style={{ width: `${(flexCount / totalStops) * 100}%` }} className="bg-zinc-500 h-full" title={`Flexíveis: ${flexCount}`} />
-                                </>
-                              )}
+                              <div style={{ width: `${(amCount / totalStops) * 100}%` }} className="bg-sky-500 h-full" title={`Manhã: ${amCount}`} />
+                              <div style={{ width: `${(pmCount / totalStops) * 100}%` }} className="bg-amber-500 h-full" title={`Tarde: ${pmCount}`} />
+                              <div style={{ width: `${(nightCount / totalStops) * 100}%` }} className="bg-purple-500 h-full" title={`Noite: ${nightCount}`} />
+                              <div style={{ width: `${(flexCount / totalStops) * 100}%` }} className="bg-zinc-500 h-full" title={`Flexível: ${flexCount}`} />
                             </div>
                             <div className="flex items-center justify-between text-[10px] text-zinc-500 mt-1">
-                              <span className="text-sky-400">AM ({totalStops > 0 ? Math.round((amCount / totalStops) * 100) : 0}%)</span>
-                              <span className="text-amber-400">PM ({totalStops > 0 ? Math.round((pmCount / totalStops) * 100) : 0}%)</span>
-                              <span className="text-purple-400">Noite ({totalStops > 0 ? Math.round((nightCount / totalStops) * 100) : 0}%)</span>
-                              <span className="text-zinc-400">Flex ({totalStops > 0 ? Math.round((flexCount / totalStops) * 100) : 0}%)</span>
+                              <span className="text-sky-400">🌅 Manhã: {amCount}</span>
+                              <span className="text-amber-400">🌆 Tarde: {pmCount}</span>
+                              <span className="text-purple-400">🌙 Noite: {nightCount}</span>
+                              <span>🔄 Flex: {flexCount}</span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Diagnóstico de Gargalo se existir */}
-                        {z.analytics.criticalPeriod && z.analytics.criticalPeriod.deficitStops > 0 && (
-                          <div className="mt-2 p-2 rounded-lg bg-rose-950/30 border border-rose-900/50 text-[11px] text-rose-300 flex items-center justify-between">
-                            <span className="flex items-center space-x-1.5">
-                              <span>⚠️</span>
-                              <span>
-                                <strong>Gargalo em {z.analytics.criticalPeriod.label}:</strong> {z.analytics.criticalPeriod.count} paragens para capacidade estimada de {z.analytics.criticalPeriod.fleetCapacityStops} (défice de {z.analytics.criticalPeriod.deficitStops} paragens).
-                              </span>
+                        {wh.analytics.criticalPeriod && wh.analytics.criticalPeriod.deficitVehicles > 0 && (
+                          <div className="mt-2.5 p-2 rounded-lg bg-rose-950/30 border border-rose-900/50 text-[11px] text-rose-300 flex items-center justify-between">
+                            <span>
+                              ⚠️ Défice no período {wh.analytics.criticalPeriod.label}: faltam ~{wh.analytics.criticalPeriod.deficitVehicles} viatura(s) para {wh.analytics.criticalPeriod.count} entregas.
                             </span>
-                            <span className="font-bold shrink-0 ml-2 text-rose-200">
-                              +~{z.analytics.criticalPeriod.deficitVehicles} vt no pico
+                            <span className="font-bold text-rose-200">
+                              Frota ideal: {wh.analytics.recommendedVehicles}v (alocadas: {wh.vehicles.length}v)
                             </span>
                           </div>
                         )}
@@ -960,81 +973,97 @@ export default function BigPictureModal({
             </div>
           )}
 
-          {/* TAB DETALHADA POR PERÍODO */}
+          {/* TAB: LISTAGEM DETALHADA DE CLIENTES POR PERÍODO */}
           {["am", "pm", "night", "flexible"].includes(activeTab) && (() => {
             const periodKey = activeTab as "am" | "pm" | "night" | "flexible";
             const currentPeriod = periods[periodKey];
+
             return (
               <div className="space-y-3">
-                <div className="flex items-center justify-between bg-zinc-900/60 p-3 rounded-lg border border-zinc-800">
+                <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="text-sm font-bold text-white">{currentPeriod.label}</h4>
+                    <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                      <span>{currentPeriod.label}</span>
+                      <span className="text-xs text-zinc-400 font-normal">({currentPeriod.timeRange})</span>
+                    </h3>
                     <p className="text-xs text-zinc-400">
-                      Janela Horária: {currentPeriod.timeRange} · {currentPeriod.count} paragens ({currentPeriod.pct}% do total)
+                      {currentPeriod.count} paragens classificadas neste período
+                      {activeWarehouseStat ? ` para a loja ${activeWarehouseStat.name}` : ""}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs text-zinc-400 block font-mono">
-                      Peso: {currentPeriod.totalKg.toLocaleString("pt-PT")} kg | Vol: {currentPeriod.totalVol} m³
-                    </span>
-                    {periodKey !== "flexible" && (
-                      <span className={`text-[11px] font-bold ${
-                        currentPeriod.deficitStops > 0 ? "text-rose-400" : "text-emerald-400"
-                      }`}>
-                        {currentPeriod.deficitStops > 0
-                          ? `Défice de ~${currentPeriod.deficitVehicles} viatura(s)`
-                          : "Capacidade da frota suficiente"}
-                      </span>
-                    )}
-                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded border ${
+                    currentPeriod.status === "critical"
+                      ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                      : currentPeriod.status === "warning"
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  }`}>
+                    {currentPeriod.status === "critical"
+                      ? `Défice de ${currentPeriod.deficitStops} paragens`
+                      : currentPeriod.status === "warning"
+                      ? `Limite de frota atingido`
+                      : "Capacidade Segura"}
+                  </span>
                 </div>
 
-                {/* Tabela de Clientes do Período */}
-                <div className="border border-zinc-800 rounded-lg overflow-hidden max-h-[360px] overflow-y-auto">
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead className="bg-zinc-900/90 text-zinc-400 uppercase text-[10px] sticky top-0 border-b border-zinc-800">
-                      <tr>
-                        <th className="p-2">Doc / ID</th>
-                        <th className="p-2">Cliente</th>
-                        <th className="p-2">Janela</th>
-                        <th className="p-2">Localidade / CP</th>
-                        <th className="p-2 text-right">Peso (kg)</th>
-                        <th className="p-2 text-right">Rota Atual</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800/60 bg-zinc-950">
-                      {currentPeriod.deliveries.length === 0 ? (
+                <div className="border border-zinc-800 rounded-lg overflow-hidden bg-zinc-900/40">
+                  <div className="max-h-96 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-zinc-850 text-zinc-400 font-semibold sticky top-0 border-b border-zinc-800">
                         <tr>
-                          <td colSpan={6} className="p-4 text-center text-zinc-500 font-sans">
-                            Nenhuma paragem classificada neste período.
-                          </td>
+                          <th className="p-2.5">Cliente / Nome</th>
+                          <th className="p-2.5">Armazém / Loja</th>
+                          <th className="p-2.5">Janela Horária</th>
+                          <th className="p-2.5">Morada / Localidade</th>
+                          <th className="p-2.5 text-right">Peso (kg)</th>
+                          <th className="p-2.5 text-right">Caixas</th>
+                          <th className="p-2.5 text-right">Rota Atribuída</th>
                         </tr>
-                      ) : (
-                        currentPeriod.deliveries.map((d, idx) => (
-                          <tr key={idx} className="hover:bg-zinc-900/50 transition-colors">
-                            <td className="p-2 text-zinc-400">{d.Doc_ID || d.id || "-"}</td>
-                            <td className="p-2 text-zinc-100 font-sans font-medium truncate max-w-[180px]">
-                              {d.Cliente || d.Nome_Cliente || "Sem Nome"}
-                            </td>
-                            <td className="p-2 text-amber-400 font-bold">
-                              {d.Janela_Horaria || (d.Janela_Inicio ? `${d.Janela_Inicio} - ${d.Janela_Fim}` : "Qualquer")}
-                            </td>
-                            <td className="p-2 text-zinc-400 truncate max-w-[140px]">
-                              {d.Localidade || ""}{d.Localidade ? " " : ""}{d.Morada ? `(${d.Morada})` : ""}
-                            </td>
-                            <td className="p-2 text-right text-zinc-200">
-                              {Number(d.Peso_KG) || 0}
-                            </td>
-                            <td className="p-2 text-right">
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                                {d.Rota || "Por Distribuir"}
-                              </span>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800/60 font-mono">
+                        {currentPeriod.deliveries.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-6 text-center text-zinc-500 font-sans">
+                              Nenhuma entrega classificada neste período.
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ) : (
+                          currentPeriod.deliveries.map((d, idx) => (
+                            <tr key={idx} className="hover:bg-zinc-800/40 transition-colors">
+                              <td className="p-2.5 text-zinc-200 font-sans">
+                                <span className="font-bold text-white block">{d.Nome_Cliente || d.Cliente || "Sem Nome"}</span>
+                                <span className="text-[10px] text-zinc-400 font-mono">{d.Doc_ID || d.Cliente}</span>
+                              </td>
+                              <td className="p-2.5 text-zinc-300 font-sans text-[11px]">
+                                {d.Armazem || "—"}
+                              </td>
+                              <td className="p-2.5 text-amber-300 font-bold">
+                                {d.Janela_Horaria || (d.Janela_Inicio && d.Janela_Fim ? `${d.Janela_Inicio}-${d.Janela_Fim}` : "Flexível")}
+                              </td>
+                              <td className="p-2.5 text-zinc-400 font-sans text-[11px] truncate max-w-[200px]">
+                                {d.Morada ? `${d.Morada}, ` : ""}{d.Localidade || ""}
+                              </td>
+                              <td className="p-2.5 text-right text-zinc-300">
+                                {d.Peso_KG ? Number(d.Peso_KG).toLocaleString("pt-PT") : "0"}
+                              </td>
+                              <td className="p-2.5 text-right text-zinc-300">
+                                {d.Total_Cx || (Number(d.Cx_Ambiente || 0) + Number(d.Cx_Frio || 0) + Number(d.Cx_Congelado || 0)) || "—"}
+                              </td>
+                              <td className="p-2.5 text-right">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  !d.Rota || d.Rota === "Por Distribuir"
+                                    ? "bg-amber-500/20 text-amber-300"
+                                    : "bg-indigo-500/20 text-indigo-300"
+                                }`}>
+                                  {d.Rota || "Por Distribuir"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             );
@@ -1042,13 +1071,14 @@ export default function BigPictureModal({
         </div>
 
         {/* RODAPÉ DO MODAL */}
-        <div className="p-3 border-t border-zinc-800 bg-zinc-900/80 flex items-center justify-between text-xs">
-          <span className="text-zinc-400">
-            Total de {analytics.totalDeliveries} paragens analisadas contra {analytics.totalVehicles} viaturas disponíveis.
+        <div className="p-3 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-between text-xs text-zinc-400">
+          <span>
+            Total de {activeDeliveries.length} paragens analisadas contra {activeVehicles.length} viaturas disponíveis
+            {activeWarehouseStat ? ` (${activeWarehouseStat.name})` : ""}.
           </span>
           <button
             onClick={onClose}
-            className="cursor-pointer px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-medium rounded-lg transition-colors"
+            className="cursor-pointer bg-zinc-800 hover:bg-zinc-700 text-white font-medium px-4 py-1.5 rounded-lg transition-colors"
           >
             Fechar
           </button>

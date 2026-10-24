@@ -1582,9 +1582,23 @@ export default function TacticalPage() {
     };
   }, [routes, groupedRoutes, vehicles, vehicleMap, warehouseMap, warehouses, selectedWarehouseFilter]);
 
-  // Diagnóstico Executivo The Big Picture (Balanço Temporal AM/PM/Noite e Carga Física)
+  // Diagnóstico Executivo Análise (Balanço Temporal AM/PM/Noite e Carga Física por Armazém)
   const bigPictureAnalytics = useMemo(() => {
-    const vList = vehicles.map((v) => ({
+    const isFiltered = !!(selectedWarehouseFilter && selectedWarehouseFilter !== "all");
+    const filteredDeliveries = isFiltered
+      ? routes.filter((r) => matchWarehouse(r.Armazem, selectedWarehouseFilter))
+      : routes;
+    const rawVehicles = vehicles.filter((v) => {
+      if (!isFiltered) return true;
+      const vWh = vehicleMap[v]?.armazem;
+      if (matchWarehouse(vWh, selectedWarehouseFilter)) return true;
+      const vPrefix = v.includes("_") ? v.split("_")[0].toLowerCase() : v.toLowerCase();
+      const targetWh = selectedWarehouseFilter.toLowerCase();
+      if (targetWh.includes(vPrefix) || (vPrefix.length >= 3 && targetWh.slice(0, 5).includes(vPrefix.slice(0, 3)))) return true;
+      return false;
+    });
+    const effectiveVehicles = rawVehicles.length > 0 ? rawVehicles : vehicles;
+    const vList = effectiveVehicles.map((v) => ({
       veiculo: v,
       armazem: vehicleMap[v]?.armazem,
       capacidade_kg: vehicleMap[v]?.capacidade_kg,
@@ -1592,8 +1606,8 @@ export default function TacticalPage() {
       horario_inicio: vehicleMap[v]?.horario_inicio,
       horario_fim: vehicleMap[v]?.horario_fim,
     }));
-    return computeBigPictureAnalytics(routes, vList);
-  }, [routes, vehicles, vehicleMap]);
+    return computeBigPictureAnalytics(filteredDeliveries, vList);
+  }, [routes, vehicles, vehicleMap, selectedWarehouseFilter]);
 
   // Options for reassigning dropdowns
   const reassignOptions = [
@@ -3072,7 +3086,7 @@ export default function TacticalPage() {
           }}
         />
 
-        {/* Big Picture Modal: Diagnóstico de Capacidade Temporal e Carga */}
+        {/* Análise Modal: Diagnóstico de Capacidade Temporal e Carga por Armazém */}
         <BigPictureModal
           isOpen={bigPictureModalOpen}
           onClose={() => setBigPictureModalOpen(false)}
@@ -3085,11 +3099,10 @@ export default function TacticalPage() {
             horario_inicio: vehicleMap[v]?.horario_inicio,
             horario_fim: vehicleMap[v]?.horario_fim,
           }))}
-          initialZoneId={selectedBigPictureZone}
-          onSelectZoneOnMap={(zId) => {
-            setSelectedBigPictureZone(zId);
-            setBigPictureModalOpen(false);
-            handleOpenDetachedMap();
+          initialWarehouseId={selectedWarehouseFilter !== "all" ? selectedWarehouseFilter : undefined}
+          onSelectWarehouse={(whName) => {
+            setSelectedWarehouseFilter(whName);
+            broadcastFilterSync(searchQuery, whName, selectedStatusFilter);
           }}
         />
 
