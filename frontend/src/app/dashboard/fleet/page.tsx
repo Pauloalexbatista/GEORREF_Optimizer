@@ -993,12 +993,22 @@ export default function FleetPage() {
                             />
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
-                            <input
-                              type="text"
-                              value={v.horario_fim}
-                              onChange={(e) => updateVehicle(idx, "horario_fim", e.target.value)}
-                              className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
-                            />
+                            {(() => {
+                              const isShiftWarning = Boolean(v.horario_inicio && v.horario_fim && v.horario_fim.trim() <= v.horario_inicio.trim());
+                              return (
+                                <input
+                                  type="text"
+                                  value={v.horario_fim}
+                                  onChange={(e) => updateVehicle(idx, "horario_fim", e.target.value)}
+                                  title={isShiftWarning ? "Aviso: Hora de fim anterior ou igual ao início. A viatura terá 0 tempo útil disponível." : ""}
+                                  className={`outline-none font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full transition-colors ${
+                                    isShiftWarning
+                                      ? "bg-amber-950/50 text-amber-300 border border-amber-600/60"
+                                      : "bg-transparent border-none text-zinc-200"
+                                  }`}
+                                />
+                              );
+                            })()}
                           </td>
                           <td className="py-1 px-1 text-center border-r border-zinc-800">
                             <input

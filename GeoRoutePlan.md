@@ -637,6 +637,30 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - Cartões de resumo executivo com total de lojas mapeadas, lojas críticas, lojas em atenção e lojas equilibradas.
       - Grelha de diagnóstico individual por loja: exibe nome do armazém, total de encomendas, viaturas alocadas, caixas e peso (% de ocupação), barra de proporção temporal (AM/PM/Noite), alerta de défice no pico e botão direto 🔍 Analisar Este Armazém para focar imediatamente na operação dessa loja.
     * **Sincronização com o Ecrã Tático**: O modal de Análise herda automaticamente o armazém selecionado no ecrã tático (selectedWarehouseFilter), garantindo coerência visual e operacional direta.
+23. **Blindagem Contra Crashes do Solver e Resiliência Operacional da Frota (✅ Concluído no Código)**:
+    * **Diagnóstico e Resolução do Erro SWIG / CP Solver fail**:
+      - *Causa Raiz*: Quando o operador inseria horários de viatura com `horario_fim <= horario_inicio` (ex: 00:00 ou erro de digitação) ou na parametrização matemática da 2ª Volta (`v1_start` e `v2_start`), o Google OR-Tools invocava `CumulVar.SetRange(lower, upper)` com $lower > upper$, originando uma exceção interna em C++ (`Exception: CP Solver fail`) que derrubava a API com HTTP 500.
+      - *Sanitização Rígida de Turnos*: Em `utils/optimization_solver.py` e `backend/api/solver.py`, todos os limites temporais de frota são agora higienizados com `v_end_sec = max(v_start_sec, v_end_sec)`. Se a viatura tiver tempo útil nulo, o solver não crasha e a carrinha fica simplesmente sem paragens atribuídas.
+      - *Proteção com Try/Except & Mensagens Amigáveis*: Todas as invocações de propagação do OR-Tools (`routing.solver().Add(...)`, `VehicleVar.SetValues([-1])` e `routing.SolveWithParameters(...)`) foram encapsuladas em blocos `try/except`. Mensagens de erro técnico como `"CP Solver fail"` foram substituídas por explicações claras em português para o operador.
+      - *Alerta Preventivo no Frontend*: No ecrã de Gestão de Frota (`frontend/src/app/dashboard/fleet/page.tsx`), foi adicionado aviso visual em tempo real com ícone de atenção e tooltip explicativo quando a hora de fim é inferior ou igual à de início.
+24. **Otimizações Algorítmicas Avançadas e Reforço do Motor VRPTW (✅ Concluído no Código)**:
+    * **Polimento Intra-Rota Híbrido (`2-Opt` + `Or-Opt`)**:
+      - Em `utils/optimization_solver.py`, o polimento de paragens passou a combinar `2-Opt` (para descruzar arcos de trajeto) com **Or-Opt** (relocação de cadeias de 1 ou 2 paragens consecutivas para uma melhor posição na rota sem inverter a ordem cronológica), contornando as restrições rígidas de janelas horárias que antes inviabilizavam inversões completas de troços.
+    * **Pesquisa Local Entre Rotas Ativas (Fase 3.5: `Relocate 1-0` & `Swap 1-1`)**:
+      - Implementado algoritmo de pesquisa local pós-fusão que analisa movimentos cruzados entre viaturas ativas: transição de paragens de fronteira (`Relocate 1-0`) e trocas de paragens entre rotas vizinhas que se cruzem (`Swap 1-1`), reduzindo ativamente os quilómetros totais e custos operacionais da frota sem violar janelas, capacidades físicas ou sincronizações de 2ª Volta.
+    * **Resgate de Entregas em Cadeia (Fase 2.5: *1-Step Ejection-Chain Rescue*)**:
+      - Quando uma entrega prioritária ou distante não cabe diretamente em nenhuma carrinha, o algoritmo tenta agora transferir uma paragem simples de uma viatura $V_A$ para outra viatura $V_B$ para libertar capacidade e janela em $V_A$, resgatando com sucesso entregas que anteriormente cairiam para *"Por Distribuir"*.
+    * **Suporte Integral ao Limite Máximo de Duração de Rota (`max_travel_time_hours`)**:
+      - O teto de duração de trajeto enviado na requisição da API é agora injetado na dimensão temporal do OR-Tools (`SetSpanUpperBoundForVehicle`) e validado na função `evaluate_feasibility`, impedindo que uma viatura ultrapasse o tempo de condução permitido.
+    * **Capacidade da 2ª Volta em Caixas Alimentares**:
+      - Corrigida a inicialização da 2ª Volta (`" (Volta 2)"`) em `backend/api/solver.py`, que agora respeita a capacidade total em caixas (`cap_cx_total`) em vez de KG quando o projeto opera na vertente alimentar.
+    * **Gatekeeper Preventivo com Re-sequenciação e Ejeção Atómica de Pares (`Par_ID`)**:
+      - O Gatekeeper de pontualidade no backend passou a tentar re-sequenciar preventivamente a rota com `sequence_route_with_time_windows` perante discrepâncias de trânsito preditivo antes de ejetar uma paragem.
+      - Se a ejeção for mandatória, utiliza o identificador canónico interno (`_client_idx`), evitando ambiguidades de documentos vazios, e ejeta atomicamente o par casado `From -> To` (`Par_ID`) para garantir que nunca fica uma recolha ou entrega isolada na rota.
+    * **Preservação de Metadados em *"Por Distribuir"***:
+      - As entregas não atribuídas retêm fielmente o seu armazém de origem, janelas horárias originais e tempo real de serviço (descarga), permitindo filtrar por armazém e arrastar paragens na vista tática sem perda de informação.
+    * **Upgrade ao Algoritmo de Sequenciação Rápida (`sequence_route_with_time_windows`)**:
+      - Integrado o fator de estrada rodoviário (`ROAD_FACTOR = 1.30`), velocidades por segmento escalonadas (`get_segment_speed`), precedência estrita entre pares de lojas e clientes (`From` antes de `To`) e refinamento final com `2-Opt`.
 
 ---
 

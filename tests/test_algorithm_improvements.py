@@ -207,3 +207,90 @@ class TestPerVehicleSpeedAndCostP2:
         s_fast_hwy = get_segment_speed(30.0, 65.0)
         s_slow_hwy = get_segment_speed(30.0, 35.0)
         assert s_fast_hwy > s_slow_hwy
+
+
+class TestAdvancedLocalSearchAndConstraintsP3:
+    """
+    Testes para as melhorias de Fase 3.5 e restrições avançadas:
+    - Respeito por max_travel_time_hours no OR-Tools e no motor de compressão
+    - Sequenciação inteligente com precedência From -> To e polimento 2-Opt em sequence_route_with_time_windows
+    """
+
+    def test_max_travel_time_hours_respected(self):
+        # 2 clientes em direções diferentes que juntos excedem 1.2h de duração de rota,
+        # obrigando a dividir entre 2 viaturas quando max_travel_time_hours=1.2
+        locations = [
+            (38.7223, -9.1393),  # 0: Armazém (Lisboa)
+            (38.9000, -9.1500),  # 1: Cliente Norte (~20 km haversine)
+            (38.7000, -9.3500),  # 2: Cliente Oeste (~18 km haversine)
+        ]
+        dist_matrix = calculate_haversine_matrix(locations)
+        demands = [0.0, 10.0, 10.0]
+
+        opt = AdvancedRouteOptimizer()
+        res = opt.optimize_routes(
+            distance_matrix=dist_matrix,
+            demands=demands,
+            vehicle_capacities=[500.0, 500.0],
+            depot_indices=[0, 0],
+            num_warehouses=1,
+            vehicle_start_times=[480, 480],
+            vehicle_end_times=[1080, 1080],
+            client_service_times=[0, 30, 30],
+            locations=locations,
+            optimization_params={
+                "time_limit_seconds": 3,
+                "max_travel_time_hours": 1.6,  # 96 min max por rota (impede juntar os 2 num só carro)
+            },
+        )
+
+        assert len(res["dropped_nodes"]) == 0
+        # Nenhum carro pode levar ambos porque juntos demorariam > 140 min (> 96 min)
+        assert len(res["routes"][0]) == 1
+        assert len(res["routes"][1]) == 1
+
+    def test_sequence_route_with_time_windows_enforces_from_to_precedence(self):
+        from backend.api.solver import sequence_route_with_time_windows
+
+        # Ponto 'To' está mesmo ao lado do armazém, e 'From' está mais longe.
+        # Um algoritmo guloso sem precedência visitaria 'To' primeiro; o nosso deve visitar 'From' antes de 'To'.
+        stops = [
+            {
+                "id": 1,
+                "Cliente": "CLI_TO",
+                "Latitude": 38.7250,
+                "Longitude": -9.1400,
+                "Janela_Horaria": "08:00 - 18:00",
+                "Tempo_Entrega": 10,
+                "Peso_KG": 30.0,
+                "Volume_m3": 1.0,
+                "Tipo_Operacao": "To",
+                "Par_ID": "PAR_99",
+            },
+            {
+                "id": 2,
+                "Cliente": "LOJA_FROM",
+                "Latitude": 38.7800,
+                "Longitude": -9.1600,
+                "Janela_Horaria": "08:00 - 18:00",
+                "Tempo_Entrega": 10,
+                "Peso_KG": 30.0,
+                "Volume_m3": 1.0,
+                "Tipo_Operacao": "From",
+                "Par_ID": "PAR_99",
+            },
+        ]
+
+        ordered = sequence_route_with_time_windows(
+            stops=stops,
+            depot_lat=38.7223,
+            depot_lon=-9.1393,
+            v_start_min=480,
+            v_speed=50.0,
+            v_cap_kg=1000.0,
+            v_cap_vol=10.0,
+        )
+
+        assert len(ordered) == 2
+        assert ordered[0]["Cliente"] == "LOJA_FROM"
+        assert ordered[1]["Cliente"] == "CLI_TO"

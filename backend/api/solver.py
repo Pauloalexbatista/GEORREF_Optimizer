@@ -489,36 +489,58 @@ def sequence_route_with_time_windows(
             vehicle_cap_vol=v_cap_vol
         )
 
+    eff_v_speed = float(v_speed if v_speed and v_speed > 0 else 50.0)
     remaining = [dict(s) for s in stops]
     ordered = []
     curr_lat, curr_lon = depot_lat, depot_lon
-    curr_time_min = v_start_min
+    curr_time_min = float(v_start_min)
+    visited_from_par_ids = set()
+
+    # Identificar quais Par_ID possuem um nó 'From' presente na lista de paragens
+    from_par_ids_in_route = {
+        str(s.get("Par_ID") or s.get("par_id") or "").strip()
+        for s in remaining
+        if normalize_op_type(s.get("Tipo_Operacao") or s.get("tipo_operacao")) == "From"
+        and str(s.get("Par_ID") or s.get("par_id") or "").strip()
+    }
 
     while remaining:
         best_idx = None
         best_cost = float('inf')
         best_dist = 0.0
+        best_trav = 0.0
 
         for i, s in enumerate(remaining):
+            op_s = normalize_op_type(s.get("Tipo_Operacao") or s.get("tipo_operacao"))
+            par_s = str(s.get("Par_ID") or s.get("par_id") or "").strip()
+            # Precedência estrita: nunca visitar 'To' antes do respetivo 'From'
+            if op_s == "To" and par_s in from_par_ids_in_route and par_s not in visited_from_par_ids:
+                continue
+
             s_lat = float(s.get("Latitude", curr_lat) or curr_lat)
             s_lon = float(s.get("Longitude", curr_lon) or curr_lon)
-            d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon)
-            travel_time_min = (d / v_speed) * 60.0 if v_speed > 0 else 10.0
-            arr_min = curr_time_min + travel_time_min
+            d = haversine_distance(curr_lat, curr_lon, s_lat, s_lon) * 1.30
+            seg_spd = get_segment_speed(d, eff_v_speed)
+            travel_time_min = (d / seg_spd) * 60.0 if seg_spd > 0 else 10.0
 
             win_str = str(s.get("Janela_Horaria", "Qualquer") or "Qualquer")
             win_s, win_e = parse_time_window_str(win_str)
 
+            sim_dep_t = curr_time_min
+            if not ordered and win_s > 0 and (sim_dep_t + travel_time_min) < (win_s - 15):
+                sim_dep_t = max(sim_dep_t, win_s - travel_time_min)
+
+            arr_min = sim_dep_t + travel_time_min
             wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0
             late_min = max(0.0, arr_min - win_e) if win_e < 1440 else 0.0
 
             # Penalizações severas para manter respeito rigoroso por VRPTW:
-            # - Espera > 30 min: inadmissível deixar viatura horas parada
+            # - Espera > 60 min: excede limite máximo de espera/almoço (1h)
             # - Chegada após fecho: inadmissível entregar fora de horas
             tw_penalty = 0.0
             if late_min > 0.0:
-                tw_penalty += 50000.0 + (late_min * 200.0)
-            if wait_min > 30.0:
+                tw_penalty += 50000.0 + (late_min * 250.0)
+            if wait_min > 60.0:
                 tw_penalty += 30000.0 + (wait_min * 100.0)
             else:
                 tw_penalty += (wait_min / 60.0) * 15.0
@@ -528,18 +550,28 @@ def sequence_route_with_time_windows(
             if cost < best_cost:
                 best_cost = cost
                 best_dist = d
+                best_trav = travel_time_min
                 best_idx = i
 
         if best_idx is None:
-            break
+            best_idx = 0
+            s0 = remaining[0]
+            s_lat0 = float(s0.get("Latitude", curr_lat) or curr_lat)
+            s_lon0 = float(s0.get("Longitude", curr_lon) or curr_lon)
+            best_dist = haversine_distance(curr_lat, curr_lon, s_lat0, s_lon0) * 1.30
+            seg_spd0 = get_segment_speed(best_dist, eff_v_speed)
+            best_trav = (best_dist / seg_spd0) * 60.0 if seg_spd0 > 0 else 10.0
 
         selected = remaining.pop(best_idx)
         ordered.append(selected)
+        sel_op = normalize_op_type(selected.get("Tipo_Operacao") or selected.get("tipo_operacao"))
+        sel_par = str(selected.get("Par_ID") or selected.get("par_id") or "").strip()
+        if sel_op == "From" and sel_par:
+            visited_from_par_ids.add(sel_par)
 
         s_lat = float(selected.get("Latitude", curr_lat) or curr_lat)
         s_lon = float(selected.get("Longitude", curr_lon) or curr_lon)
-        travel_time_min = (best_dist / v_speed) * 60.0 if v_speed > 0 else 10.0
-        arr_min = curr_time_min + travel_time_min
+        travel_time_min = best_trav
 
         win_str = str(selected.get("Janela_Horaria", "Qualquer") or "Qualquer")
         win_s, win_e = parse_time_window_str(win_str)
@@ -548,11 +580,59 @@ def sequence_route_with_time_windows(
         arr_min = curr_time_min + travel_time_min
         wait_min = max(0.0, win_s - arr_min) if win_s > 0 else 0.0
         serv_start_min = arr_min + wait_min
-        serv_time = float(selected.get("Tempo_Entrega", 15.0) or 15.0)
+        serv_time = float(selected.get("Tempo_Entrega", 10.0) or 10.0)
         dep_min = serv_start_min + serv_time
 
         curr_lat, curr_lon = s_lat, s_lon
         curr_time_min = dep_min
+
+    # Polimento local 2-Opt sobre a sequência construída (garantindo zero atrasos adicionais e menor KM)
+    def _eval_seq_penalty_and_dist(seq_cand: list) -> tuple:
+        # Verificar precedência From -> To
+        seen_from = set()
+        for st_c in seq_cand:
+            op_c = normalize_op_type(st_c.get("Tipo_Operacao") or st_c.get("tipo_operacao"))
+            par_c = str(st_c.get("Par_ID") or st_c.get("par_id") or "").strip()
+            if op_c == "From" and par_c:
+                seen_from.add(par_c)
+            elif op_c == "To" and par_c in from_par_ids_in_route and par_c not in seen_from:
+                return (float("inf"), float("inf"))
+        recalc = recalculate_route_stops(
+            seq_cand, depot_lat, depot_lon,
+            start_time_str=minutes_to_time_str(int(v_start_min)),
+            avg_speed=eff_v_speed,
+            vehicle_cap_kg=v_cap_kg,
+            vehicle_cap_vol=v_cap_vol
+        )
+        late_cnt = 0
+        tot_d = 0.0
+        for st_r in recalc:
+            w_s_r, w_e_r = parse_time_window_str(str(st_r.get("Janela_Horaria", "Qualquer") or "Qualquer"))
+            arr_r = parse_time_to_minutes(str(st_r.get("Chegada", "00:00")), 0)
+            if w_e_r < 1440 and arr_r > w_e_r:
+                late_cnt += 1
+            tot_d = float(st_r.get("Dist_Acum", tot_d) or tot_d)
+        return (late_cnt, tot_d)
+
+    if len(ordered) >= 3:
+        best_late, best_tot_d = _eval_seq_penalty_and_dist(ordered)
+        improved_2opt = True
+        iters_2opt = 0
+        while improved_2opt and iters_2opt < 10:
+            improved_2opt = False
+            iters_2opt += 1
+            for i in range(len(ordered) - 1):
+                for j in range(i + 1, len(ordered)):
+                    cand_ord = ordered[:i] + ordered[i:j+1][::-1] + ordered[j+1:]
+                    c_late, c_dist = _eval_seq_penalty_and_dist(cand_ord)
+                    if (c_late < best_late) or (c_late == best_late and c_dist < (best_tot_d - 0.05)):
+                        ordered = cand_ord
+                        best_late = c_late
+                        best_tot_d = c_dist
+                        improved_2opt = True
+                        break
+                if improved_2opt:
+                    break
 
     return recalculate_route_stops(
         ordered, depot_lat, depot_lon,
@@ -761,6 +841,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             
             s_min = parse_time_to_minutes(vehicle_data.get("start_time", "09:50"), 590)
             e_min = parse_time_to_minutes(vehicle_data.get("end_time", "18:00"), 1080)
+            # Salvaguarda de horario: se fim < inicio, ajustar para fim = inicio (0 tempo util, viatura vazia sem crashar)
+            if e_min < s_min:
+                e_min = s_min
             v_spd = float(vehicle_data.get("speed", 50.0) or 50.0)
             v_cost = float(vehicle_data.get("cost_per_km", 0.65) or 0.65)
             vehicle_start_times.append(s_min)
@@ -773,15 +856,20 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             if is_2v:
                 v2_idx = len(vehicle_names)
                 v2_name = f"{vehicle_name} (Volta 2)"
-                vehicle_capacities.append(vehicle_data["capacity"])
-                vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
+                if is_any_cx_project and (vehicle_data.get("cap_cx_total", 0) > 0 or vehicle_data["capacity"] <= 500):
+                    vehicle_capacities.append(float(vehicle_data.get("cap_cx_total") or vehicle_data["capacity"] or 100.0))
+                    vehicle_volume_capacities.append(999999.0)
+                else:
+                    vehicle_capacities.append(vehicle_data["capacity"])
+                    vehicle_volume_capacities.append(vehicle_data["capacity_volume"])
                 depot_indices.append(dep_idx)
                 vehicle_names.append(v2_name)
                 vehicle_warehouses.append(wh_name)
                 # O solver sincroniza matematicamente Start(v2) >= End(v1) + 30m
                 v2_start = max(s_min + 60, 600)
+                v2_end = max(e_min, v2_start)
                 vehicle_start_times.append(v2_start)
-                vehicle_end_times.append(e_min)
+                vehicle_end_times.append(v2_end)
                 vehicle_speeds.append(v_spd)
                 vehicle_costs_per_km.append(v_cost)
                 multi_trip_pairs.append((v1_idx, v2_idx, 30))
@@ -949,13 +1037,14 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
                         "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim"),
                         "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao") or client_row.get("tipo_operacao")),
-                        "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or "")
+                        "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or ""),
+                        "_client_idx": client_idx
                     })
                     
             if raw_stops:
                 v_speed = float(v_info.get("speed", 50.0))
-                v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
-                v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
+                v_cap_kg = float(v_info.get("capacity") or v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+                v_cap_vol = float(v_info.get("capacity_volume") or v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
                 if "(Volta 2)" in vehicle_name:
                     base_v = vehicle_name.replace(" (Volta 2)", "")
                     if base_v in vehicle_first_trip_depot_arrival:
@@ -973,6 +1062,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
 
                 # Gatekeeper de Pontualidade: se respect_time_windows=True, nenhuma paragem pode chegar após fecho de janela
                 if solver_params.get("respect_time_windows", True):
+                    tried_resequence = False
                     while raw_stops:
                         processed_stops = recalculate_route_stops(
                             raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
@@ -983,13 +1073,43 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                             w_e = parse_time_to_minutes(str(st.get("Janela_Fim", "")), 1440)
                             arr = parse_time_to_minutes(str(st.get("Chegada", "")), 0)
                             if w_e < 1440 and arr > w_e:
-                                # Paragem com atraso detectada! Ejetar de imediato para 'Por Distribuir'
-                                ejected = raw_stops.pop(idx_s)
-                                e_doc = str(ejected.get("Doc_ID", ""))
-                                for c_idx, crow in deliveries_df.iterrows():
-                                    if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
-                                        visited_client_indices.discard(c_idx)
+                                # Antes de ejetar por diferenças de trânsito preditivo, tentar reordenar a rota 1 vez
+                                if not tried_resequence and len(raw_stops) > 1:
+                                    tried_resequence = True
+                                    v_start_m = parse_time_to_minutes(v_start_str, 480)
+                                    reseq = sequence_route_with_time_windows(
+                                        raw_stops, depot_lat, depot_lon, v_start_m, v_speed,
+                                        v_cap_kg=v_cap_kg, v_cap_vol=v_cap_vol
+                                    )
+                                    if all(
+                                        parse_time_to_minutes(str(rs.get("Chegada", "")), 0) <= parse_time_to_minutes(str(rs.get("Janela_Fim", "")), 1440)
+                                        for rs in reseq
+                                    ):
+                                        processed_stops = reseq
+                                        raw_stops = reseq
+                                        has_late = False
                                         break
+                                # Paragem com atraso inevitável! Ejetar para 'Por Distribuir' (incluindo par Par_ID se existir)
+                                ejected = raw_stops.pop(idx_s)
+                                ej_c_idx = ejected.get("_client_idx")
+                                if ej_c_idx is not None:
+                                    visited_client_indices.discard(ej_c_idx)
+                                else:
+                                    e_doc = str(ejected.get("Doc_ID", ""))
+                                    for c_idx, crow in deliveries_df.iterrows():
+                                        if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
+                                            visited_client_indices.discard(c_idx)
+                                            break
+                                ej_par_id = str(ejected.get("Par_ID") or "").strip()
+                                if ej_par_id:
+                                    partner_positions = [
+                                        p_i for p_i, p_st in enumerate(raw_stops)
+                                        if str(p_st.get("Par_ID") or "").strip() == ej_par_id
+                                    ]
+                                    for p_i in reversed(partner_positions):
+                                        ej_partner = raw_stops.pop(p_i)
+                                        if ej_partner.get("_client_idx") is not None:
+                                            visited_client_indices.discard(ej_partner.get("_client_idx"))
                                 has_late = True
                                 break
                         if not has_late:
@@ -1000,6 +1120,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                         vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
                     )
 
+                for pst in processed_stops:
+                    pst.pop("_client_idx", None)
                 routes_list.extend(processed_stops)
 
                 if "(Volta 2)" not in vehicle_name and processed_stops:
@@ -1037,12 +1159,14 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
             obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
             vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
+            orig_wh = str(client_row.get("Armazem") or default_wh_name or "Armazém Principal")
+            orig_serv = int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10)
             
             routes_list.append({
                 "id": deliv_id,
                 "ID_Original": deliv_id,
                 "Rota": "Por Distribuir",
-                "Armazem": "N/A",
+                "Armazem": orig_wh,
                 "Ordem": pending_order,
                 "Doc_ID": doc_id_val,
                 "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
@@ -1051,11 +1175,13 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "CP": str(client_row.get("Codigo_Postal", "N/A")),
                 "Localidade": str(client_row.get("Localidade", "")),
                 "Janela_Horaria": combined_window,
+                "Janela_Inicio": str(win_s or ""),
+                "Janela_Fim": str(win_e or ""),
                 "Latitude": float(client_row["Latitude"]),
                 "Longitude": float(client_row["Longitude"]),
                 "Chegada": "00:00",
                 "Tempo_Espera": 0,
-                "Tempo_Entrega": 0,
+                "Tempo_Entrega": orig_serv,
                 "Saida": "00:00",
                 "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
                 "KM_Anterior": 0.0,
@@ -1114,7 +1240,10 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @router.get("/{project_id}")
 def get_solver_solution(project_id: int, current_user: UserResponse = Depends(get_current_user)):
@@ -1536,7 +1665,10 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @router.post("/reorder")
 def reorder_stop_in_route(req: ReorderRequest, current_user: UserResponse = Depends(get_current_user)):
@@ -1638,7 +1770,10 @@ def reorder_stop_in_route(req: ReorderRequest, current_user: UserResponse = Depe
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @router.post("/reassign-bulk")
 def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: UserResponse = Depends(get_current_user)):
@@ -1743,7 +1878,10 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @router.post("/reassign-entire-route")
 def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserResponse = Depends(get_current_user)):
@@ -1840,7 +1978,10 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @router.post("/reset-all-routes")
 def reset_all_routes(req: ResetAllRoutesRequest, current_user: UserResponse = Depends(get_current_user)):
@@ -1916,7 +2057,10 @@ def reset_all_routes(req: ResetAllRoutesRequest, current_user: UserResponse = De
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @router.get("/export-full/{project_id}")
 @router.get("/{project_id}/export-full")
@@ -2172,7 +2316,10 @@ def optimize_single_route(req: SingleRouteOptimizeRequest, current_user: UserRes
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "CP Solver fail" in err_msg or "pywrapcp" in err_msg:
+            err_msg = "Nao foi possivel encontrar uma solucao viavel com os horarios e restricoes atuais. As entregas foram colocadas em 'Por Distribuir' para gestao manual."
+        raise HTTPException(status_code=500, detail=err_msg)
 
 
 @router.get("/audit/{project_id}")
@@ -2316,7 +2463,7 @@ def reoptimize_selected_routes(req: ReoptimizeSelectedRoutesRequest, current_use
         loures_idx = next((idx_v for k, idx_v in warehouse_indices.items() if "loures" in k.lower()), 0)
         v_depots = [warehouse_indices.get(str(fleet_dict[v].get("warehouse", "")).strip().lower(), loures_idx) for v in target_vehicles]
         v_starts = [parse_time_to_minutes(fleet_dict[v].get("start_time", "06:30"), 390) for v in target_vehicles]
-        v_ends = [parse_time_to_minutes(fleet_dict[v].get("end_time", "14:00"), 840) for v in target_vehicles]
+        v_ends = [max(v_starts[i], parse_time_to_minutes(fleet_dict[v].get("end_time", "18:00"), 1080)) for i, v in enumerate(target_vehicles)]
         
         # Max stops per vehicle logic
         if req.balance_routes and len(target_vehicles) > 1:

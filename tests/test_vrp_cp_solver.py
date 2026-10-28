@@ -137,3 +137,47 @@ def test_solver_with_rules_matrix_cp_prohibition():
 if __name__ == "__main__":
     test_solver_with_cp_confinement()
     test_solver_with_rules_matrix_cp_prohibition()
+
+
+def test_solver_never_crashes_on_inverted_or_zero_shift_times():
+    """
+    Garante que horários anómalos ou invertidos de viaturas (ex: fim < início ou turno de 0 min)
+    NUNCA quebram o solver com CP Solver fail. O solver deve simplesmente deixar a viatura sem paragens
+    e manter as entregas não atendidas em dropped_nodes (Por Distribuir).
+    """
+    locations = [
+        (38.75, -9.15),  # Depósito
+        (38.72, -9.14),  # Cliente 1
+        (38.73, -9.15),  # Cliente 2
+    ]
+    dist_matrix = [[10.0] * 3 for _ in range(3)]
+    for i in range(3):
+        dist_matrix[i][i] = 0.0
+
+    demands = [0.0, 50.0, 50.0]
+    vehicle_capacities = [1000.0, 1000.0]
+    depot_indices = [0, 0]
+
+    # V0 tem fim (08:00 = 480m) ANTERIOR ao início (10:00 = 600m) - Erro típico de operador!
+    # V1 tem fim (09:40 = 580m) IGUAL ao início (09:40 = 580m) - Turno de 0 minutos!
+    v_starts = [600, 580]
+    v_ends = [480, 580]
+
+    optimizer = AdvancedRouteOptimizer()
+    res = optimizer.optimize_routes(
+        distance_matrix=dist_matrix,
+        demands=demands,
+        vehicle_capacities=vehicle_capacities,
+        depot_indices=depot_indices,
+        vehicle_start_times=v_starts,
+        vehicle_end_times=v_ends,
+        optimization_params={"time_limit_seconds": 3, "respect_time_windows": True},
+        client_time_windows=[(0, 1440), (500, 700), (500, 700)]
+    )
+
+    assert res is not None, "O solver deve retornar uma estrutura válida sem crashar!"
+    assert "routes" in res, "A resposta deve conter 'routes'!"
+    assert "dropped_nodes" in res, "A resposta deve conter 'dropped_nodes'!"
+    # Como as viaturas têm 0 tempo útil disponível, as paragens devem cair com segurança em dropped_nodes
+    assert set(res["dropped_nodes"]) == {1, 2}, f"Esperava-se que os nós ficassem em dropped_nodes, obtidos: {res['dropped_nodes']}"
+    print("Zero/Inverted Shift times resilience test passed with flying colors!")
