@@ -1838,11 +1838,17 @@ async def tool_georeference_services(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """
-    Ferramenta rápida autónoma:
-    Recebe diretamente o ficheiro de clientes/serviços (ex: WinRoute Services.txt),
-    georreferencia todos os clientes utilizando a base de dados local SQLite / OSM Low-Cost,
-    preenche a Coluna W (Latitude, positiva com vírgula) e Coluna X (Longitude, negativa com vírgula)
-    e devolve o ficheiro atualizado mantendo 100% da integridade de todas as restantes colunas.
+    Ferramenta rápida autónoma para Mobiliário (ex: WinRoute Services.txt):
+    Recebe diretamente o ficheiro de clientes/serviços, georreferencia utilizando a base de dados local SQLite / OSM Low-Cost:
+      - Levantamentos (Colunas D a P):
+          * Morada: Coluna F (índice 5), CP: Coluna G (índice 6), Localidade: Coluna H (índice 7)
+          * Coluna J (índice 9): Longitude (negativa com vírgula, ex: -7,963959)
+          * Coluna K (índice 10): Latitude (positiva com vírgula, ex: 40,440134)
+      - Entregas (Colunas Q a AC):
+          * Morada: Coluna S (índice 18), CP: Coluna T (índice 19), Localidade: Coluna U (índice 20)
+          * Coluna W (índice 22): Longitude (negativa com vírgula, ex: -9,277294)
+          * Coluna X (índice 23): Latitude (positiva com vírgula, ex: 38,707527)
+    Devolve o ficheiro atualizado mantendo 100% da integridade e ordem de todas as restantes linhas e colunas.
     """
     content_bytes = await file.read()
     if not content_bytes:
@@ -1883,64 +1889,139 @@ async def tool_georeference_services(
             continue
 
         parts = line.split("\t")
-        if len(parts) < 21:
+        if len(parts) < 8:
             out_lines.append(line)
             continue
 
         total_clients += 1
+        line_modified = False
 
-        # Verificar se já tem coordenadas válidas na coluna W (22) e X (23)
-        curr_lat = parts[22].strip() if len(parts) > 22 else ""
-        curr_lon = parts[23].strip() if len(parts) > 23 else ""
+        # 1. Processar Levantamentos (Colunas D a P):
+        # Morada: F (5), CP: G (6), Localidade: H (7)
+        # Destino: Coluna J (9 = Longitude -), Coluna K (10 = Latitude +)
+        p_code = parts[3].strip() if len(parts) > 3 else ""
+        p_name = parts[4].strip() if len(parts) > 4 else ""
+        p_addr = parts[5].strip() if len(parts) > 5 else ""
+        p_cp = parts[6].strip() if len(parts) > 6 else ""
+        p_loc = parts[7].strip() if len(parts) > 7 else ""
 
-        has_coords = False
-        if curr_lat and curr_lon:
-            try:
-                clat = float(curr_lat.replace(',', '.'))
-                clon = float(curr_lon.replace(',', '.'))
-                if clat != 0 and clon != 0:
-                    has_coords = True
-            except Exception:
-                has_coords = False
+        if p_code or p_name or p_addr or p_cp:
+            curr_p_lon = parts[9].strip() if len(parts) > 9 else ""
+            curr_p_lat = parts[10].strip() if len(parts) > 10 else ""
+            has_p_coords = False
 
-        if has_coords:
-            already_geocoded += 1
-            out_lines.append(line)
-            continue
+            if curr_p_lon and curr_p_lat:
+                try:
+                    cplon = float(curr_p_lon.replace(',', '.'))
+                    cplat = float(curr_p_lat.replace(',', '.'))
+                    if cplon != 0 and cplat != 0:
+                        # Se estavam trocadas (positivo em J e negativo em K):
+                        if cplon > 0 and cplat < 0:
+                            cplon, cplat = cplat, cplon
+                            while len(parts) <= 10:
+                                parts.append("")
+                            parts[9] = f"{cplon:.6f}".replace('.', ',')
+                            parts[10] = f"{cplat:.6f}".replace('.', ',')
+                            line_modified = True
+                        has_p_coords = True
+                except Exception:
+                    has_p_coords = False
 
-        # Extrair dados de endereço: Coluna S (18), T (19), U (20)
-        addr = parts[18].strip() if len(parts) > 18 else ""
-        cp = parts[19].strip() if len(parts) > 19 else ""
-        loc = parts[20].strip() if len(parts) > 20 else ""
+            if has_p_coords:
+                already_geocoded += 1
+            elif p_addr or p_cp:
+                res = None
+                try:
+                    r_tuple = geocoder.resolve_address(p_addr, p_cp, p_loc, fast_mode=True)
+                    res = r_tuple[0] if isinstance(r_tuple, tuple) else r_tuple
+                except Exception:
+                    res = None
 
-        res = None
-        try:
-            r_tuple = geocoder.resolve_address(addr, cp, loc, fast_mode=True)
-            res = r_tuple[0] if isinstance(r_tuple, tuple) else r_tuple
-        except Exception:
-            res = None
+                lat = res.get('lat') if res else None
+                lon = res.get('lon') if res else None
 
-        lat = res.get('lat') if res else None
-        lon = res.get('lon') if res else None
+                if lat and lon and float(lat) != 0 and float(lon) != 0:
+                    newly_geocoded += 1
+                    flat = float(lat)
+                    flon = float(lon)
+                    if flon > 0 and flat < 0:
+                        flon, flat = flat, flon
+                    elif flon > 0 and flat > 0 and flon < 30 and flat > 30:
+                        flon = -abs(flon)
 
-        if lat and lon and float(lat) != 0 and float(lon) != 0:
-            newly_geocoded += 1
-            lat_str = f"{float(lat):.5f}".replace('.', ',')
-            lon_str = f"{float(lon):.5f}".replace('.', ',')
+                    while len(parts) <= 10:
+                        parts.append("")
+                    parts[9] = f"{flon:.6f}".replace('.', ',')   # Coluna J = Longitude (-)
+                    parts[10] = f"{flat:.6f}".replace('.', ',')  # Coluna K = Latitude (+)
+                    line_modified = True
+                else:
+                    not_found += 1
 
-            # Garantir colunas suficientes para W (22) e X (23)
-            while len(parts) <= 23:
-                parts.append("")
+        # 2. Processar Entregas (Colunas Q a AC):
+        # Morada: S (18), CP: T (19), Localidade: U (20)
+        # Destino: Coluna W (22 = Longitude -), Coluna X (23 = Latitude +)
+        d_code = parts[16].strip() if len(parts) > 16 else ""
+        d_name = parts[17].strip() if len(parts) > 17 else ""
+        d_addr = parts[18].strip() if len(parts) > 18 else ""
+        d_cp = parts[19].strip() if len(parts) > 19 else ""
+        d_loc = parts[20].strip() if len(parts) > 20 else ""
 
-            parts[22] = lat_str
-            parts[23] = lon_str
-            out_lines.append("\t".join(parts))
-        else:
-            not_found += 1
-            out_lines.append(line)
+        if d_code or d_name or d_addr or d_cp:
+            curr_d_lon = parts[22].strip() if len(parts) > 22 else ""
+            curr_d_lat = parts[23].strip() if len(parts) > 23 else ""
+            has_d_coords = False
+
+            if curr_d_lon and curr_d_lat:
+                try:
+                    cdlon = float(curr_d_lon.replace(',', '.'))
+                    cdlat = float(curr_d_lat.replace(',', '.'))
+                    if cdlon != 0 and cdlat != 0:
+                        # Se estavam trocadas (positivo em W e negativo em X):
+                        if cdlon > 0 and cdlat < 0:
+                            cdlon, cdlat = cdlat, cdlon
+                            while len(parts) <= 23:
+                                parts.append("")
+                            parts[22] = f"{cdlon:.6f}".replace('.', ',')
+                            parts[23] = f"{cdlat:.6f}".replace('.', ',')
+                            line_modified = True
+                        has_d_coords = True
+                except Exception:
+                    has_d_coords = False
+
+            if has_d_coords:
+                already_geocoded += 1
+            elif d_addr or d_cp:
+                res = None
+                try:
+                    r_tuple = geocoder.resolve_address(d_addr, d_cp, d_loc, fast_mode=True)
+                    res = r_tuple[0] if isinstance(r_tuple, tuple) else r_tuple
+                except Exception:
+                    res = None
+
+                lat = res.get('lat') if res else None
+                lon = res.get('lon') if res else None
+
+                if lat and lon and float(lat) != 0 and float(lon) != 0:
+                    newly_geocoded += 1
+                    flat = float(lat)
+                    flon = float(lon)
+                    if flon > 0 and flat < 0:
+                        flon, flat = flat, flon
+                    elif flon > 0 and flat > 0 and flon < 30 and flat > 30:
+                        flon = -abs(flon)
+
+                    while len(parts) <= 23:
+                        parts.append("")
+                    parts[22] = f"{flon:.6f}".replace('.', ',')  # Coluna W = Longitude (-)
+                    parts[23] = f"{flat:.6f}".replace('.', ',')  # Coluna X = Latitude (+)
+                    line_modified = True
+                else:
+                    not_found += 1
+
+        out_lines.append("\t".join(parts) if line_modified else line)
 
     out_content = eol.join(out_lines) + eol
-    encode_as = detected_encoding if detected_encoding != "utf-8-sig" else "utf-8"
+    encode_as = detected_encoding
     out_bytes = out_content.encode(encode_as, errors="replace")
 
     orig_fn = file.filename or "Services.txt"
@@ -1968,16 +2049,16 @@ async def tool_georeference_alimentar(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """
-    Ferramenta rápida autónoma para Distribuição Alimentar (ex: Auchan / WinRoute pedidos.txt):
+    Ferramenta rápida autónoma para Distribuição Alimentar (ex: Auchan / El Corte Inglés / WinRoute pedidos.txt):
     - Recebe o ficheiro de pedidos/clientes;
-    - Mantém intactas as linhas que já têm coordenadas preenchidas;
+    - Mantém intactas as linhas que já têm coordenadas preenchidas (corrigindo se vierem trocadas);
     - Para as linhas sem coordenadas:
         * Morada: Coluna W (índice 22)
         * CP: Coluna X (índice 23)
         * Localidade: Coluna Y (índice 24)
         * Georreferencia com a base local Low-Cost (geocoding.db + OSM);
-        * Coluna AA (índice 26): Longitude (negativa, ex: -9,099060)
-        * Coluna AB (índice 27): Latitude (positiva, ex: 38,584789)
+        * Coluna AA (índice 26): Longitude (negativa, ex: -9,259000)
+        * Coluna AB (índice 27): Latitude (positiva, ex: 38,775761)
     - Devolve o ficheiro com a codificação original e estrutura 100% preservada.
     """
     content_bytes = await file.read()
@@ -2024,6 +2105,7 @@ async def tool_georeference_alimentar(
             continue
 
         total_clients += 1
+        line_modified = False
 
         # Verificar se já tem coordenadas válidas na Coluna AA (26 = Lon) e Coluna AB (27 = Lat)
         curr_lon = parts[26].strip() if len(parts) > 26 else ""
@@ -2035,13 +2117,21 @@ async def tool_georeference_alimentar(
                 clon = float(curr_lon.replace(',', '.'))
                 clat = float(curr_lat.replace(',', '.'))
                 if clon != 0 and clat != 0:
+                    # Se estavam trocadas (positivo em AA e negativo em AB):
+                    if clon > 0 and clat < 0:
+                        clon, clat = clat, clon
+                        while len(parts) <= 27:
+                            parts.append("")
+                        parts[26] = f"{clon:.6f}".replace('.', ',')
+                        parts[27] = f"{clat:.6f}".replace('.', ',')
+                        line_modified = True
                     has_coords = True
             except Exception:
                 has_coords = False
 
         if has_coords:
             already_geocoded += 1
-            out_lines.append(line)
+            out_lines.append("\t".join(parts) if line_modified else line)
             continue
 
         # Extrair dados de endereço: Coluna W (22), X (23), Y (24)
@@ -2061,23 +2151,29 @@ async def tool_georeference_alimentar(
 
         if lat and lon and float(lat) != 0 and float(lon) != 0:
             newly_geocoded += 1
-            # Alimentar: negativos primeiro na AA (26), positivos depois na AB (27)
-            lon_str = f"{float(lon):.6f}".replace('.', ',')
-            lat_str = f"{float(lat):.6f}".replace('.', ',')
+            flat = float(lat)
+            flon = float(lon)
+            if flon > 0 and flat < 0:
+                flon, flat = flat, flon
+            elif flon > 0 and flat > 0 and flon < 30 and flat > 30:
+                flon = -abs(flon)
+
+            lon_str = f"{flon:.6f}".replace('.', ',')
+            lat_str = f"{flat:.6f}".replace('.', ',')
 
             # Garantir colunas suficientes até AB (27)
             while len(parts) <= 27:
                 parts.append("")
 
-            parts[26] = lon_str
-            parts[27] = lat_str
+            parts[26] = lon_str  # Coluna AA = Longitude (-)
+            parts[27] = lat_str  # Coluna AB = Latitude (+)
             out_lines.append("\t".join(parts))
         else:
             not_found += 1
             out_lines.append(line)
 
     out_content = eol.join(out_lines) + eol
-    encode_as = detected_encoding if detected_encoding != "utf-8-sig" else "utf-8"
+    encode_as = detected_encoding
     out_bytes = out_content.encode(encode_as, errors="replace")
 
     orig_fn = file.filename or "Pedidos.txt"

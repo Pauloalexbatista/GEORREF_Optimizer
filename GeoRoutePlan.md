@@ -599,11 +599,15 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       7. *Relatórios & Ciclo de Vida*: Manifestos, exportação do Excel canónico timbrado sem expor URLs técnicos, alerta aos 7 dias e auto-arquivo de salvaguarda aos 10 dias com purga da base SQLite.
     * **Funcionalidades de Usabilidade**: Pesquisa instantânea por palavras-chave, filtros rápidos por tema e secções expansíveis em acordeão.
 17. **Ferramentas 1-Clique de Georreferenciação para Formatos WinRoute / Operacionais (✅ Concluído no Código)**:
-    * **Mobiliário (Services.txt)**: Conversor e georreferenciador direto com enriquecimento de coordenadas via base SQLite (geocoding.db), gerando ficheiro prefixado com Geo_ (ex: Geo_Services.txt) pronto a descarregar ou guardar.
-    * **Distribuição Alimentar (Auchan e outros - pedidos.txt)**: Suporte nativo ao formato de pedidos alimentares (ex: 20260623_AM_AuchanGuimarães_pedidos.txt), extraindo moradas, janelas horárias, número de caixas (Cx_Ambiente, Cx_Frio, Cx_Congelado) e georreferenciação 1-clique gerando Geo_<nome_ficheiro>.txt.
-    * **Identificação Visual dos Ficheiros de Entrada**: No ecrã de Georreferenciação (/dashboard/georeferencing), foram criadas duas secções operacionais com indicação explícita dos botões e nomes de ficheiros suportados:
-      - *Distribuição de Mobiliário / Eletrodomésticos*: fleet.txt, services.txt, stores.txt.
-      - *Distribuição Alimentar*: frota.txt, pedidos.txt (serviços), lojas.txt.
+    * **Mobiliário (Services.txt)**: Conversor e georreferenciador direto com enriquecimento de coordenadas via base SQLite (geocoding.db), gerando ficheiro prefixado com Geo_ (ex: `Geo_Services.txt`) com 100% das linhas preservadas:
+      - *Levantamentos (Colunas D a P)*: Georreferenciação da Morada (F), CP (G), Localidade (H) colocada na **Coluna J (Longitude negativa com vírgula)** e **Coluna K (Latitude positiva com vírgula)**.
+      - *Entregas (Colunas Q a AC)*: Georreferenciação da Morada (S), CP (T), Localidade (U) colocada na **Coluna W (Longitude negativa com vírgula)** e **Coluna X (Latitude positiva com vírgula)**.
+    * **Distribuição Alimentar (Auchan / El Corte Inglés - pedidos.txt)**: Suporte nativo ao formato de pedidos alimentares (ex: `20261029_PM_ElCorteInglésLisboa-Alimentar_pedidos.txt`), extraindo moradas (W), CP (X), Localidade (Y), e georreferenciando em 1-clique com preservação total de linhas e encoding:
+      - **Coluna AA (Longitude negativa com vírgula, ex: -9,259000)**.
+      - **Coluna AB (Latitude positiva com vírgula, ex: 38,775761)**.
+    * **Identificação Visual dos Ficheiros de Entrada**: No ecrã de Georreferenciação (`/dashboard/georeferencing`), botões operacionais rápidos atualizados com indicação explícita:
+      - *Distribuição de Mobiliário*: `Mobiliário (J/K & W/X)`
+      - *Distribuição Alimentar*: `Alimentar (AA/AB)`
 18. **Importação e Gestão Cumulativa de Frotas & Lojas da Distribuição Alimentar (✅ Concluído no Código)**:
     * **Importação Direta de Frotas**: Botão dedicado no ecrã de Gestão de Frota (/dashboard/fleet) permitindo carregar ficheiros de frota com inserção cumulativa e não-destrutiva de carrinhas, matrículas, capacidades em caixas/peso e horários de turno.
     * **Mapeamento e Normalização Inteligente de Lojas**: Implementado motor de correspondência que faz o *de-para* entre os códigos de loja nos ficheiros e os nomes canónicos dos Armazéns na base de dados (ex: AUC_GUIMARAES → Auchan Guimarães, AUC_ALMADA → Auchan Almada), garantindo que tanto a frota importada como os serviços ficam automaticamente associados ao armazém correto.
@@ -661,6 +665,19 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - As entregas não atribuídas retêm fielmente o seu armazém de origem, janelas horárias originais e tempo real de serviço (descarga), permitindo filtrar por armazém e arrastar paragens na vista tática sem perda de informação.
     * **Upgrade ao Algoritmo de Sequenciação Rápida (`sequence_route_with_time_windows`)**:
       - Integrado o fator de estrada rodoviário (`ROAD_FACTOR = 1.30`), velocidades por segmento escalonadas (`get_segment_speed`), precedência estrita entre pares de lojas e clientes (`From` antes de `To`) e refinamento final com `2-Opt`.
+25. **Correção e Padronização das Matrizes de Coordenadas WinRoute (Alimentar & Mobiliário) (✅ Concluído no Código)**:
+    * **Distribuição Alimentar (pedidos.txt)**:
+      - **Coluna AA (índice 26)**: Longitude (valor negativo com vírgula, ex: `-9,259000`).
+      - **Coluna AB (índice 27)**: Latitude (valor positivo com vírgula, ex: `38,775761`).
+      - Detetor e corretor preventivo de troca de coordenadas: se as linhas de entrada já possuírem coordenadas mas com sinal invertido (positivo em AA e negativo em AB), o sistema reordena-as automaticamente.
+      - Preservação estrita de 100% das linhas do ficheiro original, ordem de registos, quebras de linha (`\r\n`) e assinatura de codificação (incluindo `UTF-8 com BOM`).
+    * **Distribuição de Mobiliário (Services.txt)**:
+      - **Suporte aos Dois Blocos Operacionais no Mesmo Ficheiro**:
+        * *Levantamentos / Pickups (Colunas D a P)*: Georreferenciação da Morada (F), CP (G), Localidade (H) colocada na **Coluna J (Longitude negativa com vírgula, ex: `-7,963959`)** e **Coluna K (Latitude positiva com vírgula, ex: `40,440134`)**.
+        * *Entregas a Clientes (Colunas Q a AC)*: Georreferenciação da Morada (S), CP (T), Localidade (U) colocada na **Coluna W (Longitude negativa com vírgula, ex: `-9,277294`)** e **Coluna X (Latitude positiva com vírgula, ex: `38,707527`)**.
+      - Resolução da exceção `name 'cx_amb' is not defined` no endpoint `/api/fleet/import-mobiliario`: caixas alimentares inicializadas a zero, mapeamento fiel de peso (`parts[30]`) e volume (`parts[31]`), e identificação dinâmica de `Tipo_Operacao` (`RECOLHA` vs. `ENTREGA`).
+      - Leitura imediata de coordenadas existentes em J/K e W/X na importação, poupando chamadas desnecessárias à cascata geocoder.
+      - Botão rápido do ecrã de Georreferenciação atualizado para `Mobiliário (J/K & W/X)`.
 
 ---
 

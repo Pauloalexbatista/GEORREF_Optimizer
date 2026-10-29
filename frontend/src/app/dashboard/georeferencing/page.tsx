@@ -771,7 +771,7 @@ export default function GeoreferencingPage() {
                 <div className="grid grid-cols-2 gap-2 w-full">
                   <label className="cursor-pointer bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl px-3 py-2.5 text-xs font-bold shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 block border border-emerald-400/30 text-center">
                     <span>📦</span>
-                    <span className="truncate">{toolLoadingType === "mobiliario" ? "A georref..." : "Mobiliário (W/X)"}</span>
+                    <span className="truncate">{toolLoadingType === "mobiliario" ? "A georref..." : "Mobiliário (J/K & W/X)"}</span>
                     <input
                       type="file"
                       accept=".txt,.csv,.tsv"
@@ -794,7 +794,7 @@ export default function GeoreferencingPage() {
                   </label>
                 </div>
                 <span className="text-[10px] text-zinc-400">
-                  ⚡ 1-Clique: Seleciona o ficheiro de clientes ➔ descarrega com coordenadas
+                  ⚡ 1-Clique: Seleciona o ficheiro (.txt) ➔ descarrega com coordenadas e 100% das linhas preservadas
                 </span>
 
                 <div className="w-full flex items-center gap-2 my-0.5">

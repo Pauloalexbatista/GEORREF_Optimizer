@@ -2081,21 +2081,44 @@ async def import_mobiliario_files(
 
         for s_idx, line in enumerate(file_services_lines):
             parts = line.split("\t")
-            if len(parts) < 17:
+            if len(parts) < 8:
                 continue
 
             s_rules = parts[2].strip() if len(parts) > 2 else ""
-            doc_id = parts[16].strip()
-            if not doc_id:
+            
+            # Verificar se é Entrega (Colunas Q a AC) ou Levantamento (Colunas D a P)
+            doc_id = parts[16].strip() if len(parts) > 16 else ""
+            is_pickup = False
+
+            if doc_id:
+                # Entrega
+                cli_name = parts[17].strip() if len(parts) > 17 and parts[17].strip() else doc_id
+                addr = parts[18].strip() if len(parts) > 18 else ""
+                cp = parts[19].strip() if len(parts) > 19 else ""
+                loc = parts[20].strip() if len(parts) > 20 else ""
+                lon_in = parts[22].strip() if len(parts) > 22 else ""  # Coluna W = Longitude (-)
+                lat_in = parts[23].strip() if len(parts) > 23 else ""  # Coluna X = Latitude (+)
+                j1_start = parts[24].strip() if len(parts) > 24 and parts[24].strip() else "08:00"
+                j1_end = parts[25].strip() if len(parts) > 25 and parts[25].strip() else "20:00"
+                unload_min = _parse_time_min(parts[26]) if len(parts) > 26 else 15
+                op_type = "ENTREGA"
+            elif len(parts) > 3 and parts[3].strip():
+                # Levantamento (Pickup)
+                doc_id = parts[3].strip()
+                cli_name = parts[4].strip() if len(parts) > 4 and parts[4].strip() else doc_id
+                addr = parts[5].strip() if len(parts) > 5 else ""
+                cp = parts[6].strip() if len(parts) > 6 else ""
+                loc = parts[7].strip() if len(parts) > 7 else ""
+                lon_in = parts[9].strip() if len(parts) > 9 else ""   # Coluna J = Longitude (-)
+                lat_in = parts[10].strip() if len(parts) > 10 else "" # Coluna K = Latitude (+)
+                j1_start = parts[11].strip() if len(parts) > 11 and parts[11].strip() else "08:00"
+                j1_end = parts[12].strip() if len(parts) > 12 and parts[12].strip() else "20:00"
+                unload_min = _parse_time_min(parts[13]) if len(parts) > 13 else 10
+                op_type = "RECOLHA"
+                is_pickup = True
+            else:
                 continue
 
-            cli_name = parts[17].strip() if len(parts) > 17 else doc_id
-            addr = parts[18].strip() if len(parts) > 18 else ""
-            cp = parts[19].strip() if len(parts) > 19 else ""
-            loc = parts[20].strip() if len(parts) > 20 else ""
-            j1_start = parts[24].strip() if len(parts) > 24 and parts[24].strip() else "08:00"
-            j1_end = parts[25].strip() if len(parts) > 25 and parts[25].strip() else "20:00"
-            unload_min = _parse_time_min(parts[26]) if len(parts) > 26 else 15
             weight = _parse_flt(parts[30]) if len(parts) > 30 else 50.0
             raw_vol = _parse_flt(parts[31]) if len(parts) > 31 else 10.0
             volume = round(raw_vol / 1000.0, 3) if raw_vol > 10 else raw_vol
@@ -2110,9 +2133,23 @@ async def import_mobiliario_files(
 
             wh_name = store_map.get(s_store_id, {}).get("Nome_Armazem", wh_rows[0]["Nome_Armazem"])
 
-            # Georreferenciação com cascata Low-Cost
+            # Georreferenciação: verificar se já vem preenchido no ficheiro
             lat, lon = 0.0, 0.0
-            if addr or cp:
+            if lon_in and lat_in:
+                try:
+                    clon = float(lon_in.replace(",", "."))
+                    clat = float(lat_in.replace(",", "."))
+                    if clon != 0.0 and clat != 0.0:
+                        # Se vierem trocadas (positivo em Lon e negativo em Lat):
+                        if clon > 0 and clat < 0:
+                            clon, clat = clat, clon
+                        lon = clon
+                        lat = clat
+                except Exception:
+                    pass
+
+            # Caso não venha no ficheiro, recorre à cascata Low-Cost
+            if lat == 0.0 and lon == 0.0 and (addr or cp):
                 try:
                     res_tuple = geocoder.resolve_address(addr, cp, loc, fast_mode=True)
                     res_geo = res_tuple[0] if isinstance(res_tuple, tuple) else res_tuple
@@ -2153,23 +2190,23 @@ async def import_mobiliario_files(
                 "Longitude": lon,
                 "Telefone_Cliente": "",
                 "Telefone": "",
-                "Peso_KG": 0.0,
-                "Peso": 0.0,
-                "Volume_M3": 0.0,
-                "Volume_m3": 0.0,
-                "Cx_Ambiente": cx_amb,
-                "Cx_Frio": cx_frio,
-                "Cx_Congelado": cx_cong,
-                "Total_Cx": total_cx,
-                "cx_ambiente": cx_amb,
-                "cx_frio": cx_frio,
-                "cx_congelado": cx_cong,
-                "total_cx": total_cx,
+                "Peso_KG": weight,
+                "Peso": weight,
+                "Volume_M3": volume,
+                "Volume_m3": volume,
+                "Cx_Ambiente": 0,
+                "Cx_Frio": 0,
+                "Cx_Congelado": 0,
+                "Total_Cx": 0,
+                "cx_ambiente": 0,
+                "cx_frio": 0,
+                "cx_congelado": 0,
+                "total_cx": 0,
                 "Janela_Inicio": j1_start,
                 "Janela_Fim": j1_end,
                 "Janela_Horaria": f"{j1_start} - {j1_end}",
                 "Tempo_Descarga_Min": unload_min,
-                "Tipo_Operacao": "ENTREGA",
+                "Tipo_Operacao": op_type,
                 "Regras": s_rules,
                 "Notas_Motorista": "",
                 "Observacoes": "",

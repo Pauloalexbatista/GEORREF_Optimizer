@@ -1,0 +1,12 @@
+﻿Expresso IKEA Alfragide 11	11	Zona Industrial de Alfragide - Estrada Nacional 117		2614-520	Amadora	PRT	-9,2159774	38,7286435	1	6	01:00	
+Armazém Loures 19	19	Zona Industrial de Frielas - Rua Cidade do Porto lote 2 C/D		2660-026	Frielas	PRT	-9,148433703	38,81866861	1	6	01:00	
+Armazém Porto 36	36	Urb. Minhoteira-Crestins, R. De Manuel Sousa Moreira Cruz 240		4470-396	Maia	PRT	-8,502831	40,9292796	1	6	01:00	
+Armazém Bel2000 89	89	Quinta Casal da Pipa		2670-399	Loures	PRT	-9,193120003	38,84106827	1	6	01:00	
+IKEA Loulé 147	147	IKEA Loulé  - Avenida do Algarve Nº 5		8135-182	Almancil	PRT	-7,9962729	37,0969241	1	6	01:00	
+Cais IKEA Loures 160	160	EN 250 Rua 28 de Setembro		2660-001	Frielas	PRT	-9,144661618835	38,817812802413	1	6	01:00	
+Armazem externo PUP Castelo Branco 211	211	Pavilhão E, Cruz da Légua		6000-022	Benquerença	PRT	-7,55834	39,7905024	1	6	01:00	
+Armazem externo Ilhas 216	216	Ilhas				PRT	0	0	1	0	01:00	
+Armazém externo PUP Évora 229	229	Zona Industrial Almeirim Sul, Praceta das Empresas Lote 6 – Edifício Evocargo		7005-284	Évora	PRT	-7,9079716	38,5508612	1	6	01:00	
+Armazém externo PUP Santarém 233	233	Rua da Zona Industrial		2005-002	Santarém	PRT	-8,7122347	39,2619993	1	6	01:00	
+Armazém Vila Real 270	270	Rua Do Bairro Da Carriça, Armazém 3		5000-051	Arroios	PRT	-7,72076844900516	41,2832454751783	1	6	01:00	
+Armazém Algoz 281	281	Algoz Park 1 Lote 15 		8365-084	Ferrarias	PRT	0	0	1	0	01:00	
