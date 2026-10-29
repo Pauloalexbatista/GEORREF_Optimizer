@@ -419,17 +419,6 @@ export default function TacticalPage() {
     const rem = s % 60;
     return `${m}m ${rem < 10 ? "0" : ""}${rem}s`;
   };
-  const targetSolveTotalSec = solvingDepth === "deep" ? 60 : solvingDepth === "fast" ? 25 : 40;
-  const remainingSolveSec = Math.max(0, targetSolveTotalSec - solvingSeconds);
-  const solveProgressPct = Math.min(98, Math.round((solvingSeconds / Math.max(1, targetSolveTotalSec)) * 100));
-  const solvePhaseLabel =
-    solveProgressPct < 20
-      ? "Fase 1/4: A preparar matriz geográfica e validar frota por armazém..."
-      : solveProgressPct < 75
-      ? "Fase 2/4: Motor Google OR-Tools a otimizar rotas e janelas horárias..."
-      : solveProgressPct < 90
-      ? "Fase 3/4: A alocar levantamentos (P) no fim da rota e priorizar clientes distantes..."
-      : "Fase 4/4: Gatekeeper (Zero Erros) a validar fim de turno, cargas e guardar solução...";
   const [auditData, setAuditData] = useState<{
     total_violations: number;
     routes_status: Record<string, { is_valid: boolean; errors_count?: number; warnings_count?: number; violations_count: number; violations: ViolationItem[] }>;
@@ -612,6 +601,17 @@ export default function TacticalPage() {
   const [solvingDepth, setSolvingDepth] = useState<"fast" | "balanced" | "deep">("balanced");
   const [maxTravelTime, setMaxTravelTime] = useState("12:00");
   const [respectWindows, setRespectWindows] = useState(true);
+  const targetSolveTotalSec = solvingDepth === "deep" ? 60 : solvingDepth === "fast" ? 25 : 40;
+  const remainingSolveSec = Math.max(0, targetSolveTotalSec - solvingSeconds);
+  const solveProgressPct = Math.min(98, Math.round((solvingSeconds / Math.max(1, targetSolveTotalSec)) * 100));
+  const solvePhaseLabel =
+    solveProgressPct < 20
+      ? "Fase 1/4: A preparar matriz geográfica e validar frota por armazém..."
+      : solveProgressPct < 75
+      ? "Fase 2/4: Motor Google OR-Tools a otimizar rotas e janelas horárias..."
+      : solveProgressPct < 90
+      ? "Fase 3/4: A alocar levantamentos (P) no fim da rota e priorizar clientes distantes..."
+      : "Fase 4/4: Gatekeeper (Zero Erros) a validar fim de turno, cargas e guardar solução...";
 
   const channelRef = useRef<BroadcastChannel | null>(null);
   const lastMutationTimeRef = useRef<number>(0);
