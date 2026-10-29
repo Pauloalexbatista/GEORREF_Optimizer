@@ -700,6 +700,21 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
 
 ---
 
+27. **Foco por Armazém na Tabela Lateral e Organização de "Por Distribuir" por Armazéns (✅ Concluído no Código)**:
+    * **Tabela Lateral do Mapa (`frontend/src/components/MapComponent.tsx`)**:
+      - Substituído o agrupamento heurístico de "Foco por Território / Zona" por **"🏭 Foco por Armazém"** através do hook `warehouseListWithStats`.
+      - O seletor apresenta todos os armazéns reais com número de viaturas afetas, paragens, peso total em kg e número de paragens pendentes (ex: `📍 Cais IKEA Loures 160 (12 vts · 240p · 28.500kg · 18 pend.)`).
+      - Ao selecionar a opção *"⚠️ Por Distribuir"*, a tabela lateral substitui a lista de viaturas pela lista clara de **Armazéns com paragens pendentes**, exibindo a contagem de paragens, toneladas e volume de cada um, permitindo alternar e centrar o mapa no armazém pretendido com um só clique.
+    * **Rota "Por Distribuir" Agrupada por Armazém no Planeamento Tático (`frontend/src/app/dashboard/tactical/page.tsx`)**:
+      - Na linha-mestre da tabela, quando o filtro geral de armazéns está em "Todos", a coluna *Armazém* apresenta com rigor `Todos os Armazéns (X)` em vez de indicar erradamente apenas o primeiro armazém da lista.
+      - Ao expandir a rota *"⚠️ Por Distribuir"*, em vez de despejar centenas de entregas numa tabela plana desordenada, o sistema divide as encomendas em **Secções/Cartões dedicados por Armazém**.
+      - Cada secção de armazém inclui:
+        1. Cabeçalho com o nome do armazém, badges de contagem de pendentes, peso (kg), volume (m³) e caixas (se aplicável).
+        2. Ação rápida em lote: `Atribuir todas a: [Viatura ▾]` para enviar de imediato todas as paragens pendentes daquele armazém para um carro selecionado.
+        3. Botão individual de colapsar/expandir por armazém.
+        4. Tabela de entregas detalhada daquele armazém com todas as colunas operacionais (Doc ID, Cliente, Morada, Contacto, Janela, Carga) e seletor de reatribuição que prioriza no topo as **viaturas pertencentes àquele armazém** (`★`).
+
+
 ## 📋 9. Checklist de Início de Sessão para o Desenvolvedor / Agente
 
 Antes de iniciar qualquer desenvolvimento:
