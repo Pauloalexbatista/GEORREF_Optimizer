@@ -2101,9 +2101,9 @@ async def import_mobiliario_files(
                 j1_start = parts[24].strip() if len(parts) > 24 and parts[24].strip() else "08:00"
                 j1_end = parts[25].strip() if len(parts) > 25 and parts[25].strip() else "20:00"
                 unload_min = _parse_time_min(parts[26]) if len(parts) > 26 else 15
-                op_type = "ENTREGA"
+                op_type = "D"
             elif len(parts) > 3 and parts[3].strip():
-                # Levantamento (Pickup)
+                # Levantamento (Pickup no cliente/fornecedor para trazer ao armazém)
                 doc_id = parts[3].strip()
                 cli_name = parts[4].strip() if len(parts) > 4 and parts[4].strip() else doc_id
                 addr = parts[5].strip() if len(parts) > 5 else ""
@@ -2114,14 +2114,14 @@ async def import_mobiliario_files(
                 j1_start = parts[11].strip() if len(parts) > 11 and parts[11].strip() else "08:00"
                 j1_end = parts[12].strip() if len(parts) > 12 and parts[12].strip() else "20:00"
                 unload_min = _parse_time_min(parts[13]) if len(parts) > 13 else 10
-                op_type = "RECOLHA"
+                op_type = "P"
                 is_pickup = True
             else:
                 continue
 
             weight = _parse_flt(parts[30]) if len(parts) > 30 else 50.0
             raw_vol = _parse_flt(parts[31]) if len(parts) > 31 else 10.0
-            volume = round(raw_vol / 1000.0, 3) if raw_vol > 10 else raw_vol
+            volume = round(raw_vol / 1000.0, 3) if raw_vol > 0 else 0.01
 
             v_code = parts[33].strip() if len(parts) > 33 else ""
             drv_code = parts[34].strip() if len(parts) > 34 else ""
@@ -2252,7 +2252,8 @@ async def import_mobiliario_files(
                     "Observacoes": "",
                     "Vendedor": "",
                     "Peso_KG": weight,
-                    "Volume_m3": volume
+                    "Volume_m3": volume,
+                    "Tipo_Operacao": op_type
                 })
 
         # 4. Guardar Entregas na tabela SQLite entregas
@@ -2271,8 +2272,8 @@ async def import_mobiliario_files(
                             projeto_id, codigo_cliente, nome_cliente, morada, codigo_postal, _concelho,
                             peso_kg, volume_m3, prioridade, janela_inicio, janela_fim, tempo_descarga_min,
                             latitude, longitude, nivel_qualidade, fonte_match, morada_encontrada, armazem,
-                            telefone, observacoes, vendedor, rota, ordem_paragem, regras
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            telefone, observacoes, vendedor, rota, ordem_paragem, regras, tipo_operacao
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         project_id, d.get("Doc_ID", ""), d.get("Cliente", ""), d.get("Morada", ""),
                         d.get("CP", ""), d.get("Localidade", ""), float(d.get("Peso_KG", 50.0)),
@@ -2281,7 +2282,8 @@ async def import_mobiliario_files(
                         lat_d, lon_d, qual_d, src_d,
                         d.get("Morada", ""), d.get("Armazem", wh_rows[0]["Nome_Armazem"]),
                         "", "", "", d.get("Rota", "Por Distribuir"),
-                        int(d.get("Ordem", 1)), str(d.get("Regras", "") or "")
+                        int(d.get("Ordem", 1)), str(d.get("Regras", "") or ""),
+                        str(d.get("Tipo_Operacao", "D") or "D")
                     ))
                 conn.commit()
 
@@ -2741,6 +2743,14 @@ async def import_alimentar_files(
                 "Peso": weight,
                 "Volume_M3": volume,
                 "Volume_m3": volume,
+                "Cx_Ambiente": cx_amb,
+                "Cx_Frio": cx_frio,
+                "Cx_Congelado": cx_cong,
+                "Total_Cx": total_cx,
+                "cx_ambiente": cx_amb,
+                "cx_frio": cx_frio,
+                "cx_congelado": cx_cong,
+                "total_cx": total_cx,
                 "Janela_Inicio": j1_start,
                 "Janela_Fim": j1_end,
                 "Janela_Horaria": f"{j1_start} - {j1_end}",

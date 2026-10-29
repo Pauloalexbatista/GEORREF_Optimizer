@@ -383,10 +383,12 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         f_lat = float(first_s.get("Latitude", depot_lat) or depot_lat)
         f_lon = float(first_s.get("Longitude", depot_lon) or depot_lon)
         f_dist = haversine_distance(depot_lat, depot_lon, f_lat, f_lon) * 1.30
-        f_trav = (f_dist / max(20.0, avg_speed)) * 60.0
+        f_seg_spd = get_segment_speed(f_dist, max(20.0, avg_speed))
+        f_trav = (f_dist / f_seg_spd) * 60.0
         f_win_s, _ = parse_time_window_str(str(first_s.get("Janela_Horaria", "Qualquer") or "Qualquer"))
         if f_win_s > 0 and (cur_time_min + f_trav) < (f_win_s - 15):
             cur_time_min = max(cur_time_min, f_win_s - f_trav)
+    route_dep_min = cur_time_min
 
     order = 1
     for idx, stop_dict in enumerate(stops_list):
@@ -466,6 +468,17 @@ def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, 
         cur_time_min = dep_min
         order += 1
         
+    ret_km = haversine_distance(p_lat, p_lon, depot_lat, depot_lon) * 1.30
+    ret_speed = get_segment_speed(ret_km, avg_speed)
+    ret_trav_min = (ret_km / ret_speed) * 60.0 if ret_speed > 0 else 0.0
+    arr_depot_min = cur_time_min + ret_trav_min
+    dep_depot_str = minutes_to_time_str(route_dep_min)
+    arr_depot_str = minutes_to_time_str(arr_depot_min)
+    for st_u in updated_stops:
+        st_u["Hora_Partida_Armazem"] = dep_depot_str
+        st_u["Hora_Regresso_Armazem"] = arr_depot_str
+        st_u["Dist_Regresso_KM"] = round(ret_km, 2)
+
     load_metrics = calculate_dynamic_route_loads(updated_stops, vehicle_cap_kg=vehicle_cap_kg, vehicle_cap_vol=vehicle_cap_vol)
     return load_metrics.get("stops_with_loads", updated_stops)
 
@@ -545,7 +558,29 @@ def sequence_route_with_time_windows(
             else:
                 tw_penalty += (wait_min / 60.0) * 15.0
 
-            cost = (d * 1.0) + tw_penalty
+            # Preferência para Levantamentos (P) no fim da rota (quando o carro está mais vazio):
+            pickup_defer_penalty = 0.0
+            if op_s == "P":
+                rem_d_stops = [
+                    r_st for r_idx, r_st in enumerate(remaining)
+                    if r_idx != i and normalize_op_type(r_st.get("Tipo_Operacao") or r_st.get("tipo_operacao")) == "D"
+                ]
+                if rem_d_stops:
+                    d_p_dep = haversine_distance(s_lat, s_lon, depot_lat, depot_lon)
+                    all_rem_closer = all(
+                        haversine_distance(
+                            float(r_st.get("Latitude", depot_lat) or depot_lat),
+                            float(r_st.get("Longitude", depot_lon) or depot_lon),
+                            depot_lat, depot_lon
+                        ) <= d_p_dep + 1.5
+                        for r_st in rem_d_stops
+                    )
+                    if len(rem_d_stops) <= 2 and all_rem_closer:
+                        pickup_defer_penalty = 2.0 * len(rem_d_stops)
+                    else:
+                        pickup_defer_penalty = 20.0 * len(rem_d_stops)
+
+            cost = (d * 1.0) + tw_penalty + pickup_defer_penalty
 
             if cost < best_cost:
                 best_cost = cost
@@ -604,14 +639,30 @@ def sequence_route_with_time_windows(
             vehicle_cap_kg=v_cap_kg,
             vehicle_cap_vol=v_cap_vol
         )
-        late_cnt = 0
+        load_m = calculate_dynamic_route_loads(recalc, vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol)
+        overload_pen = 10 if load_m.get("has_overload") else 0
+        late_cnt = overload_pen
         tot_d = 0.0
-        for st_r in recalc:
+        for idx_r, st_r in enumerate(recalc):
             w_s_r, w_e_r = parse_time_window_str(str(st_r.get("Janela_Horaria", "Qualquer") or "Qualquer"))
             arr_r = parse_time_to_minutes(str(st_r.get("Chegada", "00:00")), 0)
             if w_e_r < 1440 and arr_r > w_e_r:
                 late_cnt += 1
             tot_d = float(st_r.get("Dist_Acum", tot_d) or tot_d)
+            if normalize_op_type(st_r.get("Tipo_Operacao") or st_r.get("tipo_operacao")) == "P":
+                d_after_r = [
+                    x for x in recalc[idx_r + 1:]
+                    if normalize_op_type(x.get("Tipo_Operacao") or x.get("tipo_operacao")) == "D"
+                ]
+                if d_after_r:
+                    dp_dep = haversine_distance(float(st_r.get("Latitude", depot_lat)), float(st_r.get("Longitude", depot_lon)), depot_lat, depot_lon)
+                    all_ret = all(
+                        haversine_distance(float(x.get("Latitude", depot_lat)), float(x.get("Longitude", depot_lon)), depot_lat, depot_lon) <= dp_dep + 1.5
+                        for x in d_after_r
+                    )
+                    tot_d += (1.5 * len(d_after_r)) if (len(d_after_r) <= 2 and all_ret) else (18.0 * len(d_after_r))
+        if recalc:
+            tot_d += float(recalc[-1].get("Dist_Regresso_KM", 0.0) or 0.0)
         return (late_cnt, tot_d)
 
     if len(ordered) >= 3:
@@ -1060,65 +1111,119 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 else:
                     v_start_str = str(v_info.get("start_time", "08:00:00"))
 
-                # Gatekeeper de Pontualidade: se respect_time_windows=True, nenhuma paragem pode chegar após fecho de janela
-                if solver_params.get("respect_time_windows", True):
-                    tried_resequence = False
-                    while raw_stops:
-                        processed_stops = recalculate_route_stops(
-                            raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
-                            vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
-                        )
-                        has_late = False
-                        for idx_s, st in enumerate(processed_stops):
-                            w_e = parse_time_to_minutes(str(st.get("Janela_Fim", "")), 1440)
-                            arr = parse_time_to_minutes(str(st.get("Chegada", "")), 0)
-                            if w_e < 1440 and arr > w_e:
-                                # Antes de ejetar por diferenças de trânsito preditivo, tentar reordenar a rota 1 vez
-                                if not tried_resequence and len(raw_stops) > 1:
-                                    tried_resequence = True
-                                    v_start_m = parse_time_to_minutes(v_start_str, 480)
-                                    reseq = sequence_route_with_time_windows(
-                                        raw_stops, depot_lat, depot_lon, v_start_m, v_speed,
-                                        v_cap_kg=v_cap_kg, v_cap_vol=v_cap_vol
-                                    )
-                                    if all(
-                                        parse_time_to_minutes(str(rs.get("Chegada", "")), 0) <= parse_time_to_minutes(str(rs.get("Janela_Fim", "")), 1440)
-                                        for rs in reseq
-                                    ):
-                                        processed_stops = reseq
-                                        raw_stops = reseq
-                                        has_late = False
-                                        break
-                                # Paragem com atraso inevitável! Ejetar para 'Por Distribuir' (incluindo par Par_ID se existir)
-                                ejected = raw_stops.pop(idx_s)
-                                ej_c_idx = ejected.get("_client_idx")
-                                if ej_c_idx is not None:
-                                    visited_client_indices.discard(ej_c_idx)
-                                else:
-                                    e_doc = str(ejected.get("Doc_ID", ""))
-                                    for c_idx, crow in deliveries_df.iterrows():
-                                        if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
-                                            visited_client_indices.discard(c_idx)
-                                            break
-                                ej_par_id = str(ejected.get("Par_ID") or "").strip()
-                                if ej_par_id:
-                                    partner_positions = [
-                                        p_i for p_i, p_st in enumerate(raw_stops)
-                                        if str(p_st.get("Par_ID") or "").strip() == ej_par_id
-                                    ]
-                                    for p_i in reversed(partner_positions):
-                                        ej_partner = raw_stops.pop(p_i)
-                                        if ej_partner.get("_client_idx") is not None:
-                                            visited_client_indices.discard(ej_partner.get("_client_idx"))
-                                has_late = True
+                # Gatekeeper Rigoroso (Tolerância ZERO a Erros):
+                # Verifica Janelas Horárias, Capacidade (Peso/Volume/Caixas) e Fim de Turno (Hora de Regresso ao Armazém).
+                # Se alguma restrição falhar, tenta reordenar; se não couber, ejeta paragens (priorizando deixar de fora as mais perto do armazém!).
+                v_end_str = str(v_info.get("end_time", "18:00:00"))
+                v_end_min = parse_time_to_minutes(v_end_str, 1080)
+                v_cap_cx = float(v_info.get("cap_cx_total", 0.0) or 0.0)
+                returns_to_depot = str(v_info.get("regresso_armazem", "Sim") or "Sim").strip().lower() not in ["não", "nao", "false", "0", "no"]
+                respect_tw_flag = bool(solver_params.get("respect_time_windows", True))
+
+                def _check_route_violations(p_stops: list) -> tuple:
+                    if not p_stops:
+                        return (False, None, False, False)
+                    # 1. Janelas Horárias
+                    if respect_tw_flag:
+                        for i_s, st_s in enumerate(p_stops):
+                            w_e_s = parse_time_to_minutes(str(st_s.get("Janela_Fim", "")), 1440)
+                            arr_s = parse_time_to_minutes(str(st_s.get("Chegada", "")), 0)
+                            if w_e_s < 1440 and arr_s > w_e_s:
+                                return (True, i_s, False, False)
+                    # 2. Capacidade Dinâmica (Peso, Volume e Caixas)
+                    ld_res = calculate_dynamic_route_loads(p_stops, vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol)
+                    tot_cx_r = sum(int(st_s.get("Total_Cx", 0) or 0) for st_s in p_stops)
+                    is_overloaded = bool(ld_res.get("has_overload")) or (v_cap_cx > 0 and tot_cx_r > v_cap_cx)
+                    # 3. Fim de Turno (Regresso ao Armazém)
+                    last_st = p_stops[-1]
+                    last_dep_m = parse_time_to_minutes(str(last_st.get("Saida", "12:00")), 720)
+                    if returns_to_depot:
+                        arr_dep_m = parse_time_to_minutes(str(last_st.get("Hora_Regresso_Armazem", "")), last_dep_m)
+                    else:
+                        arr_dep_m = last_dep_m
+                    is_overtime = bool(arr_dep_m > v_end_min)
+                    return (False, None, is_overloaded, is_overtime)
+
+                def _eject_stop_at(stops_arr: list, ej_idx: int):
+                    ejected = stops_arr.pop(ej_idx)
+                    ej_c_idx = ejected.get("_client_idx")
+                    if ej_c_idx is not None:
+                        visited_client_indices.discard(ej_c_idx)
+                    else:
+                        e_doc = str(ejected.get("Doc_ID", ""))
+                        for c_idx, crow in deliveries_df.iterrows():
+                            if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
+                                visited_client_indices.discard(c_idx)
                                 break
-                        if not has_late:
-                            break
-                else:
+                    ej_par_id = str(ejected.get("Par_ID") or "").strip()
+                    if ej_par_id:
+                        partner_positions = [
+                            p_i for p_i, p_st in enumerate(stops_arr)
+                            if str(p_st.get("Par_ID") or "").strip() == ej_par_id
+                        ]
+                        for p_i in reversed(partner_positions):
+                            ej_partner = stops_arr.pop(p_i)
+                            if ej_partner.get("_client_idx") is not None:
+                                visited_client_indices.discard(ej_partner.get("_client_idx"))
+
+                tried_resequence = False
+                processed_stops = []
+                while raw_stops:
                     processed_stops = recalculate_route_stops(
                         raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
                         vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
                     )
+                    has_late, late_idx, has_overload, has_overtime = _check_route_violations(processed_stops)
+                    if not has_late and not has_overload and not has_overtime:
+                        break
+
+                    if not tried_resequence and len(raw_stops) > 1:
+                        tried_resequence = True
+                        v_start_m = parse_time_to_minutes(v_start_str, 480)
+                        reseq = sequence_route_with_time_windows(
+                            raw_stops, depot_lat, depot_lon, v_start_m, v_speed,
+                            v_cap_kg=v_cap_kg, v_cap_vol=v_cap_vol
+                        )
+                        r_late, _, r_over, r_ot = _check_route_violations(reseq)
+                        if not r_late and not r_over and not r_ot:
+                            processed_stops = reseq
+                            raw_stops = reseq
+                            break
+
+                    if has_late and late_idx is not None:
+                        _eject_stop_at(raw_stops, late_idx)
+                        continue
+
+                    # Se houver excesso de turno (overtime) ou excesso de carga (overload):
+                    # Regra de Ouro: preservar clientes distantes e deixar de fora os mais perto do armazém
+                    # (exceto se existir uma anomalia geográfica >140km impossível de cumprir no turno).
+                    dists_to_depot = [
+                        (
+                            i_cand,
+                            haversine_distance(
+                                depot_lat, depot_lon,
+                                float(st_cand.get("Latitude", depot_lat) or depot_lat),
+                                float(st_cand.get("Longitude", depot_lon) or depot_lon)
+                            )
+                        )
+                        for i_cand, st_cand in enumerate(raw_stops)
+                    ]
+                    extreme_outliers = [x for x in dists_to_depot if x[1] > 140.0]
+                    if has_overtime and extreme_outliers:
+                        # Ejetar primeiro anomalia inter-regional (>140km em linha reta) que inviabiliza o regresso
+                        extreme_outliers.sort(key=lambda x: x[1], reverse=True)
+                        _eject_stop_at(raw_stops, extreme_outliers[0][0])
+                    else:
+                        # Ordenar do MAIS PERTO do armazém para o mais distante
+                        dists_to_depot.sort(key=lambda x: x[1])
+                        eject_target = dists_to_depot[0][0]
+                        if has_overload:
+                            for i_cand, _ in dists_to_depot:
+                                st_c = raw_stops[i_cand]
+                                if float(st_c.get("Peso_KG", 0) or 0) > 0 or float(st_c.get("Volume_m3", 0) or 0) > 0 or int(st_c.get("Total_Cx", 0) or 0) > 0:
+                                    eject_target = i_cand
+                                    break
+                        _eject_stop_at(raw_stops, eject_target)
 
                 for pst in processed_stops:
                     pst.pop("_client_idx", None)

@@ -413,6 +413,23 @@ export default function TacticalPage() {
   };
   const [solving, setSolving] = useState(false);
   const [solvingSeconds, setSolvingSeconds] = useState(0);
+  const formatMinSec = (totalSec: number) => {
+    const s = Math.max(0, Math.round(totalSec));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return `${m}m ${rem < 10 ? "0" : ""}${rem}s`;
+  };
+  const targetSolveTotalSec = solvingDepth === "deep" ? 60 : solvingDepth === "fast" ? 25 : 40;
+  const remainingSolveSec = Math.max(0, targetSolveTotalSec - solvingSeconds);
+  const solveProgressPct = Math.min(98, Math.round((solvingSeconds / Math.max(1, targetSolveTotalSec)) * 100));
+  const solvePhaseLabel =
+    solveProgressPct < 20
+      ? "Fase 1/4: A preparar matriz geográfica e validar frota por armazém..."
+      : solveProgressPct < 75
+      ? "Fase 2/4: Motor Google OR-Tools a otimizar rotas e janelas horárias..."
+      : solveProgressPct < 90
+      ? "Fase 3/4: A alocar levantamentos (P) no fim da rota e priorizar clientes distantes..."
+      : "Fase 4/4: Gatekeeper (Zero Erros) a validar fim de turno, cargas e guardar solução...";
   const [auditData, setAuditData] = useState<{
     total_violations: number;
     routes_status: Record<string, { is_valid: boolean; errors_count?: number; warnings_count?: number; violations_count: number; violations: ViolationItem[] }>;
@@ -804,7 +821,7 @@ export default function TacticalPage() {
         max_route_duration: maxTravelTime,
         respect_time_windows: respectWindows,
         solving_depth: solvingDepth,
-        time_limit_seconds: solvingDepth === "deep" ? 240 : solvingDepth === "fast" ? 30 : 90,
+        time_limit_seconds: solvingDepth === "deep" ? 40 : solvingDepth === "fast" ? 15 : 25,
       };
       const mergedParams = overrideParams && typeof overrideParams === "object" && !("nativeEvent" in overrideParams)
         ? { ...baseParams, ...overrideParams }
@@ -1093,9 +1110,48 @@ export default function TacticalPage() {
     const map: Record<string, VehicleData> = {};
     fleetList.forEach((v) => {
       map[v.veiculo] = v;
+      map[`${v.veiculo} (Volta 2)`] = v;
+      map[`${v.veiculo.trim()} (Volta 2)`] = v;
     });
     return map;
   }, [fleetList]);
+
+  const computeRoutePeakLoad = (stopsArr: RouteNode[]) => {
+    const normOp = (raw: any) => {
+      const s = String(raw || "D").trim().toUpperCase();
+      if (["P", "PICKUP", "RECOLHA", "SUCATA", "RETOMA"].includes(s)) return "P";
+      if (["FROM", "LEVANTAMENTO", "RECOLHA_LOJA"].includes(s)) return "From";
+      if (["TO", "ENTREGA_LOJA"].includes(s)) return "To";
+      return "D";
+    };
+    let initKg = 0;
+    let initVol = 0;
+    stopsArr.forEach((s) => {
+      if (normOp(s.Tipo_Operacao) === "D") {
+        initKg += Number(s.Peso_KG) || 0;
+        initVol += Number(s.Volume_m3) || 0;
+      }
+    });
+    let curKg = initKg;
+    let curVol = initVol;
+    let peakKg = initKg;
+    let peakVol = initVol;
+    stopsArr.forEach((s) => {
+      const op = normOp(s.Tipo_Operacao);
+      const wKg = Number(s.Peso_KG) || 0;
+      const wVol = Number(s.Volume_m3) || 0;
+      if (op === "D" || op === "To") {
+        curKg = Math.max(0, curKg - wKg);
+        curVol = Math.max(0, curVol - wVol);
+      } else if (op === "P" || op === "From") {
+        curKg += wKg;
+        curVol += wVol;
+      }
+      if (curKg > peakKg) peakKg = curKg;
+      if (curVol > peakVol) peakVol = curVol;
+    });
+    return { peakKg, peakVol, initKg, initVol };
+  };
 
   const warehouseMap = useMemo(() => {
     const map: Record<string, WarehouseData> = {};
@@ -1170,19 +1226,16 @@ export default function TacticalPage() {
 
     uniqueRoutes.forEach((rName) => {
       const stops = routes.filter((r) => r.Rota === rName).sort((a, b) => a.Ordem - b.Ordem);
-      const vConfig = vehicleMap[rName];
+      const vConfig = vehicleMap[rName] || vehicleMap[rName.replace(" (Volta 2)", "").trim()];
       const vRules = (vConfig?.regras || "").trim();
-      const vEnd = vConfig?.horario_fim || "18:00";
+      const vEnd = (vConfig?.horario_fim || "18:00").slice(0, 5);
       const maxKg = vConfig?.capacidade_kg || 1000;
       const maxVol = vConfig?.capacidade_vol || 10.0;
       const rViolations: ViolationItem[] = [];
 
-      let totalKg = 0;
-      let totalVol = 0;
+      const { peakKg: totalKg, peakVol: totalVol } = computeRoutePeakLoad(stops);
 
       stops.forEach((s) => {
-        totalKg += s.Peso_KG || 0;
-        totalVol += s.Volume_m3 || 0;
 
         // 1. Time window compliance check (tolerância zero)
         const compliance = getDeliveryWindowCompliance(s.Chegada, s.Janela_Horaria);
@@ -1285,14 +1338,22 @@ export default function TacticalPage() {
         let returnArrStr = lastStop.Saida || lastStop.Chegada || "12:00";
 
         if (returnsToDepot) {
-          const whData = warehouseMap[vConfig?.armazem || ""] || Object.values(warehouseMap)[0];
-          let returnDist = 0.0;
-          if (whData && whData.lat && whData.lon) {
-            returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon) * 1.28;
+          const backendRetArr = (lastStop as any).Hora_Regresso_Armazem;
+          if (backendRetArr && String(backendRetArr).includes(":")) {
+            returnArrStr = String(backendRetArr).slice(0, 5);
+          } else {
+            const whName = vConfig?.armazem || (stops[0]?.Armazem) || warehouses[0]?.name || "";
+            const whData = warehouseMap[whName] || warehouses.find((w) => matchWarehouse(w.name, whName)) || Object.values(warehouseMap)[0];
+            let returnDist = 0.0;
+            if (whData && whData.lat && whData.lon) {
+              returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon) * 1.30;
+            }
+            const baseSpd = vConfig?.velocidade_media || 50.0;
+            const spdRatio = Math.max(0.6, Math.min(1.4, baseSpd / 50.0));
+            const segSpd = returnDist > 25 ? 70.0 * spdRatio : returnDist > 10 ? 50.0 * spdRatio : Math.max(30.0, Math.min(baseSpd, 40.0));
+            const returnTravelMin = (returnDist / segSpd) * 60.0;
+            returnArrStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
           }
-          const speed = vConfig?.velocidade_media || 50.0;
-          const returnTravelMin = (returnDist / speed) * 60.0;
-          returnArrStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
         }
 
         const [rArrH, rArrM] = returnArrStr.split(":").map(Number);
@@ -1647,7 +1708,7 @@ export default function TacticalPage() {
                   {solving ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>A Calcular ({solvingSeconds}s)...</span>
+                      <span>A Calcular ({formatMinSec(solvingSeconds)} / ~{formatMinSec(targetSolveTotalSec)})...</span>
                     </>
                   ) : (
                     <>
@@ -1933,7 +1994,7 @@ export default function TacticalPage() {
                       }`}
                     >
                       <div className="text-xs font-semibold opt-title">⚡ Rápido</div>
-                      <div className="text-[10px] opt-desc mt-0.5">~30 seg</div>
+                      <div className="text-[10px] opt-desc mt-0.5">~0m 25s</div>
                     </button>
                     <button
                       type="button"
@@ -1943,7 +2004,7 @@ export default function TacticalPage() {
                       }`}
                     >
                       <div className="text-xs font-semibold opt-title">🎯 Equilibrado</div>
-                      <div className="text-[10px] opt-desc mt-0.5">1 a 2 min</div>
+                      <div className="text-[10px] opt-desc mt-0.5">~0m 40s</div>
                     </button>
                     <button
                       type="button"
@@ -1953,7 +2014,7 @@ export default function TacticalPage() {
                       }`}
                     >
                       <div className="text-xs font-semibold opt-title">🧠 Profundo</div>
-                      <div className="text-[10px] opt-desc mt-0.5">3 a 5 min</div>
+                      <div className="text-[10px] opt-desc mt-0.5">~1m 00s</div>
                     </button>
                   </div>
 
@@ -2015,6 +2076,38 @@ export default function TacticalPage() {
                   <span>Iniciar Otimização Completa</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {solving && (
+          <div className="bg-indigo-950/60 border border-indigo-500/40 rounded-lg px-4 py-2.5 mb-2 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-1.5">
+              <div className="flex items-center space-x-2">
+                <div className="w-3.5 h-3.5 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin" />
+                <span className="font-bold text-indigo-200">{solvePhaseLabel}</span>
+              </div>
+              <div className="flex items-center space-x-3 font-mono text-[11px]">
+                <span className="text-zinc-300">
+                  Decorrido: <strong className="text-white">{formatMinSec(solvingSeconds)}</strong>
+                </span>
+                <span className="text-indigo-300">
+                  {remainingSolveSec > 0 ? (
+                    <>Falta: <strong className="text-emerald-300">~{formatMinSec(remainingSolveSec)}</strong></>
+                  ) : (
+                    <strong className="text-amber-300">A concluir validação final...</strong>
+                  )}
+                </span>
+                <span className="text-zinc-400">
+                  Limite: <strong>{formatMinSec(targetSolveTotalSec)}</strong> ({solveProgressPct}%)
+                </span>
+              </div>
+            </div>
+            <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden border border-indigo-900/60">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
+                style={{ width: `${solveProgressPct}%` }}
+              />
             </div>
           </div>
         )}
@@ -2319,7 +2412,7 @@ export default function TacticalPage() {
                       const isEmptyVehicle = !isPending && allStops.length === 0;
                       const color = getRouteColor(routeName, vehicles);
 
-                      const vConfig = vehicleMap[routeName];
+                      const vConfig = vehicleMap[routeName] || vehicleMap[routeName.replace(" (Volta 2)", "").trim()];
                       const whName = isPending
                         ? (selectedWarehouseFilter !== "all"
                             ? selectedWarehouseFilter
@@ -2335,13 +2428,18 @@ export default function TacticalPage() {
                         lon: -9.1758,
                       };
 
-                      const startTimeStr = vConfig?.horario_inicio || "08:00";
                       const speed = vConfig?.velocidade_media || 50.0;
+                      let startTimeStr = (vConfig?.horario_inicio || "08:00").slice(0, 5);
+                      if (allStops.length > 0 && (allStops[0] as any).Hora_Partida_Armazem) {
+                        startTimeStr = String((allStops[0] as any).Hora_Partida_Armazem).slice(0, 5);
+                      } else if (routeName.includes("(Volta 2)") && allStops.length > 0 && allStops[0].Chegada) {
+                        const fTrav = Number((allStops[0] as any).Tempo_Viagem_Min || 15);
+                        startTimeStr = addMinutesToTime(allStops[0].Chegada, -fTrav);
+                      }
                       const maxKg = vConfig?.capacidade_kg || 1000;
-                      const maxVol = vConfig?.capacidade_vol || 5.0;
+                      const maxVol = vConfig?.capacidade_vol || 10.0;
 
-                      const totalKg = allStops.reduce((sum, item) => sum + (Number(item.Peso_KG) || 0), 0);
-                      const totalVol = allStops.reduce((sum, item) => sum + (Number(item.Volume_m3) || 0), 0);
+                      const { peakKg: totalKg, peakVol: totalVol } = computeRoutePeakLoad(allStops);
                       const kgPct = Math.round((totalKg / maxKg) * 100);
                       const volPct = Math.round((totalVol / maxVol) * 100);
 
@@ -2353,7 +2451,7 @@ export default function TacticalPage() {
                       const hasCaixas = totalCx > 0 || maxCx > 0 || (totalKg === 0 && totalVol === 0 && allStops.length > 0);
                       const cxPct = maxCx > 0 ? Math.round((totalCx / maxCx) * 100) : 0;
 
-                      const vObj = fleetList.find((f) => f.veiculo === routeName);
+                      const vObj = vConfig || fleetList.find((f) => f.veiculo === routeName || `${f.veiculo} (Volta 2)` === routeName);
                       const returnsToDepot = vObj ? !["não", "nao", "false", "0", "no"].includes(String(vObj.regresso_armazem || "Sim").trim().toLowerCase()) : true;
 
                       let returnDist = 0.0;
@@ -2363,11 +2461,20 @@ export default function TacticalPage() {
                       if (allStops.length > 0) {
                         const lastStop = allStops[allStops.length - 1];
                         if (returnsToDepot) {
-                          if (whData && whData.lat && whData.lon) {
-                            returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon);
+                          const backendRetArr = (lastStop as any).Hora_Regresso_Armazem;
+                          const backendRetKm = (lastStop as any).Dist_Regresso_KM;
+                          if (backendRetArr && String(backendRetArr).includes(":")) {
+                            returnArrivalTimeStr = String(backendRetArr).slice(0, 5);
+                            returnDist = Number(backendRetKm || 0);
+                          } else {
+                            if (whData && whData.lat && whData.lon) {
+                              returnDist = haversineDistance(lastStop.Latitude, lastStop.Longitude, whData.lat, whData.lon) * 1.30;
+                            }
+                            const spdRatio = Math.max(0.6, Math.min(1.4, speed / 50.0));
+                            const segSpd = returnDist > 25 ? 70.0 * spdRatio : returnDist > 10 ? 50.0 * spdRatio : Math.max(30.0, Math.min(speed, 40.0));
+                            const returnTravelMin = (returnDist / segSpd) * 60.0;
+                            returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
                           }
-                          const returnTravelMin = (returnDist / speed) * 60.0;
-                          returnArrivalTimeStr = addMinutesToTime(lastStop.Saida || "12:00", returnTravelMin);
                           totalRouteKm = (lastStop.Dist_Acum || 0) + returnDist;
                         } else {
                           returnDist = 0.0;

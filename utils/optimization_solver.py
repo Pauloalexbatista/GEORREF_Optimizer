@@ -263,6 +263,9 @@ class AdvancedRouteOptimizer:
         manager = pywrapcp.RoutingIndexManager(num_nodes_manager, num_vehicles, starts, ends)
         routing = pywrapcp.RoutingModel(manager)
 
+        # Pre-normalizar tipos de operação uma única vez para máxima performance no callback C++
+        norm_ops_p1 = [normalize_op_type(op) for op in operation_types] if operation_types else ["D"] * num_nodes
+
         # 1. Distance & Arc Cost (in meters) com suporte a agrupamento radial por armazém real da viatura e Custo_KM
         arc_cb_cache = {}
         for v in range(num_vehicles):
@@ -295,6 +298,17 @@ class AdvancedRouteOptimizer:
                                 cos_theta = max(-1.0, min(1.0, dot / (norm1 * norm2)))
                                 if cos_theta < 0.65:
                                     dist_km *= (1.0 + (0.65 - cos_theta) * 0.45)
+
+                        # Regra de Levantamentos (P): Preferir levantamentos no fim da rota (carro vazio).
+                        # Apenas permitir P -> D se a entrega D ficar no caminho de regresso ao armazém para evitar andar para trás.
+                        if operation_types and from_node >= num_warehouses and to_node >= num_warehouses:
+                            if norm_ops_p1[from_node] == "P" and norm_ops_p1[to_node] == "D":
+                                d_f_dep = distance_matrix[from_node][depot_node_idx]
+                                d_t_dep = distance_matrix[to_node][depot_node_idx]
+                                if d_t_dep < d_f_dep:
+                                    dist_km += 2.5  # Ligeiro custo: só faz P antes de D se poupar >2.5km no regresso à loja
+                                else:
+                                    dist_km += 18.0  # Penalização forte contra carregar levantamento para longe do armazém
 
                         return int(round(dist_km * 1000 * c_mult))
                     return _cb
@@ -561,8 +575,20 @@ class AdvancedRouteOptimizer:
                 if node < num_warehouses:
                     penalty = 0
                 else:
-                    min_depot_dist = min(distance_matrix[d_idx][node] for d_idx in starts) if starts else distance_matrix[0][node]
-                    dist_priority_factor = 1.0 + ((min_depot_dist / 10.0) ** 1.65)
+                    c_wh_n = str(client_warehouses[node] if client_warehouses and node < len(client_warehouses) else "").strip().lower()
+                    matched_depots = [
+                        starts[v] for v in range(num_vehicles)
+                        if vehicle_warehouses and v < len(vehicle_warehouses) and (
+                            str(vehicle_warehouses[v]).strip().lower() == c_wh_n
+                            or c_wh_n in str(vehicle_warehouses[v]).strip().lower()
+                            or str(vehicle_warehouses[v]).strip().lower() in c_wh_n
+                        )
+                    ] if c_wh_n else []
+                    ref_depots = matched_depots if matched_depots else (starts if starts else [0])
+                    own_depot_dist = min(distance_matrix[d_idx][node] for d_idx in ref_depots)
+                    # Limitar a 120km para evitar que erros de loja no ERP (>200km) forcem viagens inter-regionais impossíveis
+                    eff_dist = min(own_depot_dist, 120.0) if own_depot_dist <= 150.0 else 5.0
+                    dist_priority_factor = 1.0 + ((eff_dist / 4.0) ** 2.0)
                     prio = client_priorities[node] if client_priorities and node < len(client_priorities) else 2
                     prio_multiplier = 2.0 if prio == 1 else (1.2 if prio == 2 else 1.0)
                     penalty = int(BASE_DROP_PENALTY * dist_priority_factor * prio_multiplier)
@@ -617,7 +643,7 @@ class AdvancedRouteOptimizer:
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
-        search_parameters.time_limit.seconds = max(3, int(time_limit_seconds))
+        search_parameters.time_limit.seconds = max(3, min(45, int(time_limit_seconds)))
 
         try:
             solution = routing.SolveWithParameters(search_parameters)
@@ -689,8 +715,30 @@ class AdvancedRouteOptimizer:
         3. Rescues unassigned nodes (incluindo pares casados e sucatas P com curva dinâmica).
         4. Applies fast 2-opt TSP sequence polishing.
         """
+        t_post_start = time.time()
+        MAX_POST_SEC = 5.0
         routes = [list(r) for r in initial_solution.get("routes", [])]
         num_vehicles = len(routes)
+        num_nodes_total = len(distance_matrix)
+        norm_ops = [normalize_op_type(op) for op in operation_types] if operation_types else ["D"] * num_nodes_total
+
+        # Pré-calcular matriz de compatibilidade (nó -> conjunto de viaturas permitidas) uma única vez
+        compat_vehicles_set: Dict[int, set] = {}
+        for n_idx in range(num_warehouses, num_nodes_total):
+            c_r = client_rules[n_idx] if client_rules and n_idx < len(client_rules) else ""
+            c_cp = client_cps[n_idx] if client_cps and n_idx < len(client_cps) else ""
+            c_wh = str(client_warehouses[n_idx] if client_warehouses and n_idx < len(client_warehouses) else "").strip().lower()
+            allowed_v = set()
+            for v_i in range(num_vehicles):
+                v_r = vehicle_rules[v_i] if vehicle_rules and v_i < len(vehicle_rules) else ""
+                v_wh = str(vehicle_warehouses[v_i] if vehicle_warehouses and v_i < len(vehicle_warehouses) else "").strip().lower()
+                v_nm = vehicle_names[v_i] if vehicle_names and v_i < len(vehicle_names) else ""
+                if num_warehouses > 1 and c_wh and v_wh and c_wh not in ["armazém principal", "armazem principal", "n/a", "none", ""]:
+                    if c_wh != v_wh and c_wh not in v_wh and v_wh not in c_wh:
+                        continue
+                if is_vehicle_compatible(v_r, c_r, rules_matrix, delivery_cp=c_cp, vehicle_name=v_nm):
+                    allowed_v.add(v_i)
+            compat_vehicles_set[n_idx] = allowed_v
 
         v2_to_v1 = {v2: (v1, reload_m) for v1, v2, reload_m in (multi_trip_pairs or [])}
         v1_to_v2 = {v1: (v2, reload_m) for v1, v2, reload_m in (multi_trip_pairs or [])}
@@ -762,24 +810,31 @@ class AdvancedRouteOptimizer:
                         if stop_nodes.index(p_node) > stop_nodes.index(d_node):
                             return False, 0.0
 
-            # 2. Avaliação de Carga Dinâmica Física (D, P, From, To)
-            if operation_types or pickup_delivery_pairs:
-                stops_load_data = []
-                for n in stop_nodes:
-                    op_n = operation_types[n] if (operation_types and n < len(operation_types)) else "D"
-                    w_kg = demands[n] if n < len(demands) else 50.0
-                    w_vol = volume_demands[n] if volume_demands and n < len(volume_demands) else 0.1
-                    stops_load_data.append({"Tipo_Operacao": op_n, "Peso_KG": w_kg, "Volume_m3": w_vol})
-                load_res = calculate_dynamic_route_loads(stops_load_data, vehicle_cap_kg=v_cap, vehicle_cap_vol=v_vol_cap)
-                if load_res["has_overload"]:
+            # 2. Avaliação Ultra-Rápida de Compatibilidade e Carga Dinâmica Física (D, P, From, To)
+            init_kg = 0.0
+            init_vol = 0.0
+            for n in stop_nodes:
+                if v_idx not in compat_vehicles_set.get(n, set()):
                     return False, 0.0
-            else:
-                tot_kg = sum(demands[n] for n in stop_nodes)
-                if tot_kg > v_cap:
-                    return False, 0.0
-                if volume_demands:
-                    tot_vol = sum(volume_demands[n] for n in stop_nodes)
-                    if tot_vol > v_vol_cap:
+                if norm_ops[n] == "D":
+                    init_kg += demands[n] if n < len(demands) else 0.0
+                    if volume_demands and n < len(volume_demands):
+                        init_vol += volume_demands[n]
+            if init_kg > v_cap or init_vol > v_vol_cap:
+                return False, 0.0
+            cur_kg = init_kg
+            cur_vol = init_vol
+            for n in stop_nodes:
+                op_n = norm_ops[n]
+                w_kg = demands[n] if n < len(demands) else 0.0
+                w_vol = volume_demands[n] if (volume_demands and n < len(volume_demands)) else 0.0
+                if op_n == "D" or op_n == "To":
+                    cur_kg = max(0.0, cur_kg - w_kg)
+                    cur_vol = max(0.0, cur_vol - w_vol)
+                elif op_n == "P" or op_n == "From":
+                    cur_kg += w_kg
+                    cur_vol += w_vol
+                    if cur_kg > v_cap or cur_vol > v_vol_cap:
                         return False, 0.0
 
             p_node = depot_indices[v_idx]
@@ -796,22 +851,13 @@ class AdvancedRouteOptimizer:
             tol_min = 0  # Zero tolerância: nenhuma paragem pode chegar após fecho da janela
 
             for n in stop_nodes:
-                c_r = client_rules[n] if client_rules and n < len(client_rules) else ""
-                c_cp = client_cps[n] if client_cps and n < len(client_cps) else ""
-                c_wh = str(client_warehouses[n] if client_warehouses and n < len(client_warehouses) else "").strip().lower()
-                if num_warehouses > 1 and c_wh and v_wh and c_wh not in ["armazém principal", "armazem principal", "n/a", "none", ""]:
-                    if c_wh != v_wh and c_wh not in v_wh and v_wh not in c_wh:
-                        return False, 0.0
-                if not is_vehicle_compatible(v_r, c_r, rules_matrix, delivery_cp=c_cp, vehicle_name=v_name):
-                    return False, 0.0
-
                 d = distance_matrix[p_node][n] * ROAD_FACTOR
                 tot_dist += d
                 arr = cur_t + travel_time_minutes(d, base_speed=v_spd)
 
                 if respect_time_windows and client_time_windows and n < len(client_time_windows):
                     w_s, w_e = client_time_windows[n]
-                    if arr > w_e:
+                    if int(round(arr)) > w_e or arr > w_e:
                         return False, 0.0
                     if arr < w_s:
                         # Permitir pausa de almoço ou espera moderada (máximo 60 min)
@@ -823,22 +869,22 @@ class AdvancedRouteOptimizer:
                 cur_t = arr + serv
                 p_node = n
 
-            # Return to depot check
+            # Return to depot check (TOLERÂNCIA ZERO a horas extra após fim de turno)
             v_returns = vehicle_returns_to_depot[v_idx] if (vehicle_returns_to_depot and v_idx < len(vehicle_returns_to_depot)) else True
             if v_returns:
                 d_ret = distance_matrix[p_node][depot_indices[v_idx]] * ROAD_FACTOR
                 tot_dist += d_ret
                 ret_arr = cur_t + travel_time_minutes(d_ret, base_speed=v_spd)
-                if ret_arr > (v_end + 1):
+                if int(round(ret_arr)) > v_end or ret_arr > v_end:
                     return False, 0.0
                 finish_min = ret_arr
             else:
-                if cur_t > (v_end + 1):
+                if int(round(cur_t)) > v_end or cur_t > v_end:
                     return False, 0.0
                 finish_min = cur_t
 
             if max_route_duration_min is not None and max_route_duration_min > 0:
-                if (finish_min - effective_dep_t) > (max_route_duration_min + 1.0):
+                if (finish_min - effective_dep_t) > max_route_duration_min:
                     return False, 0.0
 
             # Se esta viatura for uma 1ª Volta (v1) e a respetiva 2ª Volta (v2) tiver entregas,
@@ -851,7 +897,7 @@ class AdvancedRouteOptimizer:
                     v2_eff_start = max(v2_base_start, finish_min + reload_m)
                     v2_finish = compute_route_finish_minutes(v2_idx, v2_stops, override_start=v2_eff_start)
                     v2_end_limit = float(vehicle_end_times[v2_idx] if vehicle_end_times and v2_idx < len(vehicle_end_times) else 1080)
-                    if v2_finish > (v2_end_limit + 1):
+                    if int(round(v2_finish)) > v2_end_limit or v2_finish > v2_end_limit:
                         return False, 0.0
                     # Verificar janelas da v2 com o novo arranque
                     if respect_time_windows and client_time_windows:
@@ -868,7 +914,7 @@ class AdvancedRouteOptimizer:
                             arr2 = t_sim + travel_time_minutes(d2, base_speed=v2_spd)
                             if n2 < len(client_time_windows):
                                 ws2, we2 = client_time_windows[n2]
-                                if arr2 > (we2 + tol_min):
+                                if int(round(arr2)) > we2 or arr2 > we2:
                                     return False, 0.0
                                 if arr2 < ws2:
                                     if (ws2 - arr2) > 60:
@@ -878,7 +924,27 @@ class AdvancedRouteOptimizer:
                             t_sim = arr2 + s2
                             p_sim = n2
 
-            return True, tot_dist
+            # Preferência de Levantamentos (P) no final da rota (quando o carro está mais vazio):
+            # Se houver mais de 2 entregas D após um P, ou se as entregas D seguintes não forem a caminho do armazém,
+            # adiciona penalização suave para que o 2-Opt / Or-Opt coloque os levantamentos P no fim da rota.
+            pickup_seq_penalty = 0.0
+            if operation_types:
+                dep_idx = depot_indices[v_idx] if v_idx < len(depot_indices) else 0
+                for idx_s, n_s in enumerate(stop_nodes):
+                    if norm_ops[n_s] == "P":
+                        d_after = [
+                            n_a for n_a in stop_nodes[idx_s + 1:]
+                            if norm_ops[n_a] == "D"
+                        ]
+                        if d_after:
+                            d_p_dep = distance_matrix[n_s][dep_idx]
+                            all_on_return = all(distance_matrix[n_a][dep_idx] <= d_p_dep + 1.5 for n_a in d_after)
+                            if len(d_after) <= 2 and all_on_return:
+                                pickup_seq_penalty += 1.5 * len(d_after)
+                            else:
+                                pickup_seq_penalty += 18.0 * len(d_after)
+
+            return True, tot_dist + pickup_seq_penalty
 
         def optimize_stops_2opt(v_idx: int, stops: List[int], current_routes_state: Optional[Dict[int, List[int]]] = None) -> List[int]:
             if len(stops) < 2:
@@ -930,11 +996,17 @@ class AdvancedRouteOptimizer:
                         break
             return best_stops
 
-        def _try_insert_unit(target_v: int, curr_stops: List[int], unit: List[int], routes_state: Dict[int, List[int]]) -> Tuple[bool, float, Optional[List[int]]]:
+        def _try_insert_unit(target_v: int, curr_stops: List[int], unit: List[int], routes_state: Dict[int, List[int]], polish: bool = False) -> Tuple[bool, float, Optional[List[int]]]:
             """
             Tenta inserir uma unidade atómica (1 paragem simples [n] ou 1 par casado [p_node, d_node])
             na melhor posição de curr_stops, aplicando 2-opt apenas ao vencedor para alta performance.
             """
+            for u_n in unit:
+                if target_v not in compat_vehicles_set.get(u_n, set()):
+                    return False, float("inf"), None
+            v_max_s = vehicle_max_stops[target_v] if vehicle_max_stops and target_v < len(vehicle_max_stops) else 30
+            if len(curr_stops) + len(unit) > v_max_s:
+                return False, float("inf"), None
             ok_base, base_dist = evaluate_feasibility(target_v, curr_stops, routes_state)
             if not ok_base:
                 return False, float("inf"), None
@@ -967,17 +1039,18 @@ class AdvancedRouteOptimizer:
                                 best_seq = cand_stops
 
             if best_seq is not None:
-                polished = optimize_stops_2opt(target_v, best_seq, routes_state)
-                ok_pol, pol_dist = evaluate_feasibility(target_v, polished, routes_state)
-                if ok_pol:
-                    return True, pol_dist - base_dist, polished
+                if polish:
+                    polished = optimize_stops_2opt(target_v, best_seq, routes_state)
+                    ok_pol, pol_dist = evaluate_feasibility(target_v, polished, routes_state)
+                    if ok_pol:
+                        return True, pol_dist - base_dist, polished
                 return True, best_added, best_seq
 
             return False, float("inf"), None
 
         # Compression & Fusion Loop (Apenas ativo quando NÃO se pede balanceamento de frota)
         changed = not balance_load
-        while changed:
+        while changed and (time.time() - t_post_start) < (MAX_POST_SEC * 0.45):
             changed = False
             active_indices = [v for v, r in enumerate(routes) if len(r) > 0]
             sorted_candidates = sorted(active_indices, key=lambda v: len(routes[v]))
@@ -1085,12 +1158,29 @@ class AdvancedRouteOptimizer:
         # Phase 2.5: Active Greedy Absorption for Unassigned Clients (Suporta Pares Casados e Curva Dinâmica)
         assigned_nodes = {n for r in routes for n in r}
         num_nodes = len(distance_matrix)
-        unassigned_raw = [c for c in range(num_warehouses, num_nodes) if c not in assigned_nodes]
+        # Ignorar imediatamente nós sem nenhuma viatura compatível na frota ativa (evita testar centenas de entregas de lojas sem frota)
+        unassigned_raw = [
+            c for c in range(num_warehouses, num_nodes)
+            if c not in assigned_nodes and len(compat_vehicles_set.get(c, set())) > 0
+        ]
 
         if unassigned_raw:
-            d_zero = depot_indices[0] if depot_indices else 0
-            # Ordenar por maior distância ao armazém primeiro (Regra de Ouro: salvar clientes mais distantes primeiro!)
-            unassigned_raw.sort(key=lambda c: distance_matrix[d_zero][c], reverse=True)
+            def _own_depot_dist(c_node: int) -> float:
+                c_wh_n = str(client_warehouses[c_node] if client_warehouses and c_node < len(client_warehouses) else "").strip().lower()
+                m_deps = [
+                    depot_indices[v] for v in range(num_vehicles)
+                    if vehicle_warehouses and v < len(vehicle_warehouses) and (
+                        str(vehicle_warehouses[v]).strip().lower() == c_wh_n
+                        or c_wh_n in str(vehicle_warehouses[v]).strip().lower()
+                        or str(vehicle_warehouses[v]).strip().lower() in c_wh_n
+                    )
+                ] if c_wh_n else []
+                r_deps = m_deps if m_deps else (depot_indices if depot_indices else [0])
+                d_val = min(distance_matrix[d_i][c_node] for d_i in r_deps)
+                return d_val if d_val <= 150.0 else 0.0
+
+            # Ordenar por maior distância ao respetivo armazém primeiro (Regra de Ouro: salvar clientes mais distantes primeiro!)
+            unassigned_raw.sort(key=_own_depot_dist, reverse=True)
 
             unassigned_units: List[List[int]] = []
             seen_unassigned = set()
@@ -1113,19 +1203,27 @@ class AdvancedRouteOptimizer:
                     unassigned_units.append([c])
                     seen_unassigned.add(c)
 
+            # Passo 2.5A: Inserção Direta Ultra-Rápida de TODAS as entregas compatíveis (da mais distante para a mais próxima)
+            still_unassigned: List[List[int]] = []
             for unit in unassigned_units:
+                if (time.time() - t_post_start) > (MAX_POST_SEC * 0.65):
+                    still_unassigned.append(unit)
+                    continue
+                compat_for_unit = compat_vehicles_set.get(unit[0], set())
+                if not compat_for_unit:
+                    continue
                 best_v = None
                 best_cand_seq = None
                 best_extra_km = float("inf")
                 routes_state = {v: list(routes[v]) for v in range(num_vehicles)}
 
-                for v in range(num_vehicles):
+                for v in compat_for_unit:
                     curr_stops = routes[v]
                     v_max = vehicle_max_stops[v] if vehicle_max_stops and v < len(vehicle_max_stops) else 30
                     if len(curr_stops) + len(unit) > v_max:
                         continue
 
-                    ok_ins, added_km, cand_seq = _try_insert_unit(v, curr_stops, unit, routes_state)
+                    ok_ins, added_km, cand_seq = _try_insert_unit(v, curr_stops, unit, routes_state, polish=False)
                     if ok_ins and added_km < best_extra_km:
                         best_extra_km = added_km
                         best_v = v
@@ -1135,54 +1233,51 @@ class AdvancedRouteOptimizer:
                     routes[best_v] = best_cand_seq
                     for n_u in unit:
                         assigned_nodes.add(n_u)
-                elif len(unit) == 1 and num_vehicles > 1:
-                    # 1-Step Ejection-Chain Rescue:
-                    # Tenta mover uma paragem simples s_move da rota v_a para outra rota v_b
-                    # de modo a abrir espaço/janela em v_a para resgatar esta paragem prioritária!
-                    rescued_by_chain = False
-                    for v_a in range(num_vehicles):
-                        if not routes[v_a]:
+                else:
+                    still_unassigned.append(unit)
+
+            # Passo 2.5B: Regra de Ouro (Troca Distante-por-Perto) para entregas distantes que ficaram de fora
+            for unit in still_unassigned:
+                if len(unit) != 1 or (time.time() - t_post_start) > (MAX_POST_SEC * 0.85):
+                    break
+                u_node = unit[0]
+                u_dist = _own_depot_dist(u_node)
+                if u_dist <= 10.0:
+                    continue
+                compat_for_unit = compat_vehicles_set.get(u_node, set())
+                best_swap_va = None
+                best_swap_seq = None
+                best_swap_ejected = None
+                min_close_dist = u_dist - 6.0  # Só substitui se for pelo menos 6km mais perto do armazém
+                for v_a in compat_for_unit:
+                    if not routes[v_a] or (time.time() - t_post_start) > (MAX_POST_SEC * 0.85):
+                        continue
+                    dep_a = depot_indices[v_a] if v_a < len(depot_indices) else 0
+                    for idx_m, s_close in enumerate(routes[v_a]):
+                        if s_close in pair_from_to or s_close in pair_to_from:
                             continue
-                        for idx_m, s_move in enumerate(routes[v_a]):
-                            if s_move in pair_from_to or s_move in pair_to_from:
-                                continue
+                        d_close = distance_matrix[dep_a][s_close]
+                        if d_close < min_close_dist:
                             rem_a = routes[v_a][:idx_m] + routes[v_a][idx_m + 1:]
-                            state_chain = {v: list(routes[v]) for v in range(num_vehicles)}
-                            state_chain[v_a] = rem_a
-                            ok_u_in_a, _, seq_a_with_u = _try_insert_unit(v_a, rem_a, unit, state_chain)
-                            if not ok_u_in_a or seq_a_with_u is None:
-                                continue
-                            state_chain[v_a] = seq_a_with_u
-                            best_vb = None
-                            best_seq_b = None
-                            best_vb_added = float("inf")
-                            for v_b in range(num_vehicles):
-                                if v_b == v_a:
-                                    continue
-                                v_max_b = vehicle_max_stops[v_b] if vehicle_max_stops and v_b < len(vehicle_max_stops) else 30
-                                if len(routes[v_b]) + 1 > v_max_b:
-                                    continue
-                                ok_m_in_b, added_b, seq_b_with_m = _try_insert_unit(v_b, routes[v_b], [s_move], state_chain)
-                                if ok_m_in_b and seq_b_with_m is not None and added_b < best_vb_added:
-                                    best_vb_added = added_b
-                                    best_vb = v_b
-                                    best_seq_b = seq_b_with_m
-                            if best_vb is not None and best_seq_b is not None:
-                                routes[v_a] = seq_a_with_u
-                                routes[best_vb] = best_seq_b
-                                for n_u in unit:
-                                    assigned_nodes.add(n_u)
-                                rescued_by_chain = True
-                                break
-                        if rescued_by_chain:
-                            break
+                            state_sw = {v: list(routes[v]) for v in range(num_vehicles)}
+                            state_sw[v_a] = rem_a
+                            ok_sw, _, seq_sw = _try_insert_unit(v_a, rem_a, [u_node], state_sw, polish=False)
+                            if ok_sw and seq_sw is not None:
+                                min_close_dist = d_close
+                                best_swap_va = v_a
+                                best_swap_seq = seq_sw
+                                best_swap_ejected = s_close
+                if best_swap_va is not None and best_swap_seq is not None and best_swap_ejected is not None:
+                    routes[best_swap_va] = best_swap_seq
+                    assigned_nodes.discard(best_swap_ejected)
+                    assigned_nodes.add(u_node)
 
         # Phase 3.5: Inter-Route Local Search (Relocate 1-0 & Swap 1-1 entre rotas ativas para eliminar cruzamentos e reduzir KM)
         active_vs = [v for v in range(num_vehicles) if len(routes[v]) > 0]
         if len(active_vs) >= 2:
             ls_improved = True
             ls_iter = 0
-            while ls_improved and ls_iter < 10:
+            while ls_improved and ls_iter < 10 and (time.time() - t_post_start) < MAX_POST_SEC:
                 ls_improved = False
                 ls_iter += 1
                 active_vs = [v for v in range(num_vehicles) if len(routes[v]) > 0]

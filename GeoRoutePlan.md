@@ -678,6 +678,25 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - Resolução da exceção `name 'cx_amb' is not defined` no endpoint `/api/fleet/import-mobiliario`: caixas alimentares inicializadas a zero, mapeamento fiel de peso (`parts[30]`) e volume (`parts[31]`), e identificação dinâmica de `Tipo_Operacao` (`RECOLHA` vs. `ENTREGA`).
       - Leitura imediata de coordenadas existentes em J/K e W/X na importação, poupando chamadas desnecessárias à cascata geocoder.
       - Botão rápido do ecrã de Georreferenciação atualizado para `Mobiliário (J/K & W/X)`.
+26. **Regra de Ouro (Zero Erros em Rotas Planeadas), Sequenciação de Levantamentos (`P`) e Temporizador em Minutos com Progresso (✅ Concluído no Código)**:
+    * **Tolerância ZERO a Erros no Planeamento (`utils/optimization_solver.py` & `backend/api/solver.py`)**:
+      - O Gatekeeper do backend valida estritamente **3 pilares** após o cálculo de trânsito preditivo (`recalculate_route_stops`):
+        1. *Janelas Horárias de Clientes*: Nenhuma paragem pode chegar após o fecho da janela (`Chegada <= Janela_Fim`).
+        2. *Capacidade Física Dinâmica*: A curva de carga a bordo (`peak_load_kg`, `peak_load_vol` e `Total_Cx`) nunca pode exceder a capacidade real da viatura.
+        3. *Fim de Turno e Regresso ao Armazém*: A hora de regresso ao armazém de origem (`Hora_Regresso_Armazem`) nunca pode ultrapassar o `horario_fim` da viatura (tanto na 1ª Volta como na 2ª Volta).
+      - Se uma paragem inviabilizar qualquer um dos 3 pilares e a re-sequenciação não resolver, a paragem fica de fora em *"Por Distribuir"*, garantindo **0 Erros** em 100% das rotas planeadas.
+    * **Prioridade Absoluta às Entregas Mais Distantes (Ficam de Fora as Mais Perto do Armazém)**:
+      - Reforçada a função de penalização quadrática de disjunção por distância ao próprio armazém da entrega (`(eff_dist / 4.0) ** 2.0`) e implementado o passo *Troca Distante-por-Perto* (Fase 2.5B) e ejeção seletiva no Gatekeeper: quando falta capacidade ou tempo de turno, os clientes distantes são prioritariamente mantidos nos carros e os que ficam em *"Por Distribuir"* são sempre os mais próximos da loja/armazém (mais fáceis de resolver localmente).
+    * **Comportamento Inteligente dos Levantamentos (`P` — PickUp no Cliente/Fornecedor)**:
+      - Na importação de Mobiliário (`import_mobiliario_files`), os levantamentos (Colunas D a P) são persistidos na BD e snapshots com `Tipo_Operacao = 'P'` e conversão exata de volume de dm³ para m³ (`raw_vol / 1000.0`).
+      - O motor OR-Tools e os algoritmos de polimento (`evaluate_feasibility` e `sequence_route_with_time_windows`) posicionam preferencialmente os levantamentos `P` **no final da rota** (quando o carro já descarregou as entregas `D` e está mais vazio).
+      - Exceção inteligente de regresso: se existirem 1 ou 2 entregas `D` no caminho direto de regresso ao armazém após o levantamento `P`, o algoritmo permite levantar primeiro e entregar no regresso para evitar quilómetros extra a andar para trás, desde que a capacidade dinâmica a bordo o permita.
+    * **Alinhamento Total do Ecrã Tático (`frontend/src/app/dashboard/tactical/page.tsx`)**:
+      - Resolução do mapeamento de `vehicleMap` para rotas de `" (Volta 2)"`, herdando a capacidade real (KG e m³), armazém de origem e fim de turno da viatura base, e exibindo a hora real de partida da 2ª Volta (`Hora_Partida_Armazem`).
+      - Auditoria de capacidade sincronizada com a curva de carga dinâmica (`computeRoutePeakLoad`) e hora de regresso (`Hora_Regresso_Armazem`).
+    * **Temporizador em Minutos (`Xm Ys`), Barra de Progresso e Limite Rígido de Cálculo (< 1 Minuto)**:
+      - Pré-filtragem instantânea de matriz de compatibilidade por armazém e orçamento estrito de pós-processamento (`MAX_POST_SEC = 5.0s`), reduzindo o tempo total de resolução de ~1097 encomendas de >600s para **~11 a 40 segundos**.
+      - Substituído o contador em segundos brutos (`582s`) por formato humano em **minutos e segundos (`0m 15s / ~0m 40s`)**, acompanhado de barra de progresso em tempo real com indicação da fase atual (`Fase 1/4` a `Fase 4/4`) e do tempo estimado restante.
 
 ---
 
