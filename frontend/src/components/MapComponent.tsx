@@ -1519,6 +1519,129 @@ export default function MapComponent({
     return result;
   }, [warehouseVehicles, clients, fleet, warehouses]);
 
+  // Lista de Armazéns enriquecida com estatísticas de frota e paragens (Substitui as Zonas Territoriais)
+  const warehouseListWithStats = useMemo(() => {
+    const whMap = new Map<string, {
+      name: string;
+      vehicles: string[];
+      stopsCount: number;
+      pendingCount: number;
+      pendingKg: number;
+      pendingVol: number;
+      assignedKg: number;
+      assignedVol: number;
+      totalKg: number;
+      lat: number;
+      lon: number;
+    }>();
+
+    // 1. Iniciar com os armazéns registados
+    warehouses.forEach(w => {
+      if (w.name && w.name.trim()) {
+        const nm = w.name.trim();
+        whMap.set(nm, {
+          name: nm,
+          vehicles: [],
+          stopsCount: 0,
+          pendingCount: 0,
+          pendingKg: 0,
+          pendingVol: 0,
+          assignedKg: 0,
+          assignedVol: 0,
+          totalKg: 0,
+          lat: w.lat || 38.7,
+          lon: w.lon || -9.1,
+        });
+      }
+    });
+
+    // 2. Descobrir armazéns na frota
+    (fleet || []).forEach(f => {
+      const wh = (f.armazem || f.Armazem || "").trim();
+      if (wh && !whMap.has(wh)) {
+        whMap.set(wh, {
+          name: wh,
+          vehicles: [],
+          stopsCount: 0,
+          pendingCount: 0,
+          pendingKg: 0,
+          pendingVol: 0,
+          assignedKg: 0,
+          assignedVol: 0,
+          totalKg: 0,
+          lat: 38.7,
+          lon: -9.1,
+        });
+      }
+    });
+
+    // 3. Descobrir armazéns nos clientes
+    clients.forEach(c => {
+      const wh = (c.Armazem || "").trim();
+      if (wh && wh !== "N/A" && !whMap.has(wh)) {
+        whMap.set(wh, {
+          name: wh,
+          vehicles: [],
+          stopsCount: 0,
+          pendingCount: 0,
+          pendingKg: 0,
+          pendingVol: 0,
+          assignedKg: 0,
+          assignedVol: 0,
+          totalKg: 0,
+          lat: 38.7,
+          lon: -9.1,
+        });
+      }
+    });
+
+    // Associar viaturas a cada armazém
+    vehicles.forEach(v => {
+      const fItem = (fleet || []).find(f => routesMatch(f.matricula || f.Matricula || f.veiculo || f.Veiculo || f.nome, v));
+      let vWh = (fItem?.armazem || fItem?.Armazem || "").trim();
+      if (!vWh) {
+        const cMatch = clients.find(c => routesMatch(c.Rota, v) && c.Armazem);
+        if (cMatch && cMatch.Armazem) vWh = cMatch.Armazem.trim();
+      }
+      if (vWh) {
+        let entry = whMap.get(vWh);
+        if (!entry) {
+          entry = { name: vWh, vehicles: [], stopsCount: 0, pendingCount: 0, pendingKg: 0, pendingVol: 0, assignedKg: 0, assignedVol: 0, totalKg: 0, lat: 38.7, lon: -9.1 };
+          whMap.set(vWh, entry);
+        }
+        if (!entry.vehicles.some(ev => routesMatch(ev, v))) {
+          entry.vehicles.push(v);
+        }
+      }
+    });
+
+    // Associar clientes e paragens a cada armazém
+    clients.forEach(c => {
+      const cWh = (c.Armazem || "").trim();
+      if (cWh) {
+        const entry = whMap.get(cWh);
+        if (entry) {
+          const isPend = isPendingRoute(c.Rota);
+          const pkg = Number(c.Peso_KG) || 0;
+          const pvol = Number(c.Volume_M3) || 0;
+          if (isPend) {
+            entry.pendingCount++;
+            entry.pendingKg += pkg;
+            entry.pendingVol += pvol;
+          } else {
+            entry.stopsCount++;
+            entry.assignedKg += pkg;
+            entry.assignedVol += pvol;
+          }
+          entry.totalKg += pkg;
+        }
+      }
+    });
+
+    return Array.from(whMap.values()).sort((a, b) => (b.stopsCount + b.pendingCount) - (a.stopsCount + a.pendingCount));
+  }, [warehouses, fleet, clients, vehicles]);
+
+
   // Filtered and Sorted vehicles list based on active warehouse, status filter & selected sort column
   const filteredVehiclesList = useMemo(() => {
     let list = [...warehouseVehicles];
@@ -1963,64 +2086,52 @@ export default function MapComponent({
 
             {/* Quick Actions & Special Filters */}
             <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-900/50 space-y-1.5">
-              {/* Seletor de Foco por Zona Territorial (Dividir para Conquistar) */}
-              {territorialZones.length > 0 && (
+              {/* Seletor de Foco por Armazém (Substitui as antigas Zonas) */}
+              {warehouseListWithStats.length > 0 && (
                 <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-1">
                   <div className="flex items-center justify-between text-[10px]">
                     <span className="font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center space-x-1">
-                      <span>🗺️</span>
-                      <span>Foco por Território / Zona</span>
+                      <span>🏭</span>
+                      <span>Foco por Armazém</span>
                     </span>
-                    {selectedZoneId !== "all" && (
+                    {selectedWarehouse !== "all" && (
                       <button
-                        onClick={() => handleSelectZone("all")}
+                        onClick={() => handleWarehouseChange("all")}
                         className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
-                        title="Ver todas as zonas"
+                        title="Ver todos os armazéns"
                       >
-                        ✕ Limpar Foco
+                        ✕ Ver Todos
                       </button>
                     )}
                   </div>
 
                   <div className="flex items-center space-x-1.5">
                     <select
-                      value={selectedZoneId}
-                      onChange={(e) => handleSelectZone(e.target.value)}
+                      value={selectedWarehouse}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        handleWarehouseChange(val);
+
+                      }}
                       className="flex-1 bg-zinc-50 dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-800 dark:text-zinc-100 font-bold outline-none cursor-pointer"
                     >
-                      <option value="all">🌐 Todas as Zonas ({activeVehiclesCount} viaturas)</option>
-                      {territorialZones.map((z) => (
-                        <option key={z.id} value={z.id}>
-                          {validatedZones[z.id] ? "✅ " : "📍 "}
-                          {z.name} ({z.vehicles.length} vts · {z.stopsCount}p · {z.totalKg.toLocaleString()}kg)
+                      <option value="all">🏢 Todos os Armazéns ({totalVehiclesCount} viaturas · {clients.length}p)</option>
+                      {warehouseListWithStats.map((w) => (
+                        <option key={w.name} value={w.name}>
+                          📍 {w.name} ({w.vehicles.length} vts · {w.stopsCount}p · {w.totalKg.toLocaleString()}kg{w.pendingCount > 0 ? ` · ${w.pendingCount} pend.` : ""})
                         </option>
                       ))}
                     </select>
 
-                    {selectedZoneId !== "all" && (
-                      <button
-                        type="button"
-                        onClick={() => toggleValidateZone(selectedZoneId)}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer shrink-0 ${
-                          validatedZones[selectedZoneId]
-                            ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
-                            : "bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700"
-                        }`}
-                        title={validatedZones[selectedZoneId] ? "Zona Fechada e Validada" : "Marcar zona como afinada e validada"}
-                      >
-                        {validatedZones[selectedZoneId] ? "Validada ✅" : "Validar ✅"}
-                      </button>
-                    )}
-
                     {onOpenBigPicture && (
                       <button
                         type="button"
-                        onClick={() => onOpenBigPicture(selectedZoneId !== "all" ? selectedZoneId : undefined)}
+                        onClick={() => onOpenBigPicture(selectedWarehouse !== "all" ? selectedWarehouse : undefined)}
                         className="px-2 py-1 rounded-lg text-[10px] font-bold border border-indigo-500/40 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer flex items-center space-x-1 shrink-0"
-                        title="Ver diagnóstico executivo Big Picture para esta zona ou geral"
+                        title="Ver diagnóstico executivo Big Picture para este armazém ou geral"
                       >
                         <span>📊</span>
-                        <span>Big Picture {selectedZoneId !== "all" ? "da Zona" : "Geral"}</span>
+                        <span>Big Picture {selectedWarehouse !== "all" ? "Armazém" : "Geral"}</span>
                       </button>
                     )}
                   </div>
@@ -2106,52 +2217,123 @@ export default function MapComponent({
             </div>
 
             {/* Compact Table Header (Clickable for Sorting) */}
-            <div className="px-2 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-12 gap-1 items-center text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider select-none">
-              <div
-                onClick={() => handleSortRoutes("name")}
-                className="col-span-4 flex items-center space-x-1 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                title="Ordenar por nome da viatura"
-              >
-                <span>Viatura</span>
-                {routeSortField === "name" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
-              </div>
-              <div
-                onClick={() => handleSortRoutes("stops")}
-                className="col-span-2 text-center cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                title="Ordenar por número de paragens"
-              >
-                <span>Par.</span>
-                {routeSortField === "stops" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
-              </div>
-              <div
-                onClick={() => handleSortRoutes("weight")}
-                className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                title="Ordenar por peso em kg"
-              >
-                <span>Kg</span>
-                {routeSortField === "weight" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
-              </div>
-              <div
-                onClick={() => handleSortRoutes("vol")}
-                className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                title="Ordenar por volume em m³"
-              >
-                <span>M³</span>
-                {routeSortField === "vol" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
-              </div>
-              <div
-                onClick={() => handleSortRoutes("km")}
-                className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                title="Ordenar por km estimados / horário de fim"
-              >
-                <span>KM/Fim</span>
-                {routeSortField === "km" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
-              </div>
-            </div>
+            {(() => {
+              const isViewingPendingExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], "Por Distribuir");
+              return (
+                <>
+                  <div className="px-2 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-12 gap-1 items-center text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider select-none">
+                    {isViewingPendingExclusive ? (
+                      <>
+                        <div className="col-span-5 flex items-center space-x-1">
+                          <span>🏭 Armazém</span>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <span>Pend.</span>
+                        </div>
+                        <div className="col-span-2 text-right">
+                          <span>Kg</span>
+                        </div>
+                        <div className="col-span-3 text-right">
+                          <span>Volume</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          onClick={() => handleSortRoutes("name")}
+                          className="col-span-4 flex items-center space-x-1 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                          title="Ordenar por nome da viatura"
+                        >
+                          <span>Viatura</span>
+                          {routeSortField === "name" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+                        </div>
+                        <div
+                          onClick={() => handleSortRoutes("stops")}
+                          className="col-span-2 text-center cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                          title="Ordenar por número de paragens"
+                        >
+                          <span>Par.</span>
+                          {routeSortField === "stops" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+                        </div>
+                        <div
+                          onClick={() => handleSortRoutes("weight")}
+                          className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                          title="Ordenar por peso em kg"
+                        >
+                          <span>Kg</span>
+                          {routeSortField === "weight" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+                        </div>
+                        <div
+                          onClick={() => handleSortRoutes("vol")}
+                          className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                          title="Ordenar por volume em m³"
+                        >
+                          <span>M³</span>
+                          {routeSortField === "vol" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+                        </div>
+                        <div
+                          onClick={() => handleSortRoutes("km")}
+                          className="col-span-2 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                          title="Ordenar por km estimados / horário de fim"
+                        >
+                          <span>KM/Fim</span>
+                          {routeSortField === "km" && <span className="text-indigo-600 dark:text-indigo-400">{routeSortAsc ? "▲" : "▼"}</span>}
+                        </div>
+                      </>
+                    )}
+                  </div>
 
-            {/* Compact Table Body - Scrollable */}
-            <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-900/60 p-1 space-y-0.5">
-              {filteredVehiclesList.map((v) => {
+                  {/* Compact Table Body - Scrollable */}
+                  <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-900/60 p-1 space-y-0.5">
+                    {isViewingPendingExclusive ? (
+                      /* MOSTRAR ARMAZÉNS DENTRO DA ROTA POR DISTRIBUIR */
+                      warehouseListWithStats.filter(w => w.pendingCount > 0).length === 0 ? (
+                        <div className="p-4 text-center text-xs text-zinc-500 font-medium">
+                          Nenhuma paragem pendente por distribuir!
+                        </div>
+                      ) : (
+                        warehouseListWithStats.filter(w => w.pendingCount > 0).map((w) => {
+                          const isWhActive = selectedWarehouse === w.name;
+                          return (
+                            <div
+                              key={w.name}
+                              onClick={() => {
+                                const nextWh = isWhActive ? "all" : w.name;
+                                handleWarehouseChange(nextWh);
+
+                              }}
+                              className={`w-full px-2 py-1.5 rounded-xl text-xs transition-colors duration-150 grid grid-cols-12 gap-1 items-center cursor-pointer border ${
+                                isWhActive
+                                  ? "bg-amber-600 text-white border-amber-500 shadow-md ring-1 ring-amber-400/80"
+                                  : "bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:border-amber-400/60 shadow-xs"
+                              }`}
+                              title={`Clique para focar pendentes do armazém ${w.name}`}
+                            >
+                              <div className="col-span-5 flex items-center space-x-1.5 min-w-0 pr-1">
+                                <span className="text-xs">🏭</span>
+                                <span className={`truncate font-bold text-[11px] ${isWhActive ? "text-white" : ""}`}>{w.name}</span>
+                              </div>
+                              <div className="col-span-2 text-center">
+                                <span className={`inline-block px-1.5 py-0.5 rounded font-mono text-[10px] font-black border ${
+                                  isWhActive
+                                    ? "bg-white text-amber-950 border-white shadow-xs"
+                                    : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                                }`}>
+                                  {w.pendingCount}p
+                                </span>
+                              </div>
+                              <div className="col-span-2 text-right font-mono text-[10px]">
+                                {w.pendingKg > 0 ? `${(w.pendingKg / 1000).toFixed(1)}t` : "0"}
+                              </div>
+                              <div className="col-span-3 text-right font-mono text-[10px]">
+                                {w.pendingVol > 0 ? `${w.pendingVol.toFixed(1)}m³` : "0"}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )
+                    ) : (
+                      filteredVehiclesList.map((v) => {
                 const routeColor = getRouteColor(v, vehicles, customVehicleColors);
                 const isSelected = selectedRoutes.length === 0 || selectedRoutes.some(r => routesMatch(r, v));
                 const isExclusive = selectedRoutes.length === 1 && routesMatch(selectedRoutes[0], v);
@@ -2299,27 +2481,50 @@ export default function MapComponent({
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              })
+                    )}
+                  </div>
 
-            {/* Summary Row */}
-            <div className="px-2.5 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-12 gap-1 items-center text-[9.5px] font-mono font-black text-zinc-700 dark:text-zinc-300">
-              <div className="col-span-4 truncate uppercase tracking-wider text-[9px] text-zinc-500 dark:text-zinc-400">
-                Totais ({tableTotals.vehiclesWithCargo})
-              </div>
-              <div className="col-span-2 text-center text-indigo-600 dark:text-indigo-400 font-black">
-                {tableTotals.stops}
-              </div>
-              <div className="col-span-2 text-right">
-                {tableTotals.kg.toLocaleString()}k
-              </div>
-              <div className="col-span-2 text-right">
-                {tableTotals.vol}m³
-              </div>
-              <div className="col-span-2 text-right text-indigo-600 dark:text-indigo-400">
-                {tableTotals.km}km
-              </div>
-            </div>
+                  {/* Summary Row */}
+                  <div className="px-2.5 py-1.5 bg-zinc-100/90 dark:bg-zinc-900/90 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-12 gap-1 items-center text-[9.5px] font-mono font-black text-zinc-700 dark:text-zinc-300">
+                    {isViewingPendingExclusive ? (
+                      <>
+                        <div className="col-span-5 truncate uppercase tracking-wider text-[9px] text-zinc-500 dark:text-zinc-400">
+                          Total Pendentes
+                        </div>
+                        <div className="col-span-2 text-center text-amber-600 dark:text-amber-400 font-black">
+                          {warehouseListWithStats.reduce((acc, w) => acc + w.pendingCount, 0)}
+                        </div>
+                        <div className="col-span-2 text-right text-amber-600 dark:text-amber-400">
+                          {(warehouseListWithStats.reduce((acc, w) => acc + w.pendingKg, 0) / 1000).toFixed(1)}t
+                        </div>
+                        <div className="col-span-3 text-right text-amber-600 dark:text-amber-400">
+                          {warehouseListWithStats.reduce((acc, w) => acc + w.pendingVol, 0).toFixed(1)}m³
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="col-span-4 truncate uppercase tracking-wider text-[9px] text-zinc-500 dark:text-zinc-400">
+                          Totais ({tableTotals.vehiclesWithCargo})
+                        </div>
+                        <div className="col-span-2 text-center text-indigo-600 dark:text-indigo-400 font-black">
+                          {tableTotals.stops}
+                        </div>
+                        <div className="col-span-2 text-right">
+                          {tableTotals.kg.toLocaleString()}k
+                        </div>
+                        <div className="col-span-2 text-right">
+                          {tableTotals.vol}m³
+                        </div>
+                        <div className="col-span-2 text-right text-indigo-600 dark:text-indigo-400">
+                          {tableTotals.km}km
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Panel Footer Navigation */}
             <div className="px-3 py-1.5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 flex items-center justify-between text-[10px]">

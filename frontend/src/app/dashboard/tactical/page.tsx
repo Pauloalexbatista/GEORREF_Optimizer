@@ -930,6 +930,43 @@ export default function TacticalPage() {
     }
   };
 
+  const [collapsedWhPending, setCollapsedWhPending] = useState<Record<string, boolean>>({});
+  const toggleWhPending = (wh: string) => {
+    setCollapsedWhPending((prev) => ({ ...prev, [wh]: !prev[wh] }));
+  };
+
+  const handleAssignWarehousePendingToVehicle = async (
+    warehouseName: string,
+    targetVehicle: string,
+    stopsToMove: RouteNode[]
+  ) => {
+    if (!selectedProject || !targetVehicle || stopsToMove.length === 0) return;
+    const confirmMsg = `Deseja atribuir todas as ${stopsToMove.length} entregas pendentes do armazém "${warehouseName}" à viatura "${targetVehicle}"?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setActionLoading(`bulk_wh_${warehouseName}`);
+    try {
+      for (const stop of stopsToMove) {
+        await apiRequest("/api/solver/reassign", {
+          method: "POST",
+          body: JSON.stringify({
+            project_id: selectedProject.id,
+            client_code: stop.Cliente,
+            delivery_id: stop.id,
+            address: stop.Morada,
+            new_route: targetVehicle,
+          }),
+        });
+      }
+      await loadTacticalData();
+      showAlert("Sucesso", `${stopsToMove.length} entregas de "${warehouseName}" atribuídas a "${targetVehicle}".`, "success");
+    } catch (err: any) {
+      showAlert("Erro", "Erro ao atribuir paragens: " + (err.message || "Erro"), "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleTransferEntireRoute = async (sourceRoute: string, targetRoute: string) => {
     if (!selectedProject) return;
     const tgtDisplay = isPendingRoute(targetRoute) ? "Por Distribuir" : targetRoute;
@@ -2413,10 +2450,15 @@ export default function TacticalPage() {
                       const color = getRouteColor(routeName, vehicles);
 
                       const vConfig = vehicleMap[routeName] || vehicleMap[routeName.replace(" (Volta 2)", "").trim()];
+                      const distinctPendingWhs = Array.from(
+                        new Set(allStops.map((s) => (s.Armazem || "Sem Armazém").trim()).filter(Boolean))
+                      );
                       const whName = isPending
                         ? (selectedWarehouseFilter !== "all"
                             ? selectedWarehouseFilter
-                            : (allStops.length > 0 && allStops[0].Armazem ? allStops[0].Armazem : "Vários Armazéns"))
+                            : (distinctPendingWhs.length === 1
+                                ? distinctPendingWhs[0]
+                                : `Todos os Armazéns (${distinctPendingWhs.length})`))
                         : (vConfig?.armazem || (allStops.length > 0 ? allStops[0].Armazem : warehouses[0]?.name) || "Armazém Principal");
 
                       const whData = warehouseMap[whName] || warehouses.find((w) => matchWarehouse(w.name, whName)) || warehouses[0] || {
@@ -2777,12 +2819,319 @@ export default function TacticalPage() {
                           {isExpanded && (
                             <tr className="bg-zinc-950">
                               <td colSpan={12} className="p-3 bg-zinc-950/90 border-b border-zinc-800">
-                                <div className="border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-900/50 shadow-inner">
-                                  {allStops.length === 0 ? (
-                                    <div className="p-6 text-center text-zinc-500 text-xs">
-                                      Nenhuma paragem atribuída a esta viatura. Arraste clientes ou use o seletor para atribuir entregas.
+                                {isPending ? (
+                                  /* ROTA POR DISTRIBUIR: ENTREGAS ORGANIZADAS POR ARMAZÉM */
+                                  allStops.length === 0 ? (
+                                    <div className="border border-zinc-800/80 rounded-xl p-6 text-center text-zinc-500 text-xs bg-zinc-900/50 shadow-inner">
+                                      Nenhuma paragem pendente por distribuir.
                                     </div>
-                                  ) : (
+                                  ) : (() => {
+                                    const pendingWhGroups = (() => {
+                                      const map: Record<string, RouteNode[]> = {};
+                                      filteredStops.forEach((s) => {
+                                        const wh = (s.Armazem || "Sem Armazém").trim();
+                                        if (!map[wh]) map[wh] = [];
+                                        map[wh].push(s);
+                                      });
+                                      return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+                                    })();
+
+                                    return (
+                                      <div className="space-y-3">
+                                        {pendingWhGroups.map(([whGroupName, whGroupStops]) => {
+                                          const isWhCollapsed = !!collapsedWhPending[whGroupName];
+                                          const whKg = whGroupStops.reduce((acc, s) => acc + (s.Peso_KG || 0), 0);
+                                          const whVol = whGroupStops.reduce((acc, s) => acc + ((s.Volume_m3 || (s as any).Volume_M3) || 0), 0);
+                                          const whCx = whGroupStops.reduce(
+                                            (acc, s) =>
+                                              acc +
+                                              ((s.Cx_Ambiente || 0) +
+                                                (s.Cx_Frio || 0) +
+                                                (s.Cx_Congelado || 0) +
+                                                (s.Total_Cx || 0)),
+                                            0
+                                          );
+
+                                          // Identify vehicles belonging to this warehouse
+                                          const whVehicles = vehicles.filter((v) => {
+                                            const vc = vehicleMap[v] || vehicleMap[v.replace(" (Volta 2)", "").trim()];
+                                            return vc?.armazem && matchWarehouse(vc.armazem, whGroupName);
+                                          });
+
+                                          return (
+                                            <div
+                                              key={whGroupName}
+                                              className="border border-amber-500/30 rounded-xl overflow-hidden bg-zinc-900/60 shadow-md"
+                                            >
+                                              {/* Armazém Sub-header Banner */}
+                                              <div
+                                                onClick={() => toggleWhPending(whGroupName)}
+                                                className="px-3.5 py-2.5 bg-gradient-to-r from-amber-950/50 via-zinc-900 to-zinc-900 border-b border-amber-500/20 flex items-center justify-between cursor-pointer hover:bg-amber-950/70 transition-colors select-none"
+                                              >
+                                                <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                                                  <span className="text-sm">🏭</span>
+                                                  <span className="font-bold text-amber-300 text-xs tracking-wide">
+                                                    {whGroupName}
+                                                  </span>
+                                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                                                    {whGroupStops.length} pendentes
+                                                  </span>
+                                                  <span className="text-[10px] text-zinc-300 font-mono font-semibold">
+                                                    ⚖️ {whKg.toFixed(0)} kg
+                                                  </span>
+                                                  <span className="text-[10px] text-zinc-300 font-mono font-semibold">
+                                                    📐 {whVol.toFixed(1)} m³
+                                                  </span>
+                                                  {whCx > 0 && (
+                                                    <span className="text-[10px] text-amber-400 font-mono font-bold">
+                                                      📦 {whCx} cx
+                                                    </span>
+                                                  )}
+                                                </div>
+
+                                                <div
+                                                  className="flex items-center space-x-2 shrink-0"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                  {whVehicles.length > 0 && (
+                                                    <div className="flex items-center space-x-1.5 bg-zinc-950/80 px-2 py-1 rounded-lg border border-amber-500/30">
+                                                      <span className="text-[10px] text-amber-200 font-medium">
+                                                        Atribuir todas a:
+                                                      </span>
+                                                      <select
+                                                        defaultValue=""
+                                                        disabled={actionLoading === `bulk_wh_${whGroupName}`}
+                                                        onChange={(e) => {
+                                                          const tgtV = e.target.value;
+                                                          if (tgtV) {
+                                                            handleAssignWarehousePendingToVehicle(
+                                                              whGroupName,
+                                                              tgtV,
+                                                              whGroupStops
+                                                            );
+                                                            e.target.value = "";
+                                                          }
+                                                        }}
+                                                        className="bg-zinc-900 border border-amber-500/50 text-amber-300 text-[10px] font-bold rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                                                      >
+                                                        <option value="">Selecionar viatura...</option>
+                                                        {whVehicles.map((v) => (
+                                                          <option key={v} value={v}>
+                                                            🚚 {v}
+                                                          </option>
+                                                        ))}
+                                                      </select>
+                                                    </div>
+                                                  )}
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => toggleWhPending(whGroupName)}
+                                                    className="text-zinc-400 hover:text-amber-300 font-bold text-xs px-2 py-1 bg-zinc-950/60 rounded-lg border border-zinc-800"
+                                                  >
+                                                    {isWhCollapsed ? "▼ Expandir" : "▲ Recolher"}
+                                                  </button>
+                                                </div>
+                                              </div>
+
+                                              {/* Tabela de Entregas deste Armazém */}
+                                              {!isWhCollapsed && (
+                                                <div className="overflow-x-auto max-h-[380px] scrollbar-thin scrollbar-thumb-zinc-700">
+                                                  <table className="w-full text-left text-xs border-collapse">
+                                                    <thead className="sticky top-0 z-20 bg-zinc-950 shadow-sm">
+                                                      <tr className="bg-zinc-950 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                                        <th className="py-2 px-3 text-center w-16 sticky top-0 bg-zinc-950 z-20">
+                                                          # Ordem
+                                                        </th>
+                                                        <th className="py-2 px-2 text-center w-20 sticky top-0 bg-zinc-950 z-20">
+                                                          Tipo
+                                                        </th>
+                                                        <th className="py-2 px-3 min-w-[180px] sticky top-0 bg-zinc-950 z-20">
+                                                          Doc ID / Cliente
+                                                        </th>
+                                                        <th className="py-2 px-3 min-w-[220px] sticky top-0 bg-zinc-950 z-20">
+                                                          Morada & Localidade
+                                                        </th>
+                                                        <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-20">
+                                                          Contacto / Vend.
+                                                        </th>
+                                                        <th className="py-2 px-2 min-w-[100px] text-center sticky top-0 bg-zinc-950 z-20">
+                                                          Janela Horária
+                                                        </th>
+                                                        <th className="py-2 px-2 min-w-[110px] text-center sticky top-0 bg-zinc-950 z-20">
+                                                          Previsão Chegada
+                                                        </th>
+                                                        <th className="py-2 px-2 w-[115px] text-center sticky top-0 bg-zinc-950 z-20">
+                                                          Carga / A Bordo
+                                                        </th>
+                                                        <th className="py-2 px-2 w-[85px] text-center sticky top-0 bg-zinc-950 z-20">
+                                                          Distância
+                                                        </th>
+                                                        <th className="py-2 px-3 text-center min-w-[150px] sticky top-0 bg-zinc-950 z-20">
+                                                          Mover / Reatribuir
+                                                        </th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-zinc-850">
+                                                      {whGroupStops.map((stop, sIdx) => {
+                                                        const compliance = {
+                                                          status: "on_time" as DeliveryComplianceStatus,
+                                                          label: "Livre",
+                                                          tooltip: "Pendente",
+                                                          badgeClass: "text-zinc-300 bg-zinc-900 border border-zinc-800",
+                                                          diffMinutes: 0,
+                                                        };
+                                                        const actKey = stop.id ? `${stop.Cliente}_${stop.id}` : stop.Cliente;
+                                                        const isRowLoading = actionLoading === actKey;
+
+                                                        return (
+                                                          <tr
+                                                            key={`${stop.Cliente}-${stop.id || sIdx}`}
+                                                            className="hover:bg-zinc-900 transition-colors duration-150"
+                                                          >
+                                                            <td className="py-2.5 px-3.5 text-center">
+                                                              <span className="w-6 h-6 rounded-lg bg-zinc-900 border border-zinc-700 inline-flex items-center justify-center font-mono font-bold text-zinc-300 text-xs shadow-inner">
+                                                                {sIdx + 1}
+                                                              </span>
+                                                            </td>
+
+                                                            <td className="py-2 px-2 text-center whitespace-nowrap">
+                                                              {renderOperationTypeBadge(stop.Tipo_Operacao, stop.Par_ID)}
+                                                            </td>
+
+                                                            <td className="py-2 px-3">
+                                                              <div className="font-bold text-zinc-100">
+                                                                {stop.Doc_ID || stop.Cliente || "S/ Doc"}
+                                                              </div>
+                                                              <div className="text-[10px] text-zinc-400 truncate max-w-xs">
+                                                                {stop.Nome_Cliente || stop.Cliente}
+                                                              </div>
+                                                            </td>
+
+                                                            <td className="py-2 px-3">
+                                                              <div className="text-zinc-200 truncate max-w-xs">{stop.Morada}</div>
+                                                              <div className="text-[10px] text-zinc-400 font-mono">
+                                                                {stop.CP} {stop.Localidade}
+                                                              </div>
+                                                            </td>
+
+                                                            <td className="py-2 px-2 text-center">
+                                                              <div className="font-mono text-[10px] text-zinc-300">
+                                                                {stop.Telefone_Cliente || stop.Telefone || "--"}
+                                                              </div>
+                                                              <div className="text-[9px] text-zinc-500">
+                                                                {stop.Vendedor || stop.vendedor || "--"}
+                                                              </div>
+                                                            </td>
+
+                                                            <td className="py-2 px-2 text-center">
+                                                              <span className="font-mono text-zinc-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[10px]">
+                                                                {stop.Janela_Horaria ||
+                                                                  (stop.Janela_Inicio && stop.Janela_Fim
+                                                                    ? `${stop.Janela_Inicio}-${stop.Janela_Fim}`
+                                                                    : "08:00-19:00")}
+                                                              </span>
+                                                            </td>
+
+                                                            <td className="py-2 px-2 text-center">
+                                                              <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded text-zinc-400 bg-zinc-900 border border-zinc-800">
+                                                                {stop.Chegada || "--:--"}
+                                                              </span>
+                                                            </td>
+
+                                                            <td className="py-2 px-2 text-center font-mono">
+                                                              {(stop.Cx_Ambiente || 0) +
+                                                                (stop.Cx_Frio || 0) +
+                                                                (stop.Cx_Congelado || 0) +
+                                                                (stop.Total_Cx || 0) >
+                                                              0 ? (
+                                                                <div className="font-semibold text-amber-300">
+                                                                  📦{" "}
+                                                                  {stop.Total_Cx ||
+                                                                    (stop.Cx_Ambiente || 0) +
+                                                                      (stop.Cx_Frio || 0) +
+                                                                      (stop.Cx_Congelado || 0)}{" "}
+                                                                  Cx
+                                                                </div>
+                                                              ) : (
+                                                                <div className="font-semibold text-zinc-200">
+                                                                  {Number(stop.Peso_KG || 0).toFixed(0)} kg
+                                                                </div>
+                                                              )}
+                                                              <div className="text-[9px] text-zinc-400">
+                                                                {Number((stop.Volume_m3 || (stop as any).Volume_M3) || 0).toFixed(2)} m³
+                                                              </div>
+                                                            </td>
+
+                                                            <td className="py-2 px-2 text-center font-mono text-zinc-500">
+                                                              --
+                                                            </td>
+
+                                                            <td className="py-2 px-3 text-center">
+                                                              <select
+                                                                value="Por Distribuir"
+                                                                disabled={isRowLoading}
+                                                                onChange={(e) => {
+                                                                  const tgt = e.target.value;
+                                                                  if (tgt === "Por Distribuir") return;
+                                                                  handleReassign(stop.Cliente, tgt, stop.id, stop.Morada);
+                                                                }}
+                                                                className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer font-semibold max-w-[150px]"
+                                                              >
+                                                                <option
+                                                                  value="Por Distribuir"
+                                                                  className="text-amber-400 font-bold bg-zinc-900"
+                                                                >
+                                                                  ⚠️ Por Distribuir
+                                                                </option>
+                                                                {whVehicles.length > 0 && (
+                                                                  <optgroup label={`Viaturas de ${whGroupName}`}>
+                                                                    {whVehicles.map((v) => (
+                                                                      <option
+                                                                        key={v}
+                                                                        value={v}
+                                                                        className="bg-zinc-900 text-amber-300 font-bold"
+                                                                      >
+                                                                        ★ {v}
+                                                                      </option>
+                                                                    ))}
+                                                                  </optgroup>
+                                                                )}
+                                                                <optgroup label="Todas as Viaturas">
+                                                                  {vehicles
+                                                                    .filter((v) => !whVehicles.includes(v))
+                                                                    .map((v) => (
+                                                                      <option
+                                                                        key={v}
+                                                                        value={v}
+                                                                        className="bg-zinc-900 text-zinc-200"
+                                                                      >
+                                                                        🚚 {v}
+                                                                      </option>
+                                                                    ))}
+                                                                </optgroup>
+                                                              </select>
+                                                            </td>
+                                                          </tr>
+                                                        );
+                                                      })}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()
+                                ) : (
+                                  /* VIATURA NORMAL (COM PARAGENS SEQUENCIAIS) */
+                                  <div className="border border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-900/50 shadow-inner">
+                                    {allStops.length === 0 ? (
+                                      <div className="p-6 text-center text-zinc-500 text-xs">
+                                        Nenhuma paragem atribuída a esta viatura. Arraste clientes ou use o seletor para atribuir entregas.
+                                      </div>
+                                    ) : (
                                     <div className="overflow-x-auto overflow-y-auto max-h-[480px] scrollbar-thin scrollbar-thumb-zinc-700">
                                       <table className="w-full text-left text-xs border-collapse">
                                         <thead className="sticky top-0 z-20 bg-zinc-950 shadow-sm">
@@ -3180,9 +3529,10 @@ export default function TacticalPage() {
                                           ))}
                                         </tbody>
                                       </table>
-                                    </div>
-                                  )}
-                                </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           )}
