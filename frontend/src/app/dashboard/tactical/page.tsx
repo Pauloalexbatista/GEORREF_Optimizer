@@ -822,6 +822,7 @@ export default function TacticalPage() {
         respect_time_windows: respectWindows,
         solving_depth: solvingDepth,
         time_limit_seconds: solvingDepth === "deep" ? 40 : solvingDepth === "fast" ? 15 : 25,
+        warehouse_filter: selectedWarehouseFilter || "all",
       };
       const mergedParams = overrideParams && typeof overrideParams === "object" && !("nativeEvent" in overrideParams)
         ? { ...baseParams, ...overrideParams }

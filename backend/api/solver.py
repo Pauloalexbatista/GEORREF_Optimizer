@@ -988,266 +988,467 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         pd_pairs_raw = extract_pickup_delivery_pairs(delivery_rows)
         pickup_delivery_pairs = [(p + num_warehouses, d + num_warehouses) for p, d in pd_pairs_raw]
 
-        optimizer = AdvancedRouteOptimizer()
-        result = optimizer.optimize_routes(
-            distance_matrix,
-            demands,
-            vehicle_capacities,
-            depot_indices,
-            optimization_params=solver_params,
-            volume_demands=volume_demands,
-            vehicle_volume_capacities=vehicle_volume_capacities,
-            client_warehouses=client_warehouses,
-            vehicle_warehouses=vehicle_warehouses,
-            num_warehouses=num_warehouses,
-            vehicle_start_times=vehicle_start_times,
-            vehicle_end_times=vehicle_end_times,
-            client_time_windows=client_time_windows,
-            locations=locations,
-            client_rules=client_rules,
-            vehicle_rules=vehicle_rules,
-            rules_matrix=rules_matrix,
-            vehicle_max_stops=vehicle_max_stops,
-            client_service_times=client_service_times,
-            client_priorities=client_priorities,
-            vehicle_returns_to_depot=vehicle_returns_to_depot,
-            client_cps=client_cps,
-            vehicle_names=vehicle_names,
-            operation_types=op_types,
-            pickup_delivery_pairs=pickup_delivery_pairs,
-            vehicle_speeds=vehicle_speeds,
-            vehicle_costs_per_km=vehicle_costs_per_km,
-            multi_trip_pairs=multi_trip_pairs
+        # 6. Multi-Warehouse Partitioned & Monolithic Solver Engine
+        is_multi_wh = (
+            warehouses_df is not None and len(warehouses_df) > 1 and
+            any(bool(str(v.get("warehouse") or "").strip()) for v in fleet_dict.values())
         )
-        
-        # 6. Convert solver output to routes list
+        wh_filter_raw = str(solver_params.get("warehouse_filter") or "").strip()
+        has_wh_filter = bool(wh_filter_raw and wh_filter_raw.lower() not in ["", "all", "todos", "todos os armazéns", "todos os armazens"])
+
+        def _match_wh_name(wh1, wh2):
+            if not wh1 or not wh2:
+                return False
+            w1, w2 = str(wh1).strip().lower(), str(wh2).strip().lower()
+            return w1 == w2 or w1 in w2 or w2 in w1
+
         routes_list = []
         visited_client_indices = set()
-        
+        vehicle_first_trip_depot_arrival = {}
+        result = {}
+
         default_wh_name = "Armazém Principal"
         if warehouses_df is not None and not warehouses_df.empty:
             for w_col in ["Nome_Armazem", "Nome_Armazém", "name", "Nome", "armazem", "warehouse"]:
                 if w_col in warehouses_df.columns:
                     default_wh_name = str(warehouses_df.iloc[0][w_col])
                     break
-        vehicle_first_trip_depot_arrival = {}
-        for vehicle_idx, route in enumerate(result["routes"]):
-            vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
-            v_info = fleet_dict.get(vehicle_name, fleet_dict.get(vehicle_name.replace(" (Volta 2)", ""), {}))
-            warehouse_origin = v_info.get("warehouse", default_wh_name)
-            depot_lat, depot_lon = get_depot_coords(warehouses_df, warehouse_origin)
-            
-            raw_stops = []
-            loc_indices = route
-            if len(route) >= 2 and route[0] < client_start_idx and route[-1] < client_start_idx:
-                loc_indices = route[1:-1]
 
-            for loc_idx in loc_indices:
-                if loc_idx >= client_start_idx:
-                    client_idx = loc_idx - client_start_idx
-                    client_row = deliveries_df.iloc[client_idx]
-                    visited_client_indices.add(client_idx)
-                    
-                    win_s = client_row.get("Slot1_Inicio", "")
-                    win_e = client_row.get("Slot1_Fim", "")
-                    combined_window = format_time_window_display(win_s, win_e)
-                    
-                    deliv_id = int(client_row.get("id", client_idx + 1))
-                    doc_id_val = str(client_row.get("Doc_ID") or client_row.get("numero_doc") or client_row.get("doc_id") or "")
-                    tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
-                    obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
-                    vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
-                    
-                    raw_stops.append({
-                        "id": deliv_id,
-                        "ID_Original": deliv_id,
-                        "Rota": vehicle_name,
-                        "Armazem": warehouse_origin,
-                        "Doc_ID": doc_id_val,
-                        "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
-                        "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
-                        "Morada": str(client_row.get("Morada", "N/A")),
-                        "CP": str(client_row.get("Codigo_Postal", "N/A")),
-                        "Localidade": str(client_row.get("Localidade", "")),
-                        "Janela_Horaria": combined_window,
-                        "Janela_Inicio": str(win_s or ""),
-                        "Janela_Fim": str(win_e or ""),
-                        "Latitude": float(client_row["Latitude"]),
-                        "Longitude": float(client_row["Longitude"]),
-                        "Peso_KG": float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0),
-                        "Volume_m3": float(client_row.get("Volume_m3", 0.0) if not is_any_cx_project else 0.0),
-                        "Cx_Ambiente": int(client_row.get("Cx_Ambiente", 0) or 0),
-                        "Cx_Frio": int(client_row.get("Cx_Frio", 0) or 0),
-                        "Cx_Congelado": int(client_row.get("Cx_Congelado", 0) or 0),
-                        "Total_Cx": int(client_row.get("Total_Cx", 0) or ((client_row.get("Cx_Ambiente", 0) or 0) + (client_row.get("Cx_Frio", 0) or 0) + (client_row.get("Cx_Congelado", 0) or 0))),
-                        "Telefone": tel_val,
-                        "Observacoes": obs_val,
-                        "Notas_Motorista": obs_val,
-                        "Vendedor": vend_val,
-                        "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
-                        "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
-                        "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim"),
-                        "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao") or client_row.get("tipo_operacao")),
-                        "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or ""),
-                        "_client_idx": client_idx
-                    })
-                    
-            if raw_stops:
-                v_speed = float(v_info.get("speed", 50.0))
-                v_cap_kg = float(v_info.get("capacity") or v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
-                v_cap_vol = float(v_info.get("capacity_volume") or v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
-                if "(Volta 2)" in vehicle_name:
-                    base_v = vehicle_name.replace(" (Volta 2)", "")
-                    if base_v in vehicle_first_trip_depot_arrival:
-                        arr_depot_min, _ = vehicle_first_trip_depot_arrival[base_v]
-                        reload_min = 30  # 30 min reload/lunch
-                        base_v2_start = vehicle_start_times[vehicle_idx] if vehicle_idx < len(vehicle_start_times) else 600
-                        v2_start_min = max(int(arr_depot_min + reload_min), base_v2_start)
-                        v_start_str = minutes_to_time_str(v2_start_min)
-                    elif vehicle_idx < len(vehicle_start_times):
-                        v_start_str = minutes_to_time_str(vehicle_start_times[vehicle_idx])
-                    else:
-                        v_start_str = "13:00:00"
+        def _run_gatekeeper_for_route(
+            vehicle_name: str,
+            v_info: dict,
+            depot_lat: float,
+            depot_lon: float,
+            v_start_fallback: str,
+            v_end_fallback: str,
+            raw_stops: list,
+            client_index_map: dict
+        ) -> list:
+            if not raw_stops:
+                return []
+            v_speed = float(v_info.get("speed", 50.0))
+            v_cap_kg = float(v_info.get("capacity") or v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+            v_cap_vol = float(v_info.get("capacity_volume") or v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
+
+            if "(Volta 2)" in vehicle_name:
+                base_v = vehicle_name.replace(" (Volta 2)", "")
+                if base_v in vehicle_first_trip_depot_arrival:
+                    arr_depot_min, _ = vehicle_first_trip_depot_arrival[base_v]
+                    reload_min = 30
+                    base_v2_start = parse_time_to_minutes(v_start_fallback, 600)
+                    v2_start_min = max(int(arr_depot_min + reload_min), base_v2_start)
+                    v_start_str = minutes_to_time_str(v2_start_min)
                 else:
-                    v_start_str = str(v_info.get("start_time", "08:00:00"))
+                    v_start_str = str(v_start_fallback)
+            else:
+                v_start_str = str(v_info.get("start_time", v_start_fallback))
 
-                # Gatekeeper Rigoroso (Tolerância ZERO a Erros):
-                # Verifica Janelas Horárias, Capacidade (Peso/Volume/Caixas) e Fim de Turno (Hora de Regresso ao Armazém).
-                # Se alguma restrição falhar, tenta reordenar; se não couber, ejeta paragens (priorizando deixar de fora as mais perto do armazém!).
-                v_end_str = str(v_info.get("end_time", "18:00:00"))
-                v_end_min = parse_time_to_minutes(v_end_str, 1080)
-                v_cap_cx = float(v_info.get("cap_cx_total", 0.0) or 0.0)
-                returns_to_depot = str(v_info.get("regresso_armazem", "Sim") or "Sim").strip().lower() not in ["não", "nao", "false", "0", "no"]
-                respect_tw_flag = bool(solver_params.get("respect_time_windows", True))
+            v_end_str = str(v_info.get("end_time", v_end_fallback))
+            v_end_min = parse_time_to_minutes(v_end_str, 1080)
+            v_cap_cx = float(v_info.get("cap_cx_total", 0.0) or 0.0)
+            returns_to_depot = str(v_info.get("regresso_armazem", "Sim") or "Sim").strip().lower() not in ["não", "nao", "false", "0", "no"]
+            respect_tw_flag = bool(solver_params.get("respect_time_windows", True))
 
-                def _check_route_violations(p_stops: list) -> tuple:
-                    if not p_stops:
-                        return (False, None, False, False)
-                    # 1. Janelas Horárias
-                    if respect_tw_flag:
-                        for i_s, st_s in enumerate(p_stops):
-                            w_e_s = parse_time_to_minutes(str(st_s.get("Janela_Fim", "")), 1440)
-                            arr_s = parse_time_to_minutes(str(st_s.get("Chegada", "")), 0)
-                            if w_e_s < 1440 and arr_s > w_e_s:
-                                return (True, i_s, False, False)
-                    # 2. Capacidade Dinâmica (Peso, Volume e Caixas)
-                    ld_res = calculate_dynamic_route_loads(p_stops, vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol)
-                    tot_cx_r = sum(int(st_s.get("Total_Cx", 0) or 0) for st_s in p_stops)
-                    is_overloaded = bool(ld_res.get("has_overload")) or (v_cap_cx > 0 and tot_cx_r > v_cap_cx)
-                    # 3. Fim de Turno (Regresso ao Armazém)
-                    last_st = p_stops[-1]
-                    last_dep_m = parse_time_to_minutes(str(last_st.get("Saida", "12:00")), 720)
-                    if returns_to_depot:
-                        arr_dep_m = parse_time_to_minutes(str(last_st.get("Hora_Regresso_Armazem", "")), last_dep_m)
-                    else:
-                        arr_dep_m = last_dep_m
-                    is_overtime = bool(arr_dep_m > v_end_min)
-                    return (False, None, is_overloaded, is_overtime)
+            def _check_route_violations(p_stops: list) -> tuple:
+                if not p_stops:
+                    return (False, None, False, False)
+                if respect_tw_flag:
+                    for i_s, st_s in enumerate(p_stops):
+                        w_e_s = parse_time_to_minutes(str(st_s.get("Janela_Fim", "")), 1440)
+                        arr_s = parse_time_to_minutes(str(st_s.get("Chegada", "")), 0)
+                        if w_e_s < 1440 and arr_s > w_e_s:
+                            return (True, i_s, False, False)
+                ld_res = calculate_dynamic_route_loads(p_stops, vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol)
+                tot_cx_r = sum(int(st_s.get("Total_Cx", 0) or 0) for st_s in p_stops)
+                is_overloaded = bool(ld_res.get("has_overload")) or (v_cap_cx > 0 and tot_cx_r > v_cap_cx)
+                last_st = p_stops[-1]
+                last_dep_m = parse_time_to_minutes(str(last_st.get("Saida", "12:00")), 720)
+                arr_dep_m = parse_time_to_minutes(str(last_st.get("Hora_Regresso_Armazem", "")), last_dep_m) if returns_to_depot else last_dep_m
+                is_overtime = bool(arr_dep_m > v_end_min)
+                return (False, None, is_overloaded, is_overtime)
 
-                def _eject_stop_at(stops_arr: list, ej_idx: int):
-                    ejected = stops_arr.pop(ej_idx)
-                    ej_c_idx = ejected.get("_client_idx")
-                    if ej_c_idx is not None:
-                        visited_client_indices.discard(ej_c_idx)
-                    else:
-                        e_doc = str(ejected.get("Doc_ID", ""))
-                        for c_idx, crow in deliveries_df.iterrows():
-                            if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
-                                visited_client_indices.discard(c_idx)
-                                break
-                    ej_par_id = str(ejected.get("Par_ID") or "").strip()
-                    if ej_par_id:
-                        partner_positions = [
-                            p_i for p_i, p_st in enumerate(stops_arr)
-                            if str(p_st.get("Par_ID") or "").strip() == ej_par_id
-                        ]
-                        for p_i in reversed(partner_positions):
-                            ej_partner = stops_arr.pop(p_i)
-                            if ej_partner.get("_client_idx") is not None:
-                                visited_client_indices.discard(ej_partner.get("_client_idx"))
+            def _eject_stop_at(stops_arr: list, ej_idx: int):
+                ejected = stops_arr.pop(ej_idx)
+                ej_c_idx = ejected.get("_client_idx")
+                if ej_c_idx is not None:
+                    visited_client_indices.discard(ej_c_idx)
+                else:
+                    e_doc = str(ejected.get("Doc_ID", ""))
+                    for c_idx, crow in deliveries_df.iterrows():
+                        if str(crow.get("Doc_ID") or crow.get("doc_id") or "") == e_doc:
+                            visited_client_indices.discard(c_idx)
+                            break
+                ej_par_id = str(ejected.get("Par_ID") or "").strip()
+                if ej_par_id:
+                    partner_positions = [
+                        p_i for p_i, p_st in enumerate(stops_arr)
+                        if str(p_st.get("Par_ID") or "").strip() == ej_par_id
+                    ]
+                    for p_i in reversed(partner_positions):
+                        ej_partner = stops_arr.pop(p_i)
+                        if ej_partner.get("_client_idx") is not None:
+                            visited_client_indices.discard(ej_partner.get("_client_idx"))
 
-                tried_resequence = False
-                processed_stops = []
-                while raw_stops:
-                    processed_stops = recalculate_route_stops(
-                        raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
-                        vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+            tried_resequence = False
+            processed_stops = []
+            while raw_stops:
+                processed_stops = recalculate_route_stops(
+                    raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
+                    vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+                )
+                has_late, late_idx, has_overload, has_overtime = _check_route_violations(processed_stops)
+                if not has_late and not has_overload and not has_overtime:
+                    break
+
+                if not tried_resequence and len(raw_stops) > 1:
+                    tried_resequence = True
+                    v_start_m = parse_time_to_minutes(v_start_str, 480)
+                    reseq = sequence_route_with_time_windows(
+                        raw_stops, depot_lat, depot_lon, v_start_m, v_speed,
+                        v_cap_kg=v_cap_kg, v_cap_vol=v_cap_vol
                     )
-                    has_late, late_idx, has_overload, has_overtime = _check_route_violations(processed_stops)
-                    if not has_late and not has_overload and not has_overtime:
+                    r_late, _, r_over, r_ot = _check_route_violations(reseq)
+                    if not r_late and not r_over and not r_ot:
+                        processed_stops = reseq
+                        raw_stops = reseq
                         break
 
-                    if not tried_resequence and len(raw_stops) > 1:
-                        tried_resequence = True
-                        v_start_m = parse_time_to_minutes(v_start_str, 480)
-                        reseq = sequence_route_with_time_windows(
-                            raw_stops, depot_lat, depot_lon, v_start_m, v_speed,
-                            v_cap_kg=v_cap_kg, v_cap_vol=v_cap_vol
-                        )
-                        r_late, _, r_over, r_ot = _check_route_violations(reseq)
-                        if not r_late and not r_over and not r_ot:
-                            processed_stops = reseq
-                            raw_stops = reseq
-                            break
+                if has_late and late_idx is not None:
+                    _eject_stop_at(raw_stops, late_idx)
+                    continue
 
-                    if has_late and late_idx is not None:
-                        _eject_stop_at(raw_stops, late_idx)
-                        continue
-
-                    # Se houver excesso de turno (overtime) ou excesso de carga (overload):
-                    # Regra de Ouro: preservar clientes distantes e deixar de fora os mais perto do armazém
-                    # (exceto se existir uma anomalia geográfica >140km impossível de cumprir no turno).
-                    dists_to_depot = [
-                        (
-                            i_cand,
-                            haversine_distance(
-                                depot_lat, depot_lon,
-                                float(st_cand.get("Latitude", depot_lat) or depot_lat),
-                                float(st_cand.get("Longitude", depot_lon) or depot_lon)
-                            )
+                dists_to_depot = [
+                    (
+                        i_cand,
+                        haversine_distance(
+                            depot_lat, depot_lon,
+                            float(st_cand.get("Latitude", depot_lat) or depot_lat),
+                            float(st_cand.get("Longitude", depot_lon) or depot_lon)
                         )
-                        for i_cand, st_cand in enumerate(raw_stops)
-                    ]
-                    extreme_outliers = [x for x in dists_to_depot if x[1] > 140.0]
-                    if has_overtime and extreme_outliers:
-                        # Ejetar primeiro anomalia inter-regional (>140km em linha reta) que inviabiliza o regresso
-                        extreme_outliers.sort(key=lambda x: x[1], reverse=True)
-                        _eject_stop_at(raw_stops, extreme_outliers[0][0])
-                    else:
-                        # Ordenar do MAIS PERTO do armazém para o mais distante
-                        dists_to_depot.sort(key=lambda x: x[1])
-                        eject_target = dists_to_depot[0][0]
-                        if has_overload:
-                            for i_cand, _ in dists_to_depot:
-                                st_c = raw_stops[i_cand]
-                                if float(st_c.get("Peso_KG", 0) or 0) > 0 or float(st_c.get("Volume_m3", 0) or 0) > 0 or int(st_c.get("Total_Cx", 0) or 0) > 0:
-                                    eject_target = i_cand
+                    )
+                    for i_cand, st_cand in enumerate(raw_stops)
+                ]
+                extreme_outliers = [x for x in dists_to_depot if x[1] > 140.0]
+                if has_overtime and extreme_outliers:
+                    extreme_outliers.sort(key=lambda x: x[1], reverse=True)
+                    _eject_stop_at(raw_stops, extreme_outliers[0][0])
+                else:
+                    dists_to_depot.sort(key=lambda x: x[1])
+                    eject_target = dists_to_depot[0][0]
+                    if has_overload:
+                        for i_cand, _ in dists_to_depot:
+                            st_c = raw_stops[i_cand]
+                            if float(st_c.get("Peso_KG", 0) or 0) > 0 or float(st_c.get("Volume_m3", 0) or 0) > 0 or int(st_c.get("Total_Cx", 0) or 0) > 0:
+                                eject_target = i_cand
+                                break
+                    _eject_stop_at(raw_stops, eject_target)
+
+            for pst in processed_stops:
+                pst.pop("_client_idx", None)
+
+            if "(Volta 2)" not in vehicle_name and processed_stops:
+                last_s = processed_stops[-1]
+                last_dep_min = parse_time_to_minutes(str(last_s.get("Saida", "12:00")), 720)
+                last_c_lat = float(last_s.get("Latitude", depot_lat))
+                last_c_lon = float(last_s.get("Longitude", depot_lon))
+                ret_km = haversine_distance(last_c_lat, last_c_lon, depot_lat, depot_lon) * 1.30
+                ret_speed = get_segment_speed(ret_km, v_speed)
+                ret_trav_min = (ret_km / ret_speed) * 60.0
+                arr_depot_min = last_dep_min + ret_trav_min
+                vehicle_first_trip_depot_arrival[vehicle_name] = (arr_depot_min, ret_km)
+
+            return processed_stops
+
+        if is_multi_wh:
+            # 6A. RESOLUÇÃO PARTICIONADA POR ARMAZÉM
+            # Preserva rotas existentes de outros armazéns se houver filtro específico de armazém
+            if has_wh_filter:
+                prev_routes = state_dict.get("routes_solution")
+                if isinstance(prev_routes, pd.DataFrame) and not prev_routes.empty:
+                    for _, pr_row in prev_routes.iterrows():
+                        r_name = str(pr_row.get("Rota") or "")
+                        r_wh = str(pr_row.get("Armazem") or "")
+                        if r_name != "Por Distribuir" and not _match_wh_name(r_wh, wh_filter_raw) and not _match_wh_name(r_name, wh_filter_raw):
+                            st_dict = pr_row.to_dict()
+                            c_id = st_dict.get("id") or st_dict.get("ID_Original")
+                            routes_list.append(st_dict)
+                            for orig_i, crow in deliveries_df.iterrows():
+                                if crow["id"] == c_id:
+                                    visited_client_indices.add(orig_i)
                                     break
-                        _eject_stop_at(raw_stops, eject_target)
 
-                for pst in processed_stops:
-                    pst.pop("_client_idx", None)
-                routes_list.extend(processed_stops)
+            for wh_idx, w_row in warehouses_df.iterrows():
+                wh_name = str(w_row.get("Nome_Armazem", w_row.get("Nome", f"Armazem_{wh_idx}")))
+                if has_wh_filter and not _match_wh_name(wh_name, wh_filter_raw):
+                    continue
 
-                if "(Volta 2)" not in vehicle_name and processed_stops:
-                    last_s = processed_stops[-1]
-                    last_dep_min = parse_time_to_minutes(str(last_s.get("Saida", "12:00")), 720)
-                    last_c_lat = float(last_s.get("Latitude", depot_lat))
-                    last_c_lon = float(last_s.get("Longitude", depot_lon))
-                    ret_km = haversine_distance(last_c_lat, last_c_lon, depot_lat, depot_lon) * 1.30
-                    ret_speed = get_segment_speed(ret_km, v_speed)
-                    ret_trav_min = (ret_km / ret_speed) * 60.0
-                    arr_depot_min = last_dep_min + ret_trav_min
-                    vehicle_first_trip_depot_arrival[vehicle_name] = (arr_depot_min, ret_km)
+                wh_lat = float(w_row["Latitude"])
+                wh_lon = float(w_row["Longitude"])
+
+                matching_indices = [
+                    i for i, r in deliveries_df.iterrows()
+                    if i not in visited_client_indices and _match_wh_name(r.get("Armazem"), wh_name)
+                ]
+                if not matching_indices:
+                    continue
+
+                sub_delivs_df = deliveries_df.iloc[matching_indices].copy()
+                sub_fleet = {
+                    k: v for k, v in fleet_dict.items()
+                    if _match_wh_name(v.get("warehouse"), wh_name)
+                }
+
+                if not sub_fleet:
+                    # Sem viaturas configuradas neste armazém: encomendas seguem para Por Distribuir
+                    continue
+
+                # Construir sub-problema local
+                sub_locations = [(wh_lat, wh_lon)]
+                sub_demands = [0.0]
+                sub_vol_demands = [0.0]
+                for _, r in sub_delivs_df.iterrows():
+                    sub_locations.append((float(r["Latitude"]), float(r["Longitude"])))
+                    tot_cx = float(r.get("Total_Cx", 0.0) or (float(r.get("Cx_Ambiente", 0.0) or 0.0) + float(r.get("Cx_Frio", 0.0) or 0.0) + float(r.get("Cx_Congelado", 0.0) or 0.0)))
+                    if tot_cx > 0:
+                        sub_demands.append(tot_cx)
+                        sub_vol_demands.append(0.0)
+                    else:
+                        sub_demands.append(float(r.get("Peso_KG", 0.0) or 0.0))
+                        sub_vol_demands.append(float(r.get("Volume_m3", r.get("Volume_M3", 0.0)) or 0.0))
+
+                sub_dist_mat = calculate_haversine_matrix(sub_locations)
+
+                sub_v_caps, sub_v_vol_caps, sub_dep_idx, sub_v_names, sub_v_whs = [], [], [], [], []
+                sub_v_starts, sub_v_ends, sub_v_speeds, sub_v_costs, sub_v_max_s = [], [], [], [], []
+                sub_m_trips = []
+
+                for v_n, v_d in sub_fleet.items():
+                    v1_i = len(sub_v_names)
+                    if is_any_cx_project and (v_d.get("cap_cx_total", 0) > 0 or v_d["capacity"] <= 500):
+                        sub_v_caps.append(float(v_d.get("cap_cx_total") or v_d["capacity"] or 100.0))
+                        sub_v_vol_caps.append(999999.0)
+                    else:
+                        sub_v_caps.append(float(v_d["capacity"]))
+                        sub_v_vol_caps.append(float(v_d["capacity_volume"]))
+                    sub_dep_idx.append(0)
+                    sub_v_names.append(v_n)
+                    sub_v_whs.append(wh_name)
+                    s_m = parse_time_to_minutes(v_d.get("start_time", "08:00"), 480)
+                    e_m = parse_time_to_minutes(v_d.get("end_time", "20:00"), 1200)
+                    sub_v_starts.append(s_m)
+                    sub_v_ends.append(e_m)
+                    sub_v_speeds.append(float(v_d.get("speed", 50.0) or 50.0))
+                    sub_v_costs.append(float(v_d.get("cost_per_km", 0.65) or 0.65))
+                    sub_v_max_s.append(int(v_d.get("max_entregas", 30) or 30))
+
+                    is_2v = str(v_d.get("segunda_volta", "Não")).strip().lower() in ["sim", "s", "yes", "true", "1", "2"]
+                    if is_2v:
+                        v2_i = len(sub_v_names)
+                        if is_any_cx_project and (v_d.get("cap_cx_total", 0) > 0 or v_d["capacity"] <= 500):
+                            sub_v_caps.append(float(v_d.get("cap_cx_total") or v_d["capacity"] or 100.0))
+                            sub_v_vol_caps.append(999999.0)
+                        else:
+                            sub_v_caps.append(float(v_d["capacity"]))
+                            sub_v_vol_caps.append(float(v_d["capacity_volume"]))
+                        sub_dep_idx.append(0)
+                        sub_v_names.append(f"{v_n} (Volta 2)")
+                        sub_v_whs.append(wh_name)
+                        sub_v_starts.append(max(s_m + 60, 600))
+                        sub_v_ends.append(max(e_m, s_m + 60))
+                        sub_v_speeds.append(float(v_d.get("speed", 50.0) or 50.0))
+                        sub_v_costs.append(float(v_d.get("cost_per_km", 0.65) or 0.65))
+                        sub_v_max_s.append(int(v_d.get("max_entregas", 30) or 30))
+                        sub_m_trips.append((v1_i, v2_i, 30))
+
+                sub_c_tw = [(0, 1440)]
+                for _, d in sub_delivs_df.iterrows():
+                    cs_min, ce_min = 0, 1440
+                    for col in ["Janela_Horaria", "janela_horaria", "Horario"]:
+                        if col in d and pd.notna(d[col]) and str(d[col]).strip():
+                            ws, we = parse_time_window_str(str(d[col]))
+                            if ws != 0 or we != 1440:
+                                cs_min, ce_min = ws, we
+                                break
+                    if cs_min == 0 and ce_min == 1440:
+                        for s_col, e_col in [("janela_inicio", "janela_fim"), ("Janela1_Inicio", "Janela1_Fim"), ("Slot1_Inicio", "Slot1_Fim")]:
+                            if s_col in d and e_col in d and pd.notna(d[s_col]) and pd.notna(d[e_col]):
+                                s_val, e_val = str(d[s_col]).strip(), str(d[e_col]).strip()
+                                if s_val and e_val:
+                                    cs_min = parse_time_to_minutes(s_val, 0)
+                                    ce_min = parse_time_to_minutes(e_val, 1440)
+                                    break
+                    sub_c_tw.append((cs_min, ce_min))
+
+                sub_c_serv = [0] + [int(d.get("tempo_descarga_min") or 10) for _, d in sub_delivs_df.iterrows()]
+                sub_c_prio = [2] + [int(d.get("prioridade") or 1) for _, d in sub_delivs_df.iterrows()]
+                sub_ops = ["D"] + [normalize_op_type(d.get("Tipo_Operacao", d.get("tipo_operacao", "D"))) for _, d in sub_delivs_df.iterrows()]
+                sub_c_wh_arr = [""] + [wh_name for _ in range(len(sub_delivs_df))]
+                sub_c_cps = [""] + [str(d.get(cp_col_name, "") or "") for _, d in sub_delivs_df.iterrows()]
+                sub_c_rules = [""] + [str(d.get("Regras", "") or "") for _, d in sub_delivs_df.iterrows()]
+                sub_v_rules = [str(fleet_dict.get(v.replace(" (Volta 2)", ""), {}).get("regras", "")) for v in sub_v_names]
+                sub_v_ret = [True] * len(sub_v_names)
+
+                sub_t_lim = max(4, min(25, int(len(sub_delivs_df) / 12)))
+                sub_params = dict(solver_params)
+                sub_params["time_limit_seconds"] = sub_t_lim
+
+                optimizer = AdvancedRouteOptimizer()
+                sub_res = optimizer.optimize_routes(
+                    sub_dist_mat, sub_demands, sub_v_caps, sub_dep_idx,
+                    optimization_params=sub_params, volume_demands=sub_vol_demands,
+                    vehicle_volume_capacities=sub_v_vol_caps,
+                    client_warehouses=sub_c_wh_arr, vehicle_warehouses=sub_v_whs,
+                    num_warehouses=1, vehicle_start_times=sub_v_starts,
+                    vehicle_end_times=sub_v_ends, client_time_windows=sub_c_tw,
+                    locations=sub_locations, client_rules=sub_c_rules, vehicle_rules=sub_v_rules,
+                    rules_matrix=rules_matrix, vehicle_max_stops=sub_v_max_s,
+                    client_service_times=sub_c_serv, client_priorities=sub_c_prio,
+                    vehicle_returns_to_depot=sub_v_ret, client_cps=sub_c_cps,
+                    vehicle_names=sub_v_names, operation_types=sub_ops,
+                    vehicle_speeds=sub_v_speeds, vehicle_costs_per_km=sub_v_costs,
+                    multi_trip_pairs=sub_m_trips
+                )
+
+                for v_i, v_route in enumerate(sub_res.get("routes", [])):
+                    v_name = sub_v_names[v_i]
+                    v_info = fleet_dict.get(v_name, fleet_dict.get(v_name.replace(" (Volta 2)", ""), {}))
+                    raw_stops = []
+                    loc_indices = v_route
+                    if len(v_route) >= 2 and v_route[0] == 0 and v_route[-1] == 0:
+                        loc_indices = v_route[1:-1]
+
+                    for loc_idx in loc_indices:
+                        if loc_idx >= 1:
+                            sub_c_idx = loc_idx - 1
+                            orig_c_idx = matching_indices[sub_c_idx]
+                            client_row = deliveries_df.iloc[orig_c_idx]
+                            visited_client_indices.add(orig_c_idx)
+
+                            win_s = client_row.get("Slot1_Inicio", "")
+                            win_e = client_row.get("Slot1_Fim", "")
+                            combined_window = format_time_window_display(win_s, win_e)
+                            deliv_id = int(client_row.get("id", orig_c_idx + 1))
+                            doc_id_val = str(client_row.get("Doc_ID") or client_row.get("numero_doc") or client_row.get("doc_id") or "")
+                            tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
+                            obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
+                            vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
+
+                            raw_stops.append({
+                                "id": deliv_id,
+                                "ID_Original": deliv_id,
+                                "Rota": v_name,
+                                "Armazem": wh_name,
+                                "Doc_ID": doc_id_val,
+                                "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{orig_c_idx}")),
+                                "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{orig_c_idx}")),
+                                "Morada": str(client_row.get("Morada", "N/A")),
+                                "CP": str(client_row.get(cp_col_name or "Codigo_Postal", "N/A")),
+                                "Localidade": str(client_row.get("Localidade", "")),
+                                "Janela_Horaria": combined_window,
+                                "Janela_Inicio": str(win_s or ""),
+                                "Janela_Fim": str(win_e or ""),
+                                "Latitude": float(client_row["Latitude"]),
+                                "Longitude": float(client_row["Longitude"]),
+                                "Peso_KG": float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0),
+                                "Volume_m3": float(client_row.get("Volume_m3", 0.0) if not is_any_cx_project else 0.0),
+                                "Cx_Ambiente": int(client_row.get("Cx_Ambiente", 0) or 0),
+                                "Cx_Frio": int(client_row.get("Cx_Frio", 0) or 0),
+                                "Cx_Congelado": int(client_row.get("Cx_Congelado", 0) or 0),
+                                "Total_Cx": int(client_row.get("Total_Cx", 0) or ((client_row.get("Cx_Ambiente", 0) or 0) + (client_row.get("Cx_Frio", 0) or 0) + (client_row.get("Cx_Congelado", 0) or 0))),
+                                "Telefone": tel_val,
+                                "Observacoes": obs_val,
+                                "Notas_Motorista": obs_val,
+                                "Vendedor": vend_val,
+                                "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
+                                "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
+                                "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim"),
+                                "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao", client_row.get("tipo_operacao"))),
+                                "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or ""),
+                                "_client_idx": orig_c_idx
+                            })
+
+                    if raw_stops:
+                        v_s_fall = minutes_to_time_str(sub_v_starts[v_i]) if v_i < len(sub_v_starts) else "08:00:00"
+                        v_e_fall = minutes_to_time_str(sub_v_ends[v_i]) if v_i < len(sub_v_ends) else "20:00:00"
+                        processed = _run_gatekeeper_for_route(
+                            v_name, v_info, wh_lat, wh_lon, v_s_fall, v_e_fall, raw_stops, {}
+                        )
+                        routes_list.extend(processed)
+        else:
+            # 6B. RESOLUÇÃO MONOLÍTICA CLÁSSICA (Para armazém único ou frota sem especificação)
+            optimizer = AdvancedRouteOptimizer()
+            result = optimizer.optimize_routes(
+                distance_matrix, demands, vehicle_capacities, depot_indices,
+                optimization_params=solver_params, volume_demands=volume_demands,
+                vehicle_volume_capacities=vehicle_volume_capacities,
+                client_warehouses=client_warehouses, vehicle_warehouses=vehicle_warehouses,
+                num_warehouses=num_warehouses, vehicle_start_times=vehicle_start_times,
+                vehicle_end_times=vehicle_end_times, client_time_windows=client_time_windows,
+                locations=locations, client_rules=client_rules, vehicle_rules=vehicle_rules,
+                rules_matrix=rules_matrix, vehicle_max_stops=vehicle_max_stops,
+                client_service_times=client_service_times, client_priorities=client_priorities,
+                vehicle_returns_to_depot=vehicle_returns_to_depot, client_cps=client_cps,
+                vehicle_names=vehicle_names, operation_types=op_types,
+                pickup_delivery_pairs=pickup_delivery_pairs, vehicle_speeds=vehicle_speeds,
+                vehicle_costs_per_km=vehicle_costs_per_km, multi_trip_pairs=multi_trip_pairs
+            )
+
+            for vehicle_idx, route in enumerate(result.get("routes", [])):
+                vehicle_name = vehicle_names[vehicle_idx] if vehicle_idx < len(vehicle_names) else f"Veículo {vehicle_idx + 1}"
+                v_info = fleet_dict.get(vehicle_name, fleet_dict.get(vehicle_name.replace(" (Volta 2)", ""), {}))
+                warehouse_origin = v_info.get("warehouse", default_wh_name)
+                depot_lat, depot_lon = get_depot_coords(warehouses_df, warehouse_origin)
+                raw_stops = []
+                loc_indices = route
+                if len(route) >= 2 and route[0] < client_start_idx and route[-1] < client_start_idx:
+                    loc_indices = route[1:-1]
+
+                for loc_idx in loc_indices:
+                    if loc_idx >= client_start_idx:
+                        client_idx = loc_idx - client_start_idx
+                        client_row = deliveries_df.iloc[client_idx]
+                        visited_client_indices.add(client_idx)
+                        win_s = client_row.get("Slot1_Inicio", "")
+                        win_e = client_row.get("Slot1_Fim", "")
+                        combined_window = format_time_window_display(win_s, win_e)
+                        deliv_id = int(client_row.get("id", client_idx + 1))
+                        doc_id_val = str(client_row.get("Doc_ID") or client_row.get("numero_doc") or client_row.get("doc_id") or "")
+                        tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
+                        obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
+                        vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
+
+                        raw_stops.append({
+                            "id": deliv_id, "ID_Original": deliv_id, "Rota": vehicle_name, "Armazem": warehouse_origin,
+                            "Doc_ID": doc_id_val, "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
+                            "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{client_idx}")),
+                            "Morada": str(client_row.get("Morada", "N/A")), "CP": str(client_row.get("Codigo_Postal", "N/A")),
+                            "Localidade": str(client_row.get("Localidade", "")), "Janela_Horaria": combined_window,
+                            "Janela_Inicio": str(win_s or ""), "Janela_Fim": str(win_e or ""),
+                            "Latitude": float(client_row["Latitude"]), "Longitude": float(client_row["Longitude"]),
+                            "Peso_KG": float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0),
+                            "Volume_m3": float(client_row.get("Volume_m3", 0.0) if not is_any_cx_project else 0.0),
+                            "Cx_Ambiente": int(client_row.get("Cx_Ambiente", 0) or 0), "Cx_Frio": int(client_row.get("Cx_Frio", 0) or 0),
+                            "Cx_Congelado": int(client_row.get("Cx_Congelado", 0) or 0),
+                            "Total_Cx": int(client_row.get("Total_Cx", 0) or ((client_row.get("Cx_Ambiente", 0) or 0) + (client_row.get("Cx_Frio", 0) or 0) + (client_row.get("Cx_Congelado", 0) or 0))),
+                            "Telefone": tel_val, "Observacoes": obs_val, "Notas_Motorista": obs_val, "Vendedor": vend_val,
+                            "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
+                            "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
+                            "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim"),
+                            "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao", client_row.get("tipo_operacao"))),
+                            "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or ""),
+                            "_client_idx": client_idx
+                        })
+
+                if raw_stops:
+                    v_s_fall = minutes_to_time_str(vehicle_start_times[vehicle_idx]) if vehicle_idx < len(vehicle_start_times) else "08:00:00"
+                    v_e_fall = minutes_to_time_str(vehicle_end_times[vehicle_idx]) if vehicle_idx < len(vehicle_end_times) else "20:00:00"
+                    processed = _run_gatekeeper_for_route(
+                        vehicle_name, v_info, depot_lat, depot_lon, v_s_fall, v_e_fall, raw_stops, {}
+                    )
+                    routes_list.extend(processed)
                     
         # 7. Process dropped nodes (unassigned deliveries -> Por Distribuir)
-        dropped_nodes = result.get("dropped_nodes", [])
         dropped_client_indices = set()
-        for loc_idx in dropped_nodes:
-            if loc_idx >= client_start_idx:
-                dropped_client_indices.add(loc_idx - client_start_idx)
-                
-        # Also catch any client that was not visited
         for c_idx in range(len(deliveries_df)):
             if c_idx not in visited_client_indices:
                 dropped_client_indices.add(c_idx)
@@ -1339,7 +1540,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             "status": "success",
             "routes": routes_list,
             "vehicles": vehicle_names,
-            "quality_metrics": result.get("quality_metrics", {})
+            "quality_metrics": result.get("quality_metrics", {}) if "result" in locals() and isinstance(result, dict) else {}
         }
         return sanitize_json_data(resp_obj)
     except HTTPException as he:

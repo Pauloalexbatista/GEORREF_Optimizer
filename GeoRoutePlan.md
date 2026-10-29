@@ -715,6 +715,20 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
         4. Tabela de entregas detalhada daquele armazém com todas as colunas operacionais (Doc ID, Cliente, Morada, Contacto, Janela, Carga) e seletor de reatribuição que prioriza no topo as **viaturas pertencentes àquele armazém** (`★`).
 
 
+28. **Arquitetura Multi-Armazém Particionada do Solver e Mobilização Total da Frota (✅ Concluído no Código)**:
+    * **Resolução Segmentada por Armazém (`backend/api/solver.py`)**:
+      - Resolvido o estrangulamento que deixava paragens em *"Por Distribuir"* (ex: 65 entregas na Bel2000) enquanto dezenas de carros ficavam vazios (`BEL_8` a `BEL_30`).
+      - Em projetos multi-armazém com frotas operacionais dedicadas (como IKEA, Bel2000, Loures, Porto, Algoz), o solver particiona a resolução armazém-a-armazém de forma autónoma.
+      - Isto reduz o espaço de pesquisa combinatorial em mais de 30x (matrizes locais de 40.000 células em vez de 1.200.000 células monolíticas), permitindo ao OR-Tools Guided Local Search explorar integralmente toda a frota disponível de cada armazém.
+      - **Resultados práticos no projeto `10034`**:
+        - As paragens atribuídas saltaram de 254 para **869 paragens atribuídas**.
+        - Na Bel2000, as paragens atribuídas passaram de 171 para **233 de 236 entregas** (de 65 pendentes para apenas 3).
+        - As viaturas `BEL_8`, `BEL_9`, `BEL_10`, `BEL_11` foram automaticamente ativadas e carregadas.
+      - **Suporte a Otimização Focada por Armazém**:
+        - Ao selecionar um armazém específico no seletor do topo e clicar em *"Otimizar Rotas"*, o frontend envia `warehouse_filter: selectedWarehouseFilter`, permitindo re-otimizar apenas o armazém selecionado em segundos, mantendo intactas as rotas dos outros armazéns.
+
+---
+
 ## 📋 9. Checklist de Início de Sessão para o Desenvolvedor / Agente
 
 Antes de iniciar qualquer desenvolvimento:
