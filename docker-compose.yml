@@ -11,6 +11,8 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     expose:
       - "8000"
     volumes:

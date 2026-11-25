@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { ProjectProvider } from "@/context/ProjectContext";
+import { AgentChatProvider } from "@/context/AgentChatContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { I18nProvider } from "@/context/I18nContext";
 import ExtensionErrorSuppressor from "@/components/ExtensionErrorSuppressor";
@@ -39,7 +40,9 @@ export default function RootLayout({
           <I18nProvider>
             <AuthProvider>
               <ProjectProvider>
-                {children}
+                <AgentChatProvider>
+                  {children}
+                </AgentChatProvider>
               </ProjectProvider>
             </AuthProvider>
           </I18nProvider>

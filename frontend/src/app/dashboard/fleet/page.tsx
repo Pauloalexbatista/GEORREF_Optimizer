@@ -8,6 +8,7 @@ import { apiRequest } from "@/utils/api";
 import { useI18n } from "@/context/I18nContext";
 
 const UnifiedGeocodingModal = dynamic(() => import("@/components/UnifiedGeocodingModal"), { ssr: false });
+import EditDeliveryModal from "@/components/EditDeliveryModal";
 
 interface Warehouse {
   name: string;
@@ -160,6 +161,10 @@ export default function FleetPage() {
   const [geoModalOpen, setGeoModalOpen] = useState(false);
   const [editingWhIndex, setEditingWhIndex] = useState<number | null>(null);
   const [editingClient, setEditingClient] = useState<ClientDeliveryItem | null>(null);
+  const [editingClientOp, setEditingClientOp] = useState<ClientDeliveryItem | null>(null);
+  const [clientSortField, setClientSortField] = useState<string>("peso_kg");
+  const [clientSortOrder, setClientSortOrder] = useState<"asc" | "desc">("desc");
+  const [clientFilterType, setClientFilterType] = useState<"all" | "overload" | "zero_load">("all");
 
   // Rules Simulator State (Ponto 2 GeoRoutePlan)
   const [simVehicleIndex, setSimVehicleIndex] = useState<number>(0);
@@ -507,21 +512,78 @@ export default function FleetPage() {
     setClients((prev) => [newClient, ...prev]);
   };
 
-  // Filtered lists
+  // Capacidade maxima da frota
+  const maxFleetCap = useMemo(() => {
+    let maxK = 5000;
+    let maxV = 15.0;
+    fleet.forEach((v) => {
+      const k = Number(v.capacidade_kg) || 0;
+      const vl = Number(v.capacidade_vol) || 0;
+      if (k > maxK) maxK = k;
+      if (vl > maxV) maxV = vl;
+    });
+    return { kg: maxK, vol: maxV };
+  }, [fleet]);
+
+  const overloadClientsCount = useMemo(() => {
+    return clients.filter((c) => Number(c.peso_kg) > maxFleetCap.kg || Number(c.volume_m3) > maxFleetCap.vol).length;
+  }, [clients, maxFleetCap]);
+
+  const zeroLoadClientsCount = useMemo(() => {
+    return clients.filter((c) => Number(c.peso_kg) === 0 || Number(c.volume_m3) === 0).length;
+  }, [clients]);
+
+  const handleClientSort = (field: string) => {
+    if (clientSortField === field) {
+      setClientSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setClientSortField(field);
+      setClientSortOrder(field === "peso_kg" || field === "volume_m3" || field === "valor_cobrar" || field === "tempo_descarga_min" ? "desc" : "asc");
+    }
+  };
+
+  // Filtered and Sorted Clients
   const filteredClients = useMemo(() => {
-    if (!searchClients.trim()) return clients;
-    const q = searchClients.toLowerCase().trim();
-    return clients.filter(
-      (c) =>
-        (c.codigo_cliente && c.codigo_cliente.toLowerCase().includes(q)) ||
-        (c.nome_cliente && c.nome_cliente.toLowerCase().includes(q)) ||
-        (c.morada && c.morada.toLowerCase().includes(q)) ||
-        (c.concelho && c.concelho.toLowerCase().includes(q)) ||
-        (c.vendedor && c.vendedor.toLowerCase().includes(q)) ||
-        (c.regras && c.regras.toLowerCase().includes(q)) ||
-        (c.armazem && c.armazem.toLowerCase().includes(q))
-    );
-  }, [clients, searchClients]);
+    let list = clients;
+
+    if (clientFilterType === "overload") {
+      list = list.filter((c) => Number(c.peso_kg) > maxFleetCap.kg || Number(c.volume_m3) > maxFleetCap.vol);
+    } else if (clientFilterType === "zero_load") {
+      list = list.filter((c) => Number(c.peso_kg) === 0 || Number(c.volume_m3) === 0);
+    }
+
+    if (searchClients.trim()) {
+      const q = searchClients.toLowerCase().trim();
+      list = list.filter(
+        (c) =>
+          (c.codigo_cliente && c.codigo_cliente.toLowerCase().includes(q)) ||
+          (c.nome_cliente && c.nome_cliente.toLowerCase().includes(q)) ||
+          (c.morada && c.morada.toLowerCase().includes(q)) ||
+          (c.concelho && c.concelho.toLowerCase().includes(q)) ||
+          (c.vendedor && c.vendedor.toLowerCase().includes(q)) ||
+          (c.regras && c.regras.toLowerCase().includes(q)) ||
+          (c.armazem && c.armazem.toLowerCase().includes(q))
+      );
+    }
+
+    return [...list].sort((a, b) => {
+      let valA = (a as any)[clientSortField];
+      let valB = (b as any)[clientSortField];
+
+      if (valA === undefined || valA === null) valA = "";
+      if (valB === undefined || valB === null) valB = "";
+
+      if (typeof valA === "number" || typeof valB === "number" || clientSortField === "peso_kg" || clientSortField === "volume_m3" || clientSortField === "valor_cobrar" || clientSortField === "tempo_descarga_min") {
+        const numA = Number(valA) || 0;
+        const numB = Number(valB) || 0;
+        return clientSortOrder === "asc" ? numA - numB : numB - numA;
+      }
+
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return clientSortOrder === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+    });
+  }, [clients, searchClients, clientFilterType, clientSortField, clientSortOrder, maxFleetCap]);
 
   const filteredFleet = useMemo(() => {
     if (!searchFleet.trim()) return fleet;
@@ -1098,55 +1160,136 @@ export default function FleetPage() {
         {/* ------------------------------------------------------------- */}
         {activeTab === "clients" && (
           <div className="space-y-3 animate-in fade-in">
-            {/* Toolbar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-zinc-900/60 p-3.5 rounded-2xl border border-zinc-800">
-              <div>
-                <h3 className="text-sm font-bold text-zinc-100 flex items-center space-x-2">
-                  <span>📦</span>
-                  <span>Clientes & Encomendas de Distribuição ({clients.length})</span>
-                </h3>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Configure restrições operacionais, tempos de descarga e etiquetas de regras das encomendas.
-                </p>
+            <div className="flex flex-col gap-3 bg-zinc-900/60 p-3.5 rounded-2xl border border-zinc-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-100 flex items-center space-x-2">
+                    <span>📋</span>
+                    <span>Clientes & Encomendas de Distribuição ({clients.length})</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Edite pesos, volumes, janelas e etiquetas. Clique no cabeçalho de qualquer coluna para ordenar.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    placeholder="Pesquisar cliente, morada, regras, vendedor..."
+                    value={searchClients}
+                    onChange={(e) => setSearchClients(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 px-3 py-1.5 rounded-xl outline-none focus:border-indigo-500 w-full sm:w-72"
+                  />
+                  <button
+                    onClick={addClient}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-all shrink-0 cursor-pointer flex items-center gap-1"
+                  >
+                    <span>+</span> <span>Adicionar Cliente</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <input
-                  type="text"
-                  placeholder="Pesquisar cliente, morada, regras, vendedor..."
-                  value={searchClients}
-                  onChange={(e) => setSearchClients(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 px-3 py-1.5 rounded-xl outline-none focus:border-indigo-500 w-full sm:w-72"
-                />
+              {/* Quick Filters */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/60 text-xs">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Filtros Rápidos:</span>
                 <button
-                  onClick={addClient}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-all shrink-0 cursor-pointer flex items-center gap-1"
+                  type="button"
+                  onClick={() => setClientFilterType("all")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                    clientFilterType === "all"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                  }`}
                 >
-                  <span>+</span> <span>Adicionar Cliente</span>
+                  Todos ({clients.length})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setClientFilterType("overload")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    clientFilterType === "overload"
+                      ? "bg-red-600 text-white shadow-sm"
+                      : overloadClientsCount > 0
+                      ? "bg-red-950/70 border border-red-700/60 text-red-300 hover:bg-red-900"
+                      : "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700"
+                  }`}
+                  title={`Encomendas com peso > ${maxFleetCap.kg}kg ou vol > ${maxFleetCap.vol}m³`}
+                >
+                  <span>🚨 Não Cabe na Frota</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-red-900/90 text-red-200 text-[10px] font-bold">
+                    {overloadClientsCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClientFilterType("zero_load")}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    clientFilterType === "zero_load"
+                      ? "bg-amber-600 text-white shadow-sm"
+                      : zeroLoadClientsCount > 0
+                      ? "bg-amber-950/60 border border-amber-700/60 text-amber-300 hover:bg-amber-900"
+                      : "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700"
+                  }`}
+                  title="Encomendas com Peso ou Volume igual a 0"
+                >
+                  <span>⚠️ Sem Peso/Vol</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-900/90 text-amber-200 text-[10px] font-bold">
+                    {zeroLoadClientsCount}
+                  </span>
+                </button>
+
+                <div className="ml-auto text-[11px] text-zinc-400 flex items-center gap-1">
+                  <span>Ordenado por:</span>
+                  <strong className="text-zinc-200 font-mono">
+                    {clientSortField === "peso_kg" ? "Peso (kg)" : clientSortField === "volume_m3" ? "Volume (m³)" : clientSortField}
+                  </strong>
+                  <span className="text-indigo-400 font-bold">{clientSortOrder === "asc" ? "▲ Crescente" : "▼ Decrescente"}</span>
+                </div>
               </div>
             </div>
 
             {/* Table */}
             <div className="overflow-x-auto border border-zinc-800 rounded-2xl bg-zinc-900/40 backdrop-blur-sm max-h-[68vh]">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-zinc-900/90 text-zinc-400 font-bold uppercase tracking-wider text-[10px] sticky top-0 z-10 border-b border-zinc-800">
+              <table className="w-full text-left text-xs border-collapse min-w-[1350px]">
+                <thead className="bg-zinc-900/90 text-zinc-400 font-bold uppercase tracking-wider text-[10px] sticky top-0 z-10 border-b border-zinc-800 select-none">
                   <tr>
-                    <th className="py-2.5 px-1.5 text-center w-16 border-r border-zinc-800">Ações</th>
-                    <th className="py-2.5 px-2 border-r border-zinc-800 w-28">Cód / Doc</th>
-                    <th className="py-2.5 px-2 border-r border-zinc-800 w-44">Cliente</th>
-                    <th className="py-2.5 px-2 border-r border-zinc-800 w-36">Armazém</th>
-                    <th className="py-2.5 px-2 border-r border-zinc-800 min-w-[200px]">Morada & Localidade</th>
-                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-20">Peso (kg)</th>
-                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-16">Vol. (m³)</th>
-                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-28">Janela Horária</th>
-                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-16">Descarga</th>
-                    <th className="py-2.5 px-2 border-r border-zinc-800 min-w-[160px] bg-purple-950/20 text-purple-300">
-                      🏷️ Regras da Entrega
+                    <th className="py-2.5 px-1.5 text-center w-20 border-r border-zinc-800">Ações</th>
+                    <th onClick={() => handleClientSort("codigo_cliente")} className="py-2.5 px-2 border-r border-zinc-800 w-28 cursor-pointer hover:text-indigo-300 transition-colors">
+                      Cód / Doc {clientSortField === "codigo_cliente" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
                     </th>
-                    <th className="py-2.5 px-2 border-r border-zinc-800 w-28">Vendedor</th>
-                    <th className="py-2.5 px-1 text-center border-r border-zinc-800 w-20">Cobrar (€)</th>
-                    <th className="py-2.5 px-2 text-center border-r border-zinc-800 w-28">Rota Atribuída</th>
+                    <th onClick={() => handleClientSort("nome_cliente")} className="py-2.5 px-2 border-r border-zinc-800 min-w-[170px] cursor-pointer hover:text-indigo-300 transition-colors">
+                      Cliente {clientSortField === "nome_cliente" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("armazem")} className="py-2.5 px-2 border-r border-zinc-800 min-w-[140px] cursor-pointer hover:text-indigo-300 transition-colors">
+                      Armazém {clientSortField === "armazem" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("morada")} className="py-2.5 px-2 border-r border-zinc-800 min-w-[200px] cursor-pointer hover:text-indigo-300 transition-colors">
+                      Morada & Localidade {clientSortField === "morada" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("peso_kg")} className={`py-2.5 px-1 text-center border-r border-zinc-800 w-32 min-w-[110px] cursor-pointer transition-colors ${clientSortField === "peso_kg" ? "text-indigo-300 bg-indigo-950/30" : "hover:text-indigo-300"}`} title="Clique para ordenar por Peso">
+                      Peso (kg) {clientSortField === "peso_kg" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("volume_m3")} className={`py-2.5 px-1 text-center border-r border-zinc-800 w-28 min-w-[95px] cursor-pointer transition-colors ${clientSortField === "volume_m3" ? "text-indigo-300 bg-indigo-950/30" : "hover:text-indigo-300"}`} title="Clique para ordenar por Volume">
+                      Vol. (m³) {clientSortField === "volume_m3" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("janela_inicio")} className="py-2.5 px-1 text-center border-r border-zinc-800 w-28 cursor-pointer hover:text-indigo-300 transition-colors">
+                      Janela {clientSortField === "janela_inicio" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("tempo_descarga_min")} className="py-2.5 px-1 text-center border-r border-zinc-800 w-16 cursor-pointer hover:text-indigo-300 transition-colors">
+                      Descarga {clientSortField === "tempo_descarga_min" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("regras")} className="py-2.5 px-2 border-r border-zinc-800 min-w-[160px] bg-purple-950/20 text-purple-300 cursor-pointer hover:text-purple-200">
+                      🏷️ Regras {clientSortField === "regras" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("vendedor")} className="py-2.5 px-2 border-r border-zinc-800 w-28 cursor-pointer hover:text-indigo-300 transition-colors">
+                      Vendedor {clientSortField === "vendedor" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("valor_cobrar")} className="py-2.5 px-1 text-center border-r border-zinc-800 w-20 cursor-pointer hover:text-indigo-300 transition-colors">
+                      Cobrar (€) {clientSortField === "valor_cobrar" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
+                    <th onClick={() => handleClientSort("rota")} className="py-2.5 px-2 text-center border-r border-zinc-800 w-28 cursor-pointer hover:text-indigo-300 transition-colors">
+                      Rota {clientSortField === "rota" ? (clientSortOrder === "asc" ? "▲" : "▼") : "⇅"}
+                    </th>
                     <th className="py-2.5 px-2 text-center w-16">Ativo</th>
                   </tr>
                 </thead>
@@ -1161,7 +1304,14 @@ export default function FleetPage() {
                     filteredClients.map((c) => (
                       <tr key={c.id} className="hover:bg-zinc-850/50 transition-colors">
                         <td className="py-1 px-1.5 text-center border-r border-zinc-800 bg-zinc-900/40">
-                          <div className="flex items-center justify-center">
+                          <div className="flex items-center justify-center space-x-1">
+                            <button
+                              onClick={() => setEditingClientOp(c)}
+                              className="p-1 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-950/40 rounded transition-colors cursor-pointer"
+                              title="Editar Detalhes, Peso e Volume da Encomenda"
+                            >
+                              ✏️
+                            </button>
                             <button
                               onClick={() => setEditingClient(c)}
                               className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-amber-950/40 rounded transition-colors cursor-pointer"
@@ -1212,19 +1362,33 @@ export default function FleetPage() {
                         <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
                             type="number"
-                            step="0.1"
+                            step="0.01"
                             value={c.peso_kg}
                             onChange={(e) => updateClientField(c.id, "peso_kg", parseFloat(e.target.value) || 0)}
-                            className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            className={`border rounded px-1.5 py-1 text-center font-mono text-xs outline-none transition-all w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                              Number(c.peso_kg) > maxFleetCap.kg
+                                ? "bg-red-950/80 border-red-500 text-red-200 font-bold shadow-sm"
+                                : Number(c.peso_kg) === 0
+                                ? "bg-amber-950/40 border-amber-600/70 text-amber-300"
+                                : "bg-zinc-950/80 border-zinc-700/80 text-zinc-100 hover:border-zinc-500 focus:bg-zinc-900 focus:border-indigo-500"
+                            }`}
+                            title={Number(c.peso_kg) > maxFleetCap.kg ? `🚨 Excede capacidade máxima da viatura (${maxFleetCap.kg} kg)!` : "Peso em KG (editável)"}
                           />
                         </td>
                         <td className="py-1 px-1 text-center border-r border-zinc-800">
                           <input
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             value={c.volume_m3}
                             onChange={(e) => updateClientField(c.id, "volume_m3", parseFloat(e.target.value) || 0)}
-                            className="bg-transparent border-none outline-none text-zinc-200 font-mono text-center text-xs focus:bg-zinc-900 px-1 py-0.5 rounded w-full"
+                            className={`border rounded px-1.5 py-1 text-center font-mono text-xs outline-none transition-all w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                              Number(c.volume_m3) > maxFleetCap.vol
+                                ? "bg-red-950/80 border-red-500 text-red-200 font-bold shadow-sm"
+                                : Number(c.volume_m3) === 0
+                                ? "bg-amber-950/40 border-amber-600/70 text-amber-300"
+                                : "bg-zinc-950/80 border-zinc-700/80 text-zinc-100 hover:border-zinc-500 focus:bg-zinc-900 focus:border-indigo-500"
+                            }`}
+                            title={Number(c.volume_m3) > maxFleetCap.vol ? `🚨 Excede capacidade máxima da viatura (${maxFleetCap.vol} m³)!` : "Volume em m³ (editável)"}
                           />
                         </td>
                         <td className="py-1 px-1 text-center border-r border-zinc-800">
@@ -1862,6 +2026,21 @@ export default function FleetPage() {
         )}
 
         {/* Modal de Georreferenciação Manual do Cliente (Unificado) */}
+        {editingClientOp && (
+          <EditDeliveryModal
+            isOpen={!!editingClientOp}
+            onClose={() => setEditingClientOp(null)}
+            delivery={editingClientOp}
+            maxFleetCap={maxFleetCap}
+            warehouses={warehouses}
+            onSaveSuccess={(updated) => {
+              setClients((prev) =>
+                prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+              );
+            }}
+          />
+        )}
+
         {editingClient && (
           <UnifiedGeocodingModal
             isOpen={!!editingClient}

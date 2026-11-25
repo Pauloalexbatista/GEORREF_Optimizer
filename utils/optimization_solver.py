@@ -198,6 +198,7 @@ class AdvancedRouteOptimizer:
             multi_trip_pairs=resolved_mt_pairs,
             soft_tw_tolerance_min=soft_tw_tolerance_min,
             max_route_duration_min=max_route_duration_min,
+            time_limit_seconds=time_limit,
         )
 
         return squeezed_solution
@@ -643,7 +644,7 @@ class AdvancedRouteOptimizer:
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
-        search_parameters.time_limit.seconds = max(3, min(45, int(time_limit_seconds)))
+        search_parameters.time_limit.seconds = max(5, min(300, int(time_limit_seconds)))
 
         try:
             solution = routing.SolveWithParameters(search_parameters)
@@ -707,6 +708,7 @@ class AdvancedRouteOptimizer:
         multi_trip_pairs: Optional[List[Tuple[int, int, int]]] = None,
         soft_tw_tolerance_min: int = 0,
         max_route_duration_min: Optional[float] = None,
+        time_limit_seconds: float = 25.0,
     ) -> Dict[str, Any]:
         """
         Multi-Pass Route Squeeze & Pairwise Fusion Engine:
@@ -716,7 +718,8 @@ class AdvancedRouteOptimizer:
         4. Applies fast 2-opt TSP sequence polishing.
         """
         t_post_start = time.time()
-        MAX_POST_SEC = 5.0
+        MAX_POST_SEC = max(10.0, min(120.0, float(time_limit_seconds) * 0.45))
+        ejected_proximity_nodes = set()
         routes = [list(r) for r in initial_solution.get("routes", [])]
         num_vehicles = len(routes)
         num_nodes_total = len(distance_matrix)
@@ -1271,6 +1274,8 @@ class AdvancedRouteOptimizer:
                     routes[best_swap_va] = best_swap_seq
                     assigned_nodes.discard(best_swap_ejected)
                     assigned_nodes.add(u_node)
+                    ejected_proximity_nodes.add(best_swap_ejected)
+                    ejected_proximity_nodes.discard(u_node)
 
         # Phase 3.5: Inter-Route Local Search (Relocate 1-0 & Swap 1-1 entre rotas ativas para eliminar cruzamentos e reduzir KM)
         active_vs = [v for v in range(num_vehicles) if len(routes[v]) > 0]
@@ -1382,7 +1387,8 @@ class AdvancedRouteOptimizer:
         return {
             "routes": routes,
             "dropped_nodes": final_dropped,
+            "ejected_proximity_nodes": list(ejected_proximity_nodes),
             "status": "success",
-            "elapsed_seconds": initial_solution.get("elapsed_seconds", 0.0),
+            "elapsed_seconds": round(time.time() - t_post_start + initial_solution.get("elapsed_seconds", 0.0), 2),
             "solver": "Google OR-Tools VRPTW + Multi-Pass Squeeze & Dynamic Load Engine"
         }

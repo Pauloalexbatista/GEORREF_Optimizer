@@ -20,8 +20,10 @@ def get_db_connection():
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
     """Criar conexão com a base de dados"""
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn = sqlite3.connect(DB_FILE, timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     return conn
 
 
@@ -300,18 +302,18 @@ def init_database():
         if not u_p:
             cursor.execute("""
                 INSERT INTO utilizadores (empresa_id, nome, email, password_hash, password_plain, is_admin, is_superadmin, is_active, data_validade, programas)
-                VALUES (1, 'Paulo Batista', 'pauloalexbatista@gmail.com', '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', 'admin123', 1, 1, 1, '2099-12-31', 'site,app')
+                VALUES (1, 'Paulo Batista', 'pauloalexbatista@gmail.com', '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', NULL, 1, 1, 1, '2099-12-31', 'site,app')
             """)
         else:
             cursor.execute("""
                 UPDATE utilizadores 
-                SET password_hash = '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', password_plain = 'admin123', is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
+                SET password_plain = NULL, is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
                 WHERE email = 'pauloalexbatista@gmail.com'
             """)
 
         cursor.execute("""
             UPDATE utilizadores 
-            SET password_hash = '$2b$12$kMRcnb7b/nDt.INV/HPHjON8rrwzvspP05t0CRzTktS.AhC/DMSGm', password_plain = 'admin123', is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
+            SET password_plain = NULL, is_superadmin = 1, is_admin = 1, is_active = 1, data_validade = '2099-12-31', programas = 'site,app'
             WHERE email = 'paulo.batista@ttm.pt'
         """)
 
@@ -943,8 +945,8 @@ def criar_utilizador_admin(empresa_nome, responsavel, email, password_plain, pas
         
         cursor.execute("""
             INSERT INTO utilizadores (empresa_id, nome, email, password_hash, password_plain, driver_password, is_admin, is_superadmin, is_active, data_validade, programas)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
-        """, (empresa_id, responsavel.strip(), email.strip(), password_hash, password_plain, str(driver_password or "").strip(), 1 if is_admin else 0, data_validade, programas))
+            VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 1, ?, ?)
+        """, (empresa_id, responsavel.strip(), email.strip(), password_hash, str(driver_password or "").strip(), 1 if is_admin else 0, data_validade, programas))
         user_id = cursor.lastrowid
         conn.commit()
         return user_id
@@ -969,12 +971,12 @@ def atualizar_utilizador_admin(user_id, empresa_nome, responsavel, email, passwo
         cursor.execute("UPDATE empresas SET nome = ?, data_validade = ?, programas = ?, driver_password = ?, is_active = ? WHERE id = ?",
                        (empresa_nome.strip(), data_validade, programas, str(driver_password or "").strip(), is_active, empresa_id))
         
-        if password_hash and password_plain:
+        if password_hash:
             cursor.execute("""
                 UPDATE utilizadores 
-                SET nome = ?, email = ?, password_hash = ?, password_plain = ?, driver_password = ?, data_validade = ?, programas = ?, is_active = ?
+                SET nome = ?, email = ?, password_hash = ?, password_plain = NULL, driver_password = ?, data_validade = ?, programas = ?, is_active = ?
                 WHERE id = ?
-            """, (responsavel.strip(), email.strip(), password_hash, password_plain, str(driver_password or "").strip(), data_validade, programas, is_active, user_id))
+            """, (responsavel.strip(), email.strip(), password_hash, str(driver_password or "").strip(), data_validade, programas, is_active, user_id))
         else:
             cursor.execute("""
                 UPDATE utilizadores 
@@ -1158,7 +1160,9 @@ def ensure_entregas_columns():
                 ("cx_ambiente", "INTEGER DEFAULT 0"),
                 ("cx_frio", "INTEGER DEFAULT 0"),
                 ("cx_congelado", "INTEGER DEFAULT 0"),
-                ("total_cx", "INTEGER DEFAULT 0")
+                ("total_cx", "INTEGER DEFAULT 0"),
+                ("estado_planeamento", "TEXT DEFAULT 'Pendente'"),
+                ("motivo_pendencia", "TEXT DEFAULT ''")
             ]:
                 if col not in cols:
                     try:

@@ -90,7 +90,7 @@ def get_all_users(admin: UserResponse = Depends(require_admin)):
             data_validade=u.get("data_validade", "2099-12-31"),
             programas=u.get("programas", "site,app"),
             dias_restantes=dias,
-            password_plain=u.get("password_plain") if admin.is_superadmin else None,
+            password_plain=None,
             driver_password=u.get("driver_password", ""),
             created_at=str(u.get("created_at", ""))
         ))
@@ -114,7 +114,7 @@ def create_user(payload: CreateUserPayload, admin: UserResponse = Depends(requir
         empresa_nome=payload.empresa_nome,
         responsavel=payload.responsavel,
         email=payload.email,
-        password_plain=payload.password,
+        password_plain=None,
         password_hash=pwd_hash,
         data_validade=payload.data_validade,
         programas=payload.programas,
@@ -135,7 +135,7 @@ def create_user(payload: CreateUserPayload, admin: UserResponse = Depends(requir
         data_validade=payload.data_validade,
         programas=payload.programas,
         dias_restantes=dias,
-        password_plain=payload.password,
+        password_plain=None,
         driver_password=payload.driver_password or ""
     )
 
@@ -158,7 +158,7 @@ def update_user(user_id: int, payload: UpdateUserPayload, admin: UserResponse = 
             empresa_nome=payload.empresa_nome,
             responsavel=payload.responsavel,
             email=payload.email,
-            password_plain=pwd_plain,
+            password_plain=None,
             password_hash=pwd_hash,
             data_validade=payload.data_validade,
             programas=payload.programas,

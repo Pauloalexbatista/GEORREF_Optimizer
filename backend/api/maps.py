@@ -26,12 +26,15 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def get_geo_db():
-    conn = sqlite3.connect(DB_GEO_PATH)
+    conn = sqlite3.connect(DB_GEO_PATH, timeout=15.0)
+    conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
     return conn
 
 def get_multi_db():
-    conn = sqlite3.connect(DB_MULTI_PATH)
+    conn = sqlite3.connect(DB_MULTI_PATH, timeout=15.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
     return conn
 

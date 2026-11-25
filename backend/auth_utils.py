@@ -5,17 +5,27 @@ import bcrypt
 from typing import Optional
 import os
 
+import warnings
+
+_env = os.getenv('ENVIRONMENT', os.getenv('ENV', 'development')).lower()
 raw_secret = os.getenv('SECRET_KEY')
-SECRET_KEY = raw_secret.strip().strip('"').strip("'") if (raw_secret and raw_secret.strip()) else 'georoute_super_secret_key_change_me_in_production'
+if raw_secret and raw_secret.strip():
+    SECRET_KEY = raw_secret.strip().strip('"').strip("'")
+elif _env == 'production':
+    raise RuntimeError("A variável de ambiente SECRET_KEY é obrigatória em produção.")
+else:
+    warnings.warn(
+        "SECRET_KEY não definida no ambiente; a usar chave temporária apenas para desenvolvimento.",
+        RuntimeWarning,
+    )
+    SECRET_KEY = 'georoute_dev_only_secret_key'
+
 ALGORITHM = 'HS256'
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours for ease of multi-monitor use
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not hashed_password:
         return False
-    # 0. Direct match (if stored plain)
-    if plain_password == hashed_password:
-        return True
     # 1. Try legacy SHA-256 hash
     salt = 'georoute2024'
     legacy_hash = hashlib.sha256((plain_password + salt).encode()).hexdigest()

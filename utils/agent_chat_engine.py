@@ -7,11 +7,11 @@ import pandas as pd
 from utils.agent_spatial_insights import detect_geographic_outliers, analyze_unassigned_clustering
 from utils.validation_auditor import audit_route_plan
 
-# Modelos recomendados em ordem de velocidade e confiabilidade comprovada
+# Modelos recomendados em ordem de velocidade e confiabilidade comprovada (Gemini API)
 CANDIDATE_MODELS = [
+    "gemini-3.8-flash",
     "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
-    "gemini-3.8-flash"
+    "gemini-flash-latest"
 ]
 
 def extract_distribution_metrics(df_routes: pd.DataFrame) -> Dict[str, Any]:

@@ -23,6 +23,7 @@ import io
 import pandas as pd
 from datetime import datetime, timedelta
 import math
+import time
 
 # Resolve imports from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -32,11 +33,89 @@ from utils.optimization_solver import AdvancedRouteOptimizer, get_segment_speed
 from utils.persistence_manager import serialize_state, deserialize_state
 from utils.operation_types import normalize_op_type, apply_sucata_heritage, extract_pickup_delivery_pairs, calculate_dynamic_route_loads
 from backend.api.auth import get_current_user, UserResponse
+from utils.rules_engine import is_vehicle_compatible
 
 router = APIRouter(prefix="/solver", tags=["solver"])
 
 import math
 import numpy as np
+
+def diagnose_unassigned_delivery(
+    client_row: dict,
+    wh_name: str,
+    fleet_dict: dict,
+    ejection_reason: str = "",
+    was_proximity_ejected: bool = False,
+    dist_km: float = 0.0,
+    rules_matrix: list = None,
+    has_wh_filter: bool = False,
+    target_wh_filter: str = ""
+) -> str:
+    """Diagnóstico auditável e rigoroso de por que uma entrega ficou em Por Distribuir."""
+    import unicodedata
+    def _strip_norm(t):
+        return "".join(c for c in unicodedata.normalize("NFD", str(t or "")) if unicodedata.category(c) != "Mn").lower().strip()
+
+    c_rules = str(client_row.get("Regras") or client_row.get("regras") or "").strip()
+    c_wh = str(client_row.get("Armazem") or wh_name or "").strip()
+    c_kg = float(client_row.get("Peso_KG") or client_row.get("peso_kg") or 0.0)
+    c_vol = float(client_row.get("Volume_m3") or client_row.get("volume_m3") or 0.0)
+
+    # 0. Verificação Suprema de Capacidade Física:
+    wh_vehs = {k: v for k, v in fleet_dict.items() if _strip_norm(v.get("warehouse", "")) == _strip_norm(c_wh) or _strip_norm(v.get("warehouse", "")) in _strip_norm(c_wh) or _strip_norm(c_wh) in _strip_norm(v.get("warehouse", ""))}
+    ref_fleet = wh_vehs if wh_vehs else fleet_dict
+    if ref_fleet:
+        max_f_kg = max(float(v.get("capacity") or v.get("capacity_kg") or v.get("Capacidade_KG") or 1000.0) for v in ref_fleet.values())
+        max_f_vol = max(float(v.get("capacity_volume") or v.get("capacity_vol") or v.get("Capacidade_Vol") or 10.0) for v in ref_fleet.values())
+        if c_kg > max_f_kg or c_vol > max_f_vol:
+            excess_parts = []
+            if c_kg > max_f_kg:
+                excess_parts.append(f"{c_kg:.1f} kg > máx {max_f_kg:.1f} kg")
+            if c_vol > max_f_vol:
+                excess_parts.append(f"{c_vol:.2f} m³ > máx {max_f_vol:.2f} m³")
+            return f"Carga incompatível: não cabe em nenhuma viatura ({' e '.join(excess_parts)})"
+
+    if ejection_reason:
+        return ejection_reason
+    if was_proximity_ejected:
+        return f"Retida junto ao armazém ({dist_km:.1f} km) por priorização de entregas distantes"
+
+    # 1. Distância inviável ao armazém base (ex: Mem Martins para Vila Real, ou Aveiro para Algoz, ou Ilhas cruzadas)
+    if dist_km > 150.0:
+        return f"Distância excessiva ao armazém ({dist_km:.0f} km): excede o raio de operação de 1 turno da frota de {c_wh}"
+
+    # 2. Se foi executado um filtro para um armazém específico e esta entrega pertence a OUTRO armazém:
+    if has_wh_filter and target_wh_filter:
+        w_c = _strip_norm(c_wh)
+        w_t = _strip_norm(target_wh_filter)
+        if w_c and w_t and w_c != w_t and w_t not in w_c and w_c not in w_t:
+            return f"Aguardando cálculo do armazém '{c_wh}' no planeamento"
+
+    # 3. Verificar se o armazém tem viaturas configuradas na frota
+    if not wh_vehs:
+        return f"Armazém '{c_wh}' sem viaturas configuradas na frota"
+
+    # 4. Verificar restrições de compatibilidade REAIS
+    c_cp = str(client_row.get("CP") or client_row.get("Codigo_Postal") or client_row.get("codigo_postal") or "")
+    matching_v = []
+    for v_n, v_d in wh_vehs.items():
+        v_rules = str(v_d.get("regras") or "")
+        if is_vehicle_compatible(v_rules, c_rules, rules_matrix=rules_matrix, delivery_cp=c_cp, vehicle_name=v_n):
+            matching_v.append((v_n, v_d))
+        
+    if not matching_v:
+        if rules_matrix and len(rules_matrix) > 0:
+            return f"Restrição de acesso: viaturas de '{c_wh}' não autorizadas para regras/zona ({c_rules or c_cp})"
+        return f"Sem viatura compatível no armazém '{c_wh}'"
+
+    # 5. Janela horária estrita
+    win_s = str(client_row.get("Janela_Inicio") or client_row.get("Slot1_Inicio") or "").strip()
+    win_e = str(client_row.get("Janela_Fim") or client_row.get("Slot1_Fim") or "").strip()
+    if win_s and win_e and win_e not in ["18:00", "20:00", "23:59", ""]:
+        return f"Janela horária restrita ({win_s}-{win_e}) conflituante com turnos da frota"
+        
+    return f"Capacidade de carga ou turnos esgotados na frota do armazém '{c_wh}'"
+
 
 def clean_num(val, default=0.0):
     if val is None or pd.isna(val):
@@ -186,6 +265,11 @@ def parse_time_to_minutes(t_val, default=480) -> int:
     s = str(t_val).strip()
     if not s or s.lower() in ["none", "nan", "qualquer", "n/a", "nat"]:
         return default
+    extra_days = 0
+    if "+1d" in s.lower() or "+1 d" in s.lower():
+        extra_days = 1
+    elif "+2d" in s.lower() or "+2 d" in s.lower():
+        extra_days = 2
     if " " in s:
         s = s.split(" ")[-1].strip()
     if "T" in s:
@@ -193,7 +277,7 @@ def parse_time_to_minutes(t_val, default=480) -> int:
     try:
         parts = s.split(":")
         if len(parts) >= 2:
-            return int(parts[0]) * 60 + int(parts[1])
+            return (extra_days * 1440) + int(parts[0]) * 60 + int(parts[1])
         return default
     except Exception:
         return default
@@ -346,7 +430,7 @@ def get_depot_coords(warehouses_df, wh_name=None):
         print(f"Notice in get_depot_coords: {e}")
     return 38.6593, -9.1758
 
-def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "09:50", avg_speed: float = 50.0, default_service_time: int = 10, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False, vehicle_cap_kg: float = 1000.0, vehicle_cap_vol: float = 10.0) -> list:
+def recalculate_route_stops(stops_iterable, depot_lat: float, depot_lon: float, start_time_str: str = "08:00", avg_speed: float = 50.0, default_service_time: int = 10, empresa_id: int = 1, projeto_id: int = 0, use_google_traffic: bool = False, vehicle_cap_kg: float = 1000.0, vehicle_cap_vol: float = 10.0) -> list:
     stops_list = list(stops_iterable)
     if not stops_list:
         return []
@@ -890,7 +974,7 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             vehicle_names.append(vehicle_name)
             vehicle_warehouses.append(wh_name)
             
-            s_min = parse_time_to_minutes(vehicle_data.get("start_time", "09:50"), 590)
+            s_min = parse_time_to_minutes(vehicle_data.get("start_time", "08:00"), 480)
             e_min = parse_time_to_minutes(vehicle_data.get("end_time", "18:00"), 1080)
             # Salvaguarda de horario: se fim < inicio, ajustar para fim = inicio (0 tempo util, viatura vazia sem crashar)
             if e_min < s_min:
@@ -1006,6 +1090,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
         visited_client_indices = set()
         vehicle_first_trip_depot_arrival = {}
         result = {}
+        wh_telemetry = []
+        ensure_entregas_columns()
 
         default_wh_name = "Armazém Principal"
         if warehouses_df is not None and not warehouses_df.empty:
@@ -1141,7 +1227,25 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                             if float(st_c.get("Peso_KG", 0) or 0) > 0 or float(st_c.get("Volume_m3", 0) or 0) > 0 or int(st_c.get("Total_Cx", 0) or 0) > 0:
                                 eject_target = i_cand
                                 break
-                    _eject_stop_at(raw_stops, eject_target)
+                    _eject_stop_at(raw_stops, eject_target, reason=f'Capacidade ou turno da viatura {vehicle_name} esgotados')
+
+            if not raw_stops:
+                return []
+
+            # Recalcular as paragens finais limpas após todas as ejeções
+            processed_stops = recalculate_route_stops(
+                raw_stops, depot_lat, depot_lon, v_start_str, v_speed,
+                vehicle_cap_kg=v_cap_kg, vehicle_cap_vol=v_cap_vol
+            )
+
+            # Verificação final estrita de conformidade: NUNCA autorizar uma rota com violação de janelas ou fim de turno
+            fin_late, _, fin_overload, fin_overtime = _check_route_violations(processed_stops)
+            if fin_late or fin_overload or fin_overtime:
+                for st in raw_stops:
+                    c_idx = st.get("_client_idx")
+                    if c_idx is not None:
+                        visited_client_indices.discard(c_idx)
+                return []
 
             for pst in processed_stops:
                 pst.pop("_client_idx", None)
@@ -1292,6 +1396,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 sub_params = dict(solver_params)
                 sub_params["time_limit_seconds"] = sub_t_lim
 
+                wh_t_start = time.time()
+                wh_processed_all_stops = []
                 optimizer = AdvancedRouteOptimizer()
                 sub_res = optimizer.optimize_routes(
                     sub_dist_mat, sub_demands, sub_v_caps, sub_dep_idx,
@@ -1374,6 +1480,170 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                             v_name, v_info, wh_lat, wh_lon, v_s_fall, v_e_fall, raw_stops, {}
                         )
                         routes_list.extend(processed)
+                        wh_processed_all_stops.extend(processed)
+
+                # -------------------------------------------------------------
+                # 6A.1 CICLO DE DECISÃO: RESGATE TOTAL COM FROTA LIVRE (ZERO PENDENTES)
+                # Mobilizar viaturas de reserva apenas para encomendas que cumpram as regras (distância <= 150km, sem horas extra)
+                # -------------------------------------------------------------
+                unassigned_wh = [i for i in matching_indices if i not in visited_client_indices]
+                used_v_names = {r.get("Rota") for r in wh_processed_all_stops if r.get("Rota") != "Por Distribuir"}
+                unused_v_names = [v_n for v_n in sub_fleet.keys() if v_n not in used_v_names and "(Volta 2)" not in v_n]
+
+                if unassigned_wh and unused_v_names:
+                    for rescue_v_name in unused_v_names:
+                        current_unassigned = [i for i in matching_indices if i not in visited_client_indices]
+                        if not current_unassigned:
+                            break
+
+                        v_info = sub_fleet[rescue_v_name]
+                        v_cap_kg = float(v_info.get("capacity") or v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
+                        v_cap_vol = float(v_info.get("capacity_volume") or v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
+                        v_max_stops = int(v_info.get("max_entregas", 30) or 30)
+                        v_speed = float(v_info.get("speed", 50.0) or 50.0)
+                        v_start_str = str(v_info.get("start_time", "08:00:00"))
+                        v_end_str = str(v_info.get("end_time", "20:00:00"))
+
+                        viable_candidates = []
+                        for u_idx in current_unassigned:
+                            crow = deliveries_df.iloc[u_idx]
+                            pkg = float(crow.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0)
+                            pvol = float(crow.get("Volume_m3", crow.get("Volume_M3", 0.0)) if not is_any_cx_project else 0.0)
+                            if pkg <= v_cap_kg and pvol <= v_cap_vol:
+                                clat = float(crow["Latitude"])
+                                clon = float(crow["Longitude"])
+                                dist_dep = haversine_distance(wh_lat, wh_lon, clat, clon)
+                                # Apenas encomendas até 150km de distância (evita viagens inter-regionais ilegais)
+                                if dist_dep <= 150.0:
+                                    viable_candidates.append((dist_dep, u_idx, crow, pkg, pvol))
+
+                        if not viable_candidates:
+                            break
+
+                        viable_candidates.sort(key=lambda x: x[0])
+                        rescue_batch = []
+                        curr_batch_kg, curr_batch_vol = 0.0, 0.0
+
+                        for dist_dep, u_idx, crow, pkg, pvol in viable_candidates:
+                            if len(rescue_batch) >= v_max_stops:
+                                break
+                            if curr_batch_kg + pkg > v_cap_kg or curr_batch_vol + pvol > v_cap_vol:
+                                continue
+                            curr_batch_kg += pkg
+                            curr_batch_vol += pvol
+                            rescue_batch.append((u_idx, crow))
+
+                        if not rescue_batch:
+                            continue
+
+                        rescue_raw_stops = []
+                        for u_idx, client_row in rescue_batch:
+                            win_s = client_row.get("Slot1_Inicio", "")
+                            win_e = client_row.get("Slot1_Fim", "")
+                            combined_window = format_time_window_display(win_s, win_e)
+                            deliv_id = int(client_row.get("id", u_idx + 1))
+                            doc_id_val = str(client_row.get("Doc_ID") or client_row.get("numero_doc") or client_row.get("doc_id") or "")
+                            tel_val = str(client_row.get("Telefone_Cliente") or client_row.get("Telefone") or client_row.get("telefone") or "")
+                            obs_val = str(client_row.get("Notas_Motorista") or client_row.get("Observacoes") or client_row.get("observacoes") or client_row.get("Regras") or "")
+                            vend_val = str(client_row.get("Vendedor") or client_row.get("vendedor") or "")
+
+                            rescue_raw_stops.append({
+                                "id": deliv_id,
+                                "ID_Original": deliv_id,
+                                "Rota": rescue_v_name,
+                                "Armazem": wh_name,
+                                "Doc_ID": doc_id_val,
+                                "Cliente": str(client_row.get("Codigo_Cliente", f"Cliente_{u_idx}")),
+                                "Nome_Cliente": str(client_row.get("Nome_Cliente") or client_row.get("Codigo_Cliente", f"Cliente_{u_idx}")),
+                                "Morada": str(client_row.get("Morada", "N/A")),
+                                "CP": str(client_row.get(cp_col_name or "Codigo_Postal", "N/A")),
+                                "Localidade": str(client_row.get("Localidade", "")),
+                                "Janela_Horaria": combined_window,
+                                "Janela_Inicio": str(win_s or ""),
+                                "Janela_Fim": str(win_e or ""),
+                                "Latitude": float(client_row["Latitude"]),
+                                "Longitude": float(client_row["Longitude"]),
+                                "Peso_KG": float(client_row.get("Peso_KG", 0.0) if not is_any_cx_project else 0.0),
+                                "Volume_m3": float(client_row.get("Volume_m3", client_row.get("Volume_M3", 0.0)) if not is_any_cx_project else 0.0),
+                                "Cx_Ambiente": int(client_row.get("Cx_Ambiente", 0) or 0),
+                                "Cx_Frio": int(client_row.get("Cx_Frio", 0) or 0),
+                                "Cx_Congelado": int(client_row.get("Cx_Congelado", 0) or 0),
+                                "Total_Cx": int(client_row.get("Total_Cx", 0) or ((client_row.get("Cx_Ambiente", 0) or 0) + (client_row.get("Cx_Frio", 0) or 0) + (client_row.get("Cx_Congelado", 0) or 0))),
+                                "Telefone": tel_val,
+                                "Observacoes": obs_val,
+                                "Notas_Motorista": obs_val,
+                                "Vendedor": vend_val,
+                                "Tempo_Entrega": int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10),
+                                "Nivel_Qualidade": int(client_row.get("Nivel_Qualidade", 0)),
+                                "Regresso_Armazem": str(v_info.get("regresso_armazem", "Sim") or "Sim"),
+                                "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao", client_row.get("tipo_operacao"))),
+                                "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or ""),
+                                "Estado_Planeamento": "Atribuído",
+                                "Motivo_Pendencia": "",
+                                "_client_idx": u_idx
+                            })
+
+                        v_start_m = parse_time_to_minutes(v_start_str, 480)
+                        rescue_seq = sequence_route_with_time_windows(
+                            rescue_raw_stops, wh_lat, wh_lon, v_start_m, v_speed,
+                            v_cap_kg=v_cap_kg, v_cap_vol=v_cap_vol
+                        )
+                        processed_rescue = _run_gatekeeper_for_route(
+                            rescue_v_name, v_info, wh_lat, wh_lon, v_start_str, v_end_str, rescue_seq, {}
+                        )
+
+                        if processed_rescue:
+                            for pst in processed_rescue:
+                                pst_doc = str(pst.get("Doc_ID") or pst.get("doc_id") or pst.get("numero_doc") or "").strip()
+                                pst_id = pst.get("id") or pst.get("ID_Original")
+                                pst_cli = str(pst.get("Cliente") or "").strip()
+                                for r_u_idx, r_crow in rescue_batch:
+                                    c_doc = str(r_crow.get("Doc_ID") or r_crow.get("doc_id") or r_crow.get("numero_doc") or "").strip()
+                                    c_id = r_crow.get("id")
+                                    c_cli = str(r_crow.get("Codigo_Cliente") or "").strip()
+                                    if (c_id is not None and pst_id is not None and c_id == pst_id) or (pst_doc and c_doc and pst_doc == c_doc) or (pst_cli and c_cli and pst_cli == c_cli):
+                                        visited_client_indices.add(r_u_idx)
+                                        break
+                            routes_list.extend(processed_rescue)
+                            wh_processed_all_stops.extend(processed_rescue)
+
+                wh_elapsed = round(time.time() - wh_t_start, 2)
+                wh_assigned_cnt = sum(1 for r in wh_processed_all_stops if r.get("Rota") != "Por Distribuir")
+                wh_pending_cnt = max(0, len(sub_delivs_df) - wh_assigned_cnt)
+                wh_v_mobilized = len({r.get("Rota") for r in wh_processed_all_stops if r.get("Rota") != "Por Distribuir"})
+                wh_v_empty = max(0, len(sub_fleet) - wh_v_mobilized)
+
+                sub_peso_tot = round(float(pd.to_numeric(sub_delivs_df.get("Peso_KG", 0), errors="coerce").fillna(0).sum()), 2)
+                sub_vol_col = "Volume_m3" if "Volume_m3" in sub_delivs_df.columns else "Volume_M3" if "Volume_M3" in sub_delivs_df.columns else None
+                sub_vol_tot = round(float(pd.to_numeric(sub_delivs_df[sub_vol_col], errors="coerce").fillna(0).sum()) if sub_vol_col else 0.0, 2)
+                sub_cx_tot = int(pd.to_numeric(sub_delivs_df.get("Total_Cx", 0), errors="coerce").fillna(0).sum())
+
+                fleet_peso_cap = round(sum(float(v.get("capacity") or v.get("capacity_kg") or v.get("Capacidade_KG") or 0) for v in sub_fleet.values()), 2)
+                fleet_vol_cap = round(sum(float(v.get("capacity_volume") or v.get("capacity_vol") or v.get("Capacidade_Vol") or 0) for v in sub_fleet.values()), 2)
+
+                wh_assigned_peso = round(sum(float(r.get("Peso_KG") or 0) for r in wh_processed_all_stops if r.get("Rota") != "Por Distribuir"), 2)
+                wh_assigned_vol = round(sum(float(r.get("Volume_m3") or 0) for r in wh_processed_all_stops if r.get("Rota") != "Por Distribuir"), 2)
+                wh_km_tot = round(sum(float(r.get("KM_Anterior") or 0) for r in wh_processed_all_stops if r.get("Rota") != "Por Distribuir"), 2)
+
+                wh_telemetry.append({
+                    "armazem": wh_name,
+                    "entregas_total": len(sub_delivs_df),
+                    "peso_total_kg": sub_peso_tot,
+                    "volume_total_m3": sub_vol_tot,
+                    "caixas_total": sub_cx_tot,
+                    "viaturas_disponiveis": len(sub_fleet),
+                    "cap_frota_peso_kg": fleet_peso_cap,
+                    "cap_frota_vol_m3": fleet_vol_cap,
+                    "entregas_alocadas": wh_assigned_cnt,
+                    "entregas_pendentes": wh_pending_cnt,
+                    "viaturas_mobilizadas": wh_v_mobilized,
+                    "viaturas_vazias": wh_v_empty,
+                    "peso_carregado_kg": wh_assigned_peso,
+                    "volume_carregado_m3": wh_assigned_vol,
+                    "km_totais": wh_km_tot,
+                    "tempo_segundos": wh_elapsed,
+                    "status": "Totalmente Atribuído" if wh_pending_cnt == 0 else "Com Pendências"
+                })
         else:
             # 6B. RESOLUÇÃO MONOLÍTICA CLÁSSICA (Para armazém único ou frota sem especificação)
             optimizer = AdvancedRouteOptimizer()
@@ -1468,6 +1738,18 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             orig_wh = str(client_row.get("Armazem") or default_wh_name or "Armazém Principal")
             orig_serv = int(client_row.get("tempo_descarga_min") or client_row.get("Tempo_Descarga_Min") or 10)
             
+            c_lat = float(client_row["Latitude"])
+            c_lon = float(client_row["Longitude"])
+            depot_c = get_depot_coords(warehouses_df, orig_wh)
+            dist_wh = haversine_distance(depot_c[0], depot_c[1], c_lat, c_lon)
+            diag_motivo = diagnose_unassigned_delivery(
+                client_row, orig_wh, fleet_dict,
+                dist_km=dist_wh,
+                rules_matrix=rules_matrix,
+                has_wh_filter=has_wh_filter,
+                target_wh_filter=wh_filter_raw
+            )
+
             routes_list.append({
                 "id": deliv_id,
                 "ID_Original": deliv_id,
@@ -1483,8 +1765,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "Janela_Horaria": combined_window,
                 "Janela_Inicio": str(win_s or ""),
                 "Janela_Fim": str(win_e or ""),
-                "Latitude": float(client_row["Latitude"]),
-                "Longitude": float(client_row["Longitude"]),
+                "Latitude": c_lat,
+                "Longitude": c_lon,
                 "Chegada": "00:00",
                 "Tempo_Espera": 0,
                 "Tempo_Entrega": orig_serv,
@@ -1505,7 +1787,9 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 "Notas_Motorista": obs_val,
                 "Vendedor": vend_val,
                 "Tipo_Operacao": normalize_op_type(client_row.get("Tipo_Operacao") or client_row.get("tipo_operacao")),
-                "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or "")
+                "Par_ID": str(client_row.get("Par_ID") or client_row.get("par_id") or ""),
+                "Estado_Planeamento": "Pendente",
+                "Motivo_Pendencia": diag_motivo
             })
             pending_order += 1
             
@@ -1531,8 +1815,15 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
                 r_id = r.get("id") or r.get("ID_Original")
                 if r_id:
                     cursor.execute(
-                        "UPDATE entregas SET rota = ?, ordem_paragem = ? WHERE id = ? AND projeto_id = ?",
-                        (str(r.get("Rota", "Por Distribuir")), int(r.get("Ordem", 0)), r_id, req.project_id)
+                        "UPDATE entregas SET rota = ?, ordem_paragem = ?, estado_planeamento = ?, motivo_pendencia = ? WHERE id = ? AND projeto_id = ?",
+                        (
+                            str(r.get("Rota", "Por Distribuir")),
+                            int(r.get("Ordem", 0)),
+                            str(r.get("Estado_Planeamento", "Atribuído")),
+                            str(r.get("Motivo_Pendencia", "")),
+                            r_id,
+                            req.project_id
+                        )
                     )
             conn.commit()
             
@@ -1540,7 +1831,8 @@ def run_solver(req: SolverRequest, current_user: UserResponse = Depends(get_curr
             "status": "success",
             "routes": routes_list,
             "vehicles": vehicle_names,
-            "quality_metrics": result.get("quality_metrics", {}) if "result" in locals() and isinstance(result, dict) else {}
+            "quality_metrics": result.get("quality_metrics", {}) if "result" in locals() and isinstance(result, dict) else {},
+            "telemetry": wh_telemetry if "wh_telemetry" in locals() else []
         }
         return sanitize_json_data(resp_obj)
     except HTTPException as he:
@@ -1931,7 +2223,7 @@ def reassign_client_route(req: ReassignRequest, current_user: UserResponse = Dep
             v_info = fleet_dict.get(r_name, {})
             wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-            v_start = str(v_info.get("start_time", "09:50"))
+            v_start = str(v_info.get("start_time", "08:00"))
             v_speed = float(v_info.get("speed", 50.0))
             v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
             v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
@@ -2146,7 +2438,7 @@ def reassign_bulk_selection(req: BulkReassignSelectionRequest, current_user: Use
             v_info = fleet_dict.get(r_name, {})
             wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-            v_start = str(v_info.get("start_time", "09:50"))
+            v_start = str(v_info.get("start_time", "08:00"))
             v_speed = float(v_info.get("speed", 50.0))
             v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
             v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)
@@ -2254,7 +2546,7 @@ def reassign_entire_route(req: BulkReassignRouteRequest, current_user: UserRespo
             v_info = fleet_dict.get(r_name, {})
             wh_name = v_info.get("warehouse", warehouses_df.iloc[0]["Nome_Armazem"] if warehouses_df is not None and not warehouses_df.empty else "")
             depot_lat, depot_lon = get_depot_coords(warehouses_df, wh_name)
-            v_start = str(v_info.get("start_time", "09:50"))
+            v_start = str(v_info.get("start_time", "08:00"))
             v_speed = float(v_info.get("speed", 50.0))
             v_cap_kg = float(v_info.get("capacity_kg") or v_info.get("Capacidade_KG") or 1000.0)
             v_cap_vol = float(v_info.get("capacity_vol") or v_info.get("Capacidade_Vol") or 10.0)

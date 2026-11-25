@@ -136,7 +136,7 @@ function routesMatch(r1?: string, r2?: string): boolean {
   if (isPendingRoute(r1) !== isPendingRoute(r2)) return false;
   const n1 = normRouteName(r1);
   const n2 = normRouteName(r2);
-  return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+  return n1 === n2;
 }
 
 // Controller that centers or fits map bounds on initial mount to the active distribution region
@@ -1799,7 +1799,7 @@ export default function MapComponent({
       kg += s.Peso_KG || s.Carga_Acum || 0;
       vol += s.Volume_m3 || s.Volume_M3 || 0.1;
     });
-    return { selectedStopsTotalKg: Math.round(kg), selectedStopsTotalVol: vol };
+    return { selectedStopsTotalKg: Number(kg.toFixed(2)), selectedStopsTotalVol: Number(vol.toFixed(2)) };
   }, [visibleClients, selectedClientKeys]);
 
   // Map of client count and kg per vehicle for selects and labels
@@ -1825,7 +1825,11 @@ export default function MapComponent({
       }
     });
 
-    return { map, pendingCount, pendingKg: Math.round(pendingKg) };
+    Object.keys(map).forEach((k) => {
+      map[k].kg = Number(map[k].kg.toFixed(2));
+    });
+
+    return { map, pendingCount, pendingKg: Number(pendingKg.toFixed(2)) };
   }, [clients, vehicles]);
 
   // Points for auto fit bounds (focuses directly on active route stops when single route selected)
@@ -2817,13 +2821,13 @@ export default function MapComponent({
                           {arrivalTime} {departureTime ? `→ ${departureTime}` : ""}
                         </span>
                       ) : (
-                        <span className="font-bold text-zinc-800 text-[11px]">{stopWeight} kg</span>
+                        <span className="font-bold text-zinc-800 text-[11px]">{Number(stopWeight || 0).toFixed(2)} kg</span>
                       )}
                     </div>
 
                     <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
                       <span className="text-[9px] text-zinc-400 uppercase font-semibold block">Peso da Paragem</span>
-                      <span className="font-bold text-zinc-800 text-[11px]">{stopWeight} kg</span>
+                      <span className="font-bold text-zinc-800 text-[11px]">{Number(stopWeight || 0).toFixed(2)} kg</span>
                     </div>
 
                     <div className="bg-zinc-50 border border-zinc-200 rounded-md p-1.5">
@@ -2928,7 +2932,7 @@ export default function MapComponent({
                           const stats = vehicleStatsMap.map[v] || { count: 0, kg: 0 };
                           return (
                             <option key={v} value={v}>
-                              🚚 {v} ({stats.count} {stats.count === 1 ? "cliente" : "clientes"}{stats.count === 0 ? " · Vazio" : ` · ${stats.kg} kg`})
+                              🚚 {v} ({stats.count} {stats.count === 1 ? "cliente" : "clientes"}{stats.count === 0 ? " · Vazio" : ` · ${Number(stats.kg || 0).toFixed(2)} kg`})
                             </option>
                           );
                         })}
@@ -3062,7 +3066,7 @@ export default function MapComponent({
                 🔲 {selectedClientKeys.length} paragens selecionadas
               </span>
               <span className="text-[10px] text-zinc-400 font-medium font-mono">
-                Total: {selectedStopsTotalKg} kg | {selectedStopsTotalVol.toFixed(2)} m³
+                Total: {Number(selectedStopsTotalKg || 0).toFixed(2)} kg | {Number(selectedStopsTotalVol || 0).toFixed(2)} m³
               </span>
             </div>
           </div>
@@ -3081,7 +3085,7 @@ export default function MapComponent({
                 const stats = vehicleStatsMap.map[v] || { count: 0, kg: 0 };
                 return (
                   <option key={v} value={v}>
-                    🚚 {v} ({stats.count} {stats.count === 1 ? "cliente" : "clientes"}{stats.count === 0 ? " · Vazio" : ` · ${stats.kg} kg`})
+                    🚚 {v} ({stats.count} {stats.count === 1 ? "cliente" : "clientes"}{stats.count === 0 ? " · Vazio" : ` · ${Number(stats.kg || 0).toFixed(2)} kg`})
                   </option>
                 );
               })}

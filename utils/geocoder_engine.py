@@ -113,7 +113,10 @@ class WaterfallGeocoder:
         self.nominatim = Nominatim(user_agent="antigravity_geo_app_v4")
 
     def _get_db_connection(self):
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=15.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        return conn
 
     def resolve_address(self, address, cp4=None, concelho=None, fast_mode: bool = False):
         """

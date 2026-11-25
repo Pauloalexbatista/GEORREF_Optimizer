@@ -65,10 +65,13 @@ def _load_project_routes_and_fleet(project_id: int, cursor) -> tuple:
         (project_id,),
     )
     row = cursor.fetchone()
-    if not row or not row["payload_json"]:
-        return {}, pd.DataFrame(), {}, [], []
+    state_dict = {}
+    if row and row["payload_json"]:
+        try:
+            state_dict = deserialize_state(row["payload_json"])
+        except Exception:
+            state_dict = {}
 
-    state_dict = deserialize_state(row["payload_json"])
     raw_routes = state_dict.get("routes_solution")
     if raw_routes is None:
         raw_routes = state_dict.get("clients_geocoded") or state_dict.get("clients_used")
@@ -77,6 +80,33 @@ def _load_project_routes_and_fleet(project_id: int, cursor) -> tuple:
         if isinstance(raw_routes, pd.DataFrame)
         else (pd.DataFrame(raw_routes) if raw_routes else pd.DataFrame())
     )
+
+    # Fallback para a tabela SQLite 'entregas' caso ainda não haja snapshot ou esteja vazio
+    if df_routes.empty:
+        cursor.execute("SELECT * FROM entregas WHERE projeto_id = ?", (project_id,))
+        e_rows = cursor.fetchall()
+        if e_rows:
+            col_names_e = [d[0] for d in cursor.description]
+            records_e = [dict(zip(col_names_e, r)) for r in e_rows]
+            df_routes = pd.DataFrame(records_e)
+            rename_map = {
+                "nome_cliente": "Cliente",
+                "codigo_cliente": "Doc_ID",
+                "morada": "Morada",
+                "codigo_postal": "CP",
+                "_concelho": "Localidade",
+                "latitude": "Latitude",
+                "longitude": "Longitude",
+                "peso_kg": "Peso_KG",
+                "volume_m3": "Volume_m3",
+                "janela_inicio": "Janela_Inicio",
+                "janela_fim": "Janela_Fim",
+                "rota": "Rota",
+                "armazem": "Armazem",
+            }
+            for src_col, dest_col in rename_map.items():
+                if src_col in df_routes.columns and dest_col not in df_routes.columns:
+                    df_routes[dest_col] = df_routes[src_col]
 
     if not df_routes.empty:
         if "Latitude" in df_routes.columns:
@@ -110,7 +140,7 @@ def _load_project_routes_and_fleet(project_id: int, cursor) -> tuple:
                 "regresso_armazem": str(dict_f.get("regresso_armazem") or "Sim"),
             }
 
-    if not fleet_cfg:
+    if not fleet_cfg and state_dict:
         raw_fleet = state_dict.get("fleet_config_used") or state_dict.get("fleet_config", {})
         if isinstance(raw_fleet, dict):
             fleet_cfg = raw_fleet
@@ -130,6 +160,15 @@ def _load_project_routes_and_fleet(project_id: int, cursor) -> tuple:
         if isinstance(wh_raw, pd.DataFrame)
         else (wh_raw if isinstance(wh_raw, list) else [])
     )
+
+    # Fallback para tabela SQLite 'armazens' se não houver no snapshot
+    if not wh_list:
+        cursor.execute("SELECT * FROM armazens WHERE projeto_id = ?", (project_id,))
+        wh_rows = cursor.fetchall()
+        if wh_rows:
+            col_names_w = [d[0] for d in cursor.description]
+            wh_list = [dict(zip(col_names_w, r)) for r in wh_rows]
+
     rules_mat = state_dict.get("rules_matrix", [])
     return state_dict, df_routes, fleet_cfg, wh_list, rules_mat
 

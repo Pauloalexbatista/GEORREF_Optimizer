@@ -7,6 +7,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useProjects } from "@/context/ProjectContext";
 import { useI18n, languageOptions } from "@/context/I18nContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useAgentChat } from "@/context/AgentChatContext";
+import AgentChatDrawer from "@/components/AgentChatDrawer";
 import { api } from "@/utils/api";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -15,6 +17,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { projects, selectedProject, selectProject, createProject, deleteProject, downloadArchivedProject } = useProjects();
   const { t, language, setLanguage } = useI18n();
   const { theme, toggleTheme } = useTheme();
+  const { isOpen: isChatOpen, toggleChat, pendingOutliersCount } = useAgentChat();
 
   const [showCreateProj, setShowCreateProj] = useState(false);
   const [newProjName, setNewProjName] = useState("");
@@ -439,10 +442,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Top Header */}
         <header className="h-16 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-xl flex items-center justify-between px-8 z-20 shrink-0 no-print">
           <div className="flex items-center space-x-4">
-            {/* Header limpo e focado */}
+            {selectedProject && (
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-bold text-zinc-200 truncate max-w-[200px] sm:max-w-xs">
+                  {selectedProject.nome}
+                </span>
+                {selectedProject.data_distribuicao && (
+                  <span className="text-[11px] font-mono text-zinc-400 border-l border-zinc-800 pl-2">
+                    {selectedProject.data_distribuicao}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center space-x-3">
+            {/* Botão Global do Agente IA (Gemini) */}
+            <button
+              type="button"
+              onClick={toggleChat}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-sm cursor-pointer ${
+                isChatOpen
+                  ? "bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/30 ring-2 ring-indigo-500/30"
+                  : "bg-indigo-950/70 hover:bg-indigo-900 border-indigo-500/40 text-indigo-200 hover:text-white"
+              }`}
+              title="Abrir Co-Piloto Inteligente de Tráfego (Google Gemini)"
+            >
+              <span className="text-sm">✨</span>
+              <span>Co-Piloto IA</span>
+              {pendingOutliersCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-zinc-950 font-black text-[9px]">
+                  {pendingOutliersCount}
+                </span>
+              )}
+            </button>
+
             {/* Language Selector Dropdown */}
             <div className="relative">
               <button
@@ -724,6 +759,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       )}
+
+      {/* Floating Action Button (FAB) do Agente IA no canto inferior direito */}
+      {!isChatOpen && selectedProject && (
+        <button
+          type="button"
+          onClick={toggleChat}
+          className="fixed bottom-6 right-6 z-40 flex items-center space-x-2 bg-gradient-to-tr from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white font-bold px-4 py-2.5 rounded-full shadow-2xl shadow-indigo-600/50 border border-indigo-400/50 cursor-pointer transition-all transform hover:scale-105 active:scale-95 no-print"
+          title="Abrir Co-Piloto Inteligente de Tráfego (Google Gemini)"
+        >
+          <span className="text-sm">✨</span>
+          <span className="text-xs tracking-wide font-semibold hidden sm:inline">Co-Piloto IA</span>
+          {pendingOutliersCount > 0 && (
+            <span className="bg-amber-400 text-zinc-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+              {pendingOutliersCount}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* Drawer Global do Agente IA */}
+      <AgentChatDrawer />
     </div>
   );
 }

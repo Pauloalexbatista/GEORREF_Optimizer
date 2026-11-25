@@ -20,7 +20,8 @@ def get_cp_centroids_cache(db_path: str = None) -> Dict[str, tuple]:
 
     cache = {}
     try:
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(path, timeout=15.0)
+        conn.execute("PRAGMA busy_timeout=5000;")
         c = conn.cursor()
         c.execute("SELECT CP4, AVG(LATITUDE), AVG(LONGITUDE) FROM pt_addresses WHERE LATITUDE != 0 AND LONGITUDE != 0 GROUP BY CP4")
         for row in c.fetchall():
@@ -53,25 +54,40 @@ def detect_geographic_outliers(
         try:
             lat = float(d.get("Latitude") or d.get("latitude") or 0.0)
             lon = float(d.get("Longitude") or d.get("longitude") or 0.0)
-            if lat == 0.0 or lon == 0.0:
-                continue
-
             cp = str(d.get("CP") or d.get("codigo_postal") or "").strip()
             cp4 = cp.split("-")[0].strip()
             morada = str(d.get("Morada") or d.get("morada") or "").strip()
-            localidade = str(d.get("Localidade") or d.get("concelho") or "").strip()
+            localidade = str(d.get("Localidade") or d.get("concelho") or d.get("_concelho") or "").strip()
             rota = str(d.get("Rota") or d.get("rota") or "")
             c_nome = d.get("Cliente") or d.get("Nome_Cliente") or d.get("nome_cliente") or f"Cliente #{d.get('id')}"
+            cid = d.get("id") or d.get("ID_Original") or d.get("codigo_cliente") or d.get("Doc_ID")
 
-            # Verificar coerência contra a nossa base de dados oficial de Códigos Postais
+            # 1. Caso sem coordenadas válidas ou com falha de geocodificação
+            nivel_qualidade = int(d.get("nivel_qualidade") or d.get("Nivel_Qualidade") or 0)
+            if lat == 0.0 or lon == 0.0 or nivel_qualidade >= 8:
+                outliers.append({
+                    "id": cid,
+                    "cliente": str(c_nome),
+                    "morada": morada,
+                    "cp": cp,
+                    "localidade": localidade,
+                    "rota_atual": rota,
+                    "lat": 0.0,
+                    "lon": 0.0,
+                    "dist_km_armazem": 0.0,
+                    "motivo_suspeita": f"Sem coordenadas válidas (Nível de qualidade {nivel_qualidade if nivel_qualidade > 0 else 8}). Requer georreferenciação."
+                })
+                continue
+
+            # 2. Verificar coerência contra a base de dados oficial de Códigos Postais
             if cp4 in cp_centroids:
                 expected_lat, expected_lon = cp_centroids[cp4]
                 dist_cp_km = haversine_distance(lat, lon, expected_lat, expected_lon)
 
-                # Se estiver a mais de 35 km do centroide do seu Código Postal, há erro de geocodificação
+                # Se estiver a mais de 35 km do centroide do seu Código Postal, há erro grave de geocodificação
                 if dist_cp_km > 35.0:
                     outliers.append({
-                        "id": d.get("id") or d.get("ID_Original") or d.get("codigo_cliente"),
+                        "id": cid,
                         "cliente": str(c_nome),
                         "morada": morada,
                         "cp": cp,
@@ -79,8 +95,8 @@ def detect_geographic_outliers(
                         "rota_atual": rota,
                         "lat": round(lat, 6),
                         "lon": round(lon, 6),
-                        "dist_km_armazem": round(dist_cp_km, 1), # Usado no UI para mostrar o desvio do CP
-                        "motivo_suspeita": f"Incoerência com Código Postal {cp}: as coordenadas atuais estão a {int(dist_cp_km)} km da zona oficial do seu CP."
+                        "dist_km_armazem": round(dist_cp_km, 1), # Desvio em km face ao CP
+                        "motivo_suspeita": f"Incoerência com Código Postal {cp}: coordenadas a {int(dist_cp_km)} km da zona oficial do seu CP."
                     })
         except Exception:
             continue

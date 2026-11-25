@@ -727,6 +727,21 @@ Em estrita conformidade com as deliberações da **CNPD (Comissão Nacional de P
       - **Suporte a Otimização Focada por Armazém**:
         - Ao selecionar um armazém específico no seletor do topo e clicar em *"Otimizar Rotas"*, o frontend envia `warehouse_filter: selectedWarehouseFilter`, permitindo re-otimizar apenas o armazém selecionado em segundos, mantendo intactas as rotas dos outros armazéns.
 
+
+29. **Agente Co-Piloto IA com Google Gemini Ubíquo em Todos os Ecrãs e Memória Persistente de Conversa (✅ Concluído no Código)**:
+    * **Disponibilidade Global em Todos os Ecrãs (`frontend/src/components/DashboardLayout.tsx`)**:
+      - O Agente de IA está agora acessível a partir de **qualquer ecrã do sistema** (Georreferenciação, Frota & Suporte, Planeamento Tático, Mapas, Rastreio, Relatórios, etc.).
+      - Acessível com 1 clique através de dois pontos de entrada intuitivos:
+        1. **Botão no Cabeçalho Superior (*Top Header*)**: Botão de destaque `✨ Co-Piloto IA` com badge dinâmico de alertas e estado de ativação.
+        2. **Botão Flutuante (*Floating Action Button - FAB*)**: Pílula no canto inferior direito do ecrã para abertura instantânea sem interromper o trabalho.
+    * **Persistência Total da Memória de Conversa (`frontend/src/context/AgentChatContext.tsx`)**:
+      - Resolvido o problema de perda de contexto quando o operador navegava entre ecrãs: o histórico de mensagens, cartões de clientes com anomalias e recomendações são mantidos em memória global e sincronizados no `localStorage` por projeto (`georoute_agent_chat_<id>`).
+      - Quando o Agente sinaliza clientes mal georreferenciados ou com coordenadas suspeitas, o operador pode navegar para o ecrã de Georreferenciação, corrigir uma morada e, ao regressar ao Agente, **todas as mensagens e a lista completa dos restantes clientes continuam visíveis** sem necessidade de reiniciar a conversa.
+    * **Integração com Modelos Google Gemini (`gemini-3.8-flash` / `gemini-3.1-flash-lite`)**:
+      - Comunicação fluida com o motor Gemini através de `backend/api/agent.py` e `utils/agent_chat_engine.py`, com contabilidade de consumo em `admin_users`.
+      - **Deteção Integrada de Outliers e Clientes sem Coordenadas (`utils/agent_spatial_insights.py`)**: Identifica incoerências de código postal (> 35 km) e clientes com falha de geocodificação, gerando cartões com atalho direto `"📍 Corrigir em Georreferenciação"`.
+      - **Autonomia Operacional**: Execução direta de comandos em linguagem natural (`[COMANDO:REATRIBUIR]`, `[COMANDO:OTIMIZAR_TODAS_SEQUENCIAS]`, `[COMANDO:REGEORREFERENCIAR]`).
+
 ---
 
 ## 📋 9. Checklist de Início de Sessão para o Desenvolvedor / Agente

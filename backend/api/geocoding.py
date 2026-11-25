@@ -993,9 +993,11 @@ def get_suggestions(
 
         db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), DB_GEO_PATH)
 
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=15.0)
 
         conn.row_factory = sqlite3.Row
+
+        conn.execute("PRAGMA busy_timeout=5000;")
 
         cursor = conn.cursor()
 
@@ -1291,7 +1293,9 @@ def update_delivery_correction(delivery_id: int, corr: DeliveryCorrection, curre
                 try:
                     import sqlite3
                     from datetime import datetime
-                    with sqlite3.connect(DB_GEO_PATH) as geo_conn:
+                    with sqlite3.connect(DB_GEO_PATH, timeout=15.0) as geo_conn:
+                        geo_conn.execute("PRAGMA journal_mode=WAL;")
+                        geo_conn.execute("PRAGMA busy_timeout=5000;")
                         geo_cur = geo_conn.cursor()
                         cp_raw = str(corr.codigo_postal or "").strip()
                         cp4_str = cp_raw.split("-")[0].strip() if cp_raw else ""

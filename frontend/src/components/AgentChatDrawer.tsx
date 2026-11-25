@@ -1,260 +1,145 @@
 ﻿"use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { apiRequest } from "@/utils/api";
+import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAgentChat, OutlierItem, ActionItem } from "@/context/AgentChatContext";
+import { useProjects } from "@/context/ProjectContext";
 
-interface ActionItem {
-  label: string;
-  action: string;
-}
-
-interface OutlierItem {
-  id: number;
-  cliente: string;
-  morada: string;
-  cp: string;
-  localidade: string;
-  dist_km_armazem: number;
-  motivo_suspeita: string;
-  rota_atual?: string;
-}
-
-interface ChatMessage {
-  id: string;
-  sender: "user" | "agent";
-  text: string;
-  outliers?: OutlierItem[];
-  actions?: ActionItem[];
-  timestamp: string;
-  isError?: boolean;
-}
-
-interface AgentChatDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  projectId: number;
-  onRefreshData?: () => void;
-}
-
-export default function AgentChatDrawer({
-  isOpen,
-  onClose,
-  projectId,
-  onRefreshData,
-}: AgentChatDrawerProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function AgentChatDrawer() {
+  const {
+    isOpen,
+    closeChat,
+    messages,
+    loading,
+    sendMessage,
+    clearHistory,
+    pendingOutliersCount,
+  } = useAgentChat();
+  const { selectedProject } = useProjects();
   const [inputText, setInputText] = useState("");
-  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
-    if (isOpen && messages.length === 0) {
-      // Diagnóstico inicial operacional ao abrir
-      // Removida pergunta autom?tica ao abrir a pedido do gestor
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [isOpen]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
-
-  const sendMessage = async (textToSend: string) => {
-    if (!textToSend.trim() || !projectId) return;
-
-    const userMsg: ChatMessage = {
-      id: String(Date.now()),
-      sender: "user",
-      text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInputText("");
-    setLoading(true);
-
-    try {
-      const res: any = await apiRequest("/api/agent/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          project_id: projectId,
-          message: textToSend,
-        }),
-      });
-
-      // Detetar se o agente disparou um comando de reatribuição de viatura
-      // Execu??o de comandos operacionais disparados pela IA
-      let actionFeedback = "";
-
-      // 1. Reatribuir paragem (ou colocar em 'Por Distribuir')
-      const cmdReassign = (res.reply || "").match(/\[COMANDO:REATRIBUIR\|CLIENTE:(.*?)\|VIATURA:(.*?)\]/);
-      if (cmdReassign) {
-        const clientCode = cmdReassign[1].trim();
-        const targetVehicle = cmdReassign[2].trim();
-        try {
-          await apiRequest("/api/solver/reassign", {
-            method: "POST",
-            body: JSON.stringify({
-              project_id: projectId,
-              client_code: clientCode,
-              target_route: targetVehicle,
-            }),
-          });
-          actionFeedback += `\n\n? *[A??o Executada]* Cliente ${clientCode} movido para ${targetVehicle}.`;
-          if (onRefreshData) onRefreshData();
-        } catch (reErr: any) {
-          console.error("Erro ao aplicar reatribui??o:", reErr);
-          actionFeedback += `\n\n?? *[Aviso]* N?o foi poss?vel mover ${clientCode}: ${reErr?.message || "Erro"}`;
-        }
-      }
-
-      // 2. Ordenar e sequenciar todos os carros automaticamente
-      if ((res.reply || "").includes("[COMANDO:OTIMIZAR_TODAS_SEQUENCIAS]")) {
-        try {
-          await apiRequest("/api/solver/optimize-all-sequences", {
-            method: "POST",
-            body: JSON.stringify({ project_id: projectId }),
-          });
-          actionFeedback += "\n\n? *[A??o Executada]* Sequ?ncia de todas as rotas otimizada com sucesso!";
-          if (onRefreshData) onRefreshData();
-        } catch (optErr: any) {
-          console.error("Erro ao otimizar sequ?ncias:", optErr);
-          actionFeedback += `\n\n?? *[Aviso]* Falha ao ordenar rotas: ${optErr?.message || "Erro"}`;
-        }
-      }
-
-      // 3. Re-georreferenciar cliente
-      const cmdGeo = (res.reply || "").match(/\[COMANDO:REGEORREFERENCIAR\|CLIENTE:(.*?)\]/);
-      if (cmdGeo) {
-        const clientTarget = cmdGeo[1].trim();
-        try {
-          // Procurar nos outliers ou nos dados do plano a morada para resolver
-          const targetOutlier = (res.outliers || []).find((o: any) => 
-            String(o.cliente).toLowerCase().includes(clientTarget.toLowerCase()) || 
-            String(o.id).toLowerCase() === clientTarget.toLowerCase()
-          );
-          if (targetOutlier) {
-            await apiRequest("/api/geocoding/resolve", {
-              method: "POST",
-              body: JSON.stringify({
-                morada: targetOutlier.morada,
-                cp: targetOutlier.cp,
-                concelho: targetOutlier.localidade
-              })
-            });
-            actionFeedback += `\n\n? *[A??o Executada]* Cascata de georreferencia??o recalculada para ${targetOutlier.cliente}.`;
-            if (onRefreshData) onRefreshData();
-          }
-        } catch (geoErr: any) {
-          console.error("Erro ao re-georreferenciar:", geoErr);
-        }
-      }
-      // Remover tags internas brutas do texto vis?vel e anexar o status da a??o
-      let displayReply = (res.reply || "N?o consegui processar a resposta neste momento.")
-        .replace(/\[COMANDO:.*?\]/g, "")
-        .trim();
-      if (actionFeedback) {
-        displayReply += actionFeedback;
-      }
-      const agentMsg: ChatMessage = {
-        id: String(Date.now() + 1),
-        sender: "agent",
-        text: displayReply,
-        outliers: res.outliers || [],
-        actions: res.suggested_actions || [],
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-
-      setMessages((prev) => [...prev, agentMsg]);
-    } catch (err: any) {
-      const errorMsg: ChatMessage = {
-        id: String(Date.now() + 1),
-        sender: "agent",
-        text: `⚠️ Não foi possível obter resposta do servidor: ${err.message || "Erro de ligação"}. Clique no botão abaixo para tentar novamente.`,
-        isError: true,
-        actions: [
-          { label: "🔄 Tentar Novamente", action: "retry_last" }
-        ],
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleActionClick = (act: ActionItem) => {
-    if (act.action === "retry_last") {
-      const lastUserMsg = [...messages].reverse().find((m) => m.sender === "user");
-      if (lastUserMsg) {
-        sendMessage(lastUserMsg.text);
-      } else {
-        sendMessage("Olá, faz um diagnóstico geral às rotas.");
-      }
-    } else if (act.action === "inspect_outliers") {
-      sendMessage("Mostra-me os detalhes das entregas com coordenadas ou distâncias suspeitas.");
-    } else if (act.action === "simulate_plus_10_percent") {
-      sendMessage("Se aumentarmos o horário dos carros em 10%, quantas entregas pendentes conseguimos encaixar?");
-    } else if (act.action === "filter_near_depot") {
-      sendMessage("Quais são as entregas por distribuir que estão mais perto do armazém para resolvermos amanhã?");
-    } else if (act.action === "slots_distribution") {
-      sendMessage("Quantas entregas com slots horárias da manhã e da tarde existem?");
-    } else {
-      sendMessage(act.label);
-    }
-  };
+  }, [messages, loading, isOpen]);
 
   if (!isOpen) return null;
 
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || loading) return;
+    const msg = inputText;
+    setInputText("");
+    sendMessage(msg);
+  };
+
+  const handleActionClick = (action: ActionItem) => {
+    if (action.action === "inspect_outliers") {
+      sendMessage("Mostra-me os clientes com problemas de coordenadas ou georreferenciação suspeita.");
+    } else if (action.action === "slots_distribution") {
+      sendMessage("Qual é a distribuição das janelas horárias da manhã vs tarde?");
+    } else if (action.action === "filter_near_depot") {
+      sendMessage("Quais entregas pendentes estão mais perto do armazém para deixar para amanhã?");
+    } else if (action.action === "simulate_plus_10_percent") {
+      sendMessage("Se aumentarmos o turno em 10%, quantas paragens pendentes conseguimos absorver?");
+    } else {
+      sendMessage(action.label);
+    }
+  };
+
+  const handleGoToGeoreferencing = (cliente: string) => {
+    router.push(`/dashboard/georeferencing?search=${encodeURIComponent(cliente)}`);
+  };
+
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-slate-900 border-l border-indigo-500/30 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+    <div className="fixed inset-y-0 right-0 w-full sm:w-[440px] md:w-[480px] z-50 flex flex-col bg-zinc-900 border-l border-zinc-800 shadow-2xl transition-all duration-300 backdrop-blur-xl">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-900 border-b border-indigo-500/20">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shadow">
-            <span className="text-lg">🤖</span>
+      <div className="p-4 border-b border-zinc-800 bg-zinc-950/80 flex items-center justify-between shrink-0">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+            <span className="text-sm font-bold">✨</span>
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-              Co-Piloto de Tráfego
-              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                IA Ativa
+            <div className="flex items-center space-x-2">
+              <h3 className="text-xs font-bold text-white tracking-wide">Agente Co-Piloto IA</h3>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                Google Gemini
               </span>
-            </h3>
-            <p className="text-[11px] text-slate-400">Diálogo operacional & auditoria inteligente</p>
+            </div>
+            <p className="text-[11px] text-zinc-400 truncate max-w-[240px]">
+              {selectedProject?.nome || "Nenhum projeto ativo"}
+            </p>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
-        >
-          ✕
-        </button>
+
+        <div className="flex items-center space-x-1.5">
+          {pendingOutliersCount > 0 && (
+            <span
+              className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold"
+              title={`${pendingOutliersCount} cliente(s) sinalizados`}
+            >
+              ⚠️ {pendingOutliersCount}
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={clearHistory}
+            className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+            title="Limpar histórico de conversa"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={closeChat}
+            className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+            title="Fechar Agente"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Sugestões Rápidas no Topo */}
-      <div className="px-4 py-2 bg-slate-950/70 border-b border-slate-800 flex items-center gap-2 overflow-x-auto no-scrollbar">
+      {/* Barra de Sugestões Rápidas */}
+      <div className="px-3 py-2 bg-zinc-950/40 border-b border-zinc-800 flex items-center space-x-1.5 overflow-x-auto no-scrollbar shrink-0 text-[11px]">
         <button
-          onClick={() => sendMessage("Vê as entregas no mapa: temos algum ponto suspeito fora de zona?")}
-          className="text-[11px] whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-800 hover:bg-indigo-900/40 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-indigo-200 transition-all cursor-pointer"
+          onClick={() => sendMessage("Mostra-me os clientes com problemas de coordenadas ou georreferenciação suspeita.")}
+          className="whitespace-nowrap px-2.5 py-1 rounded-full bg-zinc-800 hover:bg-indigo-900/40 border border-zinc-700 hover:border-indigo-500/50 text-zinc-300 hover:text-indigo-200 transition-all cursor-pointer font-medium"
         >
-          🔍 Pontos Suspeitos
+          🔍 Coordenadas & Suspeitas
         </button>
         <button
-          onClick={() => sendMessage("Quantas entregas com slots horárias da manhã e da tarde existem?")}
-          className="text-[11px] whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-800 hover:bg-indigo-900/40 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-indigo-200 transition-all cursor-pointer"
+          onClick={() => sendMessage("Qual é a distribuição das janelas horárias da manhã vs tarde?")}
+          className="whitespace-nowrap px-2.5 py-1 rounded-full bg-zinc-800 hover:bg-indigo-900/40 border border-zinc-700 hover:border-indigo-500/50 text-zinc-300 hover:text-indigo-200 transition-all cursor-pointer font-medium"
         >
           📊 Janelas Manhã/Tarde
         </button>
         <button
           onClick={() => sendMessage("Quais entregas de fora estão mais perto do armazém para amanhã?")}
-          className="text-[11px] whitespace-nowrap px-2.5 py-1 rounded-full bg-slate-800 hover:bg-indigo-900/40 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-indigo-200 transition-all cursor-pointer"
+          className="whitespace-nowrap px-2.5 py-1 rounded-full bg-zinc-800 hover:bg-indigo-900/40 border border-zinc-700 hover:border-indigo-500/50 text-zinc-300 hover:text-indigo-200 transition-all cursor-pointer font-medium"
         >
           📦 Perto do Armazém
         </button>
+        <button
+          onClick={() => sendMessage("Faz um diagnóstico geral da frota e do plano atual.")}
+          className="whitespace-nowrap px-2.5 py-1 rounded-full bg-zinc-800 hover:bg-indigo-900/40 border border-zinc-700 hover:border-indigo-500/50 text-zinc-300 hover:text-indigo-200 transition-all cursor-pointer font-medium"
+        >
+          📋 Diagnóstico Geral
+        </button>
       </div>
 
-      {/* Messages Feed */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-900/60">
+      {/* Feed de Mensagens */}
+      <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-zinc-950/60">
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -265,37 +150,73 @@ export default function AgentChatDrawer({
                 msg.sender === "user"
                   ? "bg-indigo-600 text-white rounded-br-xs"
                   : msg.isError
-                  ? "bg-red-950/40 border border-red-500/40 text-red-200 rounded-bl-xs"
-                  : "bg-slate-800 border border-slate-700/70 text-slate-200 rounded-bl-xs"
+                  ? "bg-rose-950/50 border border-rose-500/40 text-rose-200 rounded-bl-xs"
+                  : "bg-zinc-850 border border-zinc-750 text-zinc-200 rounded-bl-xs"
               }`}
             >
               <div className="whitespace-pre-wrap">{msg.text}</div>
 
-              {/* Cartões de Outliers / Pontos Suspeitos */}
+              {/* Cartões de Outliers e Clientes com Problemas */}
               {msg.outliers && msg.outliers.length > 0 && (
-                <div className="mt-3 pt-2.5 border-t border-slate-700 space-y-2">
-                  <p className="font-semibold text-amber-300 text-[11px] flex items-center gap-1">
-                    <span>⚠️ {msg.outliers.length} Ponto(s) Isolado(s) Detetado(s):</span>
+                <div className="mt-3 pt-2.5 border-t border-zinc-700/60 space-y-2">
+                  <p className="font-semibold text-amber-300 text-[11px] flex items-center justify-between">
+                    <span>⚠️ {msg.outliers.length} Cliente(s) com Problemas:</span>
+                    <Link
+                      href="/dashboard/georeferencing"
+                      className="text-[10px] text-indigo-400 hover:underline font-normal"
+                    >
+                      Abrir Georreferenciação ➡️
+                    </Link>
                   </p>
-                  {msg.outliers.slice(0, 4).map((o, idx) => (
+                  {msg.outliers.map((o: OutlierItem, idx: number) => (
                     <div
                       key={idx}
-                      className="p-2 rounded-lg bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200/90 space-y-0.5"
+                      className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200/90 space-y-1.5"
                     >
-                      <div className="font-bold text-white flex justify-between">
-                        <span>{o.cliente}</span>
-                        <span className="text-amber-400 font-mono">~{o.dist_km_armazem} km</span>
+                      <div className="font-bold text-white flex justify-between items-center">
+                        <span className="truncate pr-2">{o.cliente}</span>
+                        {o.dist_km_armazem > 0 ? (
+                          <span className="text-amber-400 font-mono text-[10px] shrink-0 bg-amber-500/20 px-1.5 py-0.2 rounded">
+                            +{o.dist_km_armazem} km desvio
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-mono text-[10px] shrink-0 bg-rose-500/20 px-1.5 py-0.2 rounded">
+                            Sem Coordenadas
+                          </span>
+                        )}
                       </div>
-                      <p className="text-slate-300">{o.morada} {o.cp ? `(${o.cp})` : ""} {o.localidade ? `- ${o.localidade}` : ""}</p>
-                      <p className="text-amber-300 text-[10px] italic">⚠️ {o.motivo_suspeita}</p>
+                      <p className="text-zinc-300 text-[10px]">
+                        {o.morada} {o.cp ? `(${o.cp})` : ""} {o.localidade ? `- ${o.localidade}` : ""}
+                      </p>
+                      <p className="text-amber-300 text-[10px] italic">
+                        {o.motivo_suspeita}
+                      </p>
+
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-amber-500/20">
+                        <button
+                          type="button"
+                          onClick={() => handleGoToGeoreferencing(o.cliente)}
+                          className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                        >
+                          <span>📍</span>
+                          <span>Corrigir em Georreferenciação</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendMessage(`Regeorreferenciar cliente ${o.cliente}`)}
+                          className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-[10px] font-medium cursor-pointer transition-colors"
+                        >
+                          ⚡ Tentar Resolver
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Ações sugeridas */}
+              {/* Botões de Ações Rápidas Sugeridas */}
               {msg.actions && msg.actions.length > 0 && (
-                <div className="mt-2.5 pt-2 border-t border-slate-700 flex flex-wrap gap-1.5">
+                <div className="mt-2.5 pt-2 border-t border-zinc-700/60 flex flex-wrap gap-1.5">
                   {msg.actions.map((act, aIdx) => (
                     <button
                       key={aIdx}
@@ -308,39 +229,34 @@ export default function AgentChatDrawer({
                 </div>
               )}
             </div>
-            <span className="text-[10px] text-slate-500 mt-1 px-1">{msg.timestamp}</span>
+            <span className="text-[10px] text-zinc-500 mt-1 px-1">{msg.timestamp}</span>
           </div>
         ))}
 
         {loading && (
-          <div className="flex items-center space-x-2 text-xs text-indigo-300 bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2 max-w-[70%]">
-            <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-            <span>O Co-Piloto está a raciocinar sobre o mapa...</span>
+          <div className="flex items-center space-x-2 text-xs text-indigo-300 bg-zinc-850 border border-zinc-750 rounded-2xl px-3.5 py-2.5 max-w-[80%] shadow-sm">
+            <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            <span>O Co-Piloto Gemini está a raciocinar sobre o mapa...</span>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Form */}
-      <div className="p-3 bg-slate-950 border-t border-slate-800">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            sendMessage(inputText);
-          }}
-          className="flex items-center gap-2"
-        >
+      {/* Caixa de Input Inferior */}
+      <div className="p-3 bg-zinc-950 border-t border-zinc-800 shrink-0">
+        <form onSubmit={handleSend} className="flex items-center gap-2">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Pergunte ao Co-Piloto (ex: 'Passa a entrega X para a viatura Y')..."
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition-colors"
+            disabled={loading || !selectedProject}
+            className="flex-1 bg-zinc-900 border border-zinc-750 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-500 outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={loading || !inputText.trim()}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold shadow-md transition-all cursor-pointer"
+            disabled={loading || !inputText.trim() || !selectedProject}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold shadow-md transition-all cursor-pointer shrink-0"
           >
             Enviar
           </button>
