@@ -150,6 +150,7 @@ def init_database():
                 nivel_qualidade INTEGER DEFAULT 99,
                 fonte_match TEXT DEFAULT 'PENDENTE',
                 morada_encontrada TEXT DEFAULT '',
+                rota TEXT DEFAULT '',
                 ordem INTEGER DEFAULT 0,
                 ordem_paragem INTEGER DEFAULT 0,
                 regras TEXT DEFAULT '',
@@ -286,6 +287,8 @@ def init_database():
         add_column_if_missing("projetos", "is_active", "BOOLEAN DEFAULT 0")
         add_column_if_missing("projetos", "status", "TEXT DEFAULT 'draft'")
         add_column_if_missing("projetos", "data_distribuicao", "TEXT")
+        add_column_if_missing("projetos", "archived_at", "TIMESTAMP")
+        add_column_if_missing("projetos", "archive_file_path", "TEXT")
         add_column_if_missing("empresas", "api_key_google", "TEXT DEFAULT ''")
         
         add_column_if_missing("utilizadores", "is_superadmin", "BOOLEAN DEFAULT 0")
@@ -486,31 +489,14 @@ def eliminar_projeto(projeto_id):
         conn.commit()
 
 
-def limpar_projetos_expirados(empresa_id=None, dias=7):
-    """
-    Elimina automaticamente projetos criados há mais de X dias (RGPD & Limpeza de Disco),
-    salvo se o projeto estiver marcado como 'ativo na rua' (is_active = 1).
-    """
-    from datetime import datetime, timedelta
-    cutoff = (datetime.now() - timedelta(days=dias)).strftime("%Y-%m-%d %H:%M:%S")
-    with get_db() as conn:
-        cursor = conn.cursor()
-        if empresa_id is not None:
-            cursor.execute(
-                "SELECT id FROM projetos WHERE (is_active IS NULL OR is_active = 0) AND created_at < ? AND empresa_id = ?",
-                (cutoff, empresa_id)
-            )
-        else:
-            cursor.execute(
-                "SELECT id FROM projetos WHERE (is_active IS NULL OR is_active = 0) AND created_at < ?",
-                (cutoff,)
-            )
-        expired_ids = [r[0] for r in cursor.fetchall()]
-
-    for pid in expired_ids:
-        eliminar_projeto(pid)
-
-    return len(expired_ids)
+def limpar_projetos_expirados(empresa_id=None, dias=10):
+    """Executa a auto-limpeza e arquivo de salvaguarda de projetos que atingiram o limite de dias."""
+    try:
+        from utils.lifecycle_manager import process_project_lifecycle
+        return process_project_lifecycle(empresa_id)
+    except Exception as e:
+        print(f"[DB Notice] Erro ao executar lifecycle de projetos: {e}")
+        return 0
 
 
 def ativar_projeto(projeto_id, empresa_id):
@@ -1206,7 +1192,9 @@ def ensure_entregas_columns():
                 ("cx_ambiente", "INTEGER DEFAULT 0"),
                 ("cx_frio", "INTEGER DEFAULT 0"),
                 ("cx_congelado", "INTEGER DEFAULT 0"),
-                ("total_cx", "INTEGER DEFAULT 0")
+                ("total_cx", "INTEGER DEFAULT 0"),
+                ("estado_planeamento", "TEXT DEFAULT 'Pendente'"),
+                ("motivo_pendencia", "TEXT DEFAULT ''")
             ]:
                 if col not in cols:
                     try:

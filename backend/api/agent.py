@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import pandas as pd
 from backend.api.auth import get_current_user, UserResponse
-from backend.database import get_db, get_projeto, registar_consumo_google
+from database import get_db, get_projeto, registar_consumo_google
 from utils.persistence_manager import serialize_state, deserialize_state
 from utils.agent_chat_engine import run_agent_chat_reasoning
 from utils.agent_decision_core import analyze_unassigned_and_violations
